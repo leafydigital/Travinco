@@ -1,0 +1,289 @@
+'use server';
+
+import { createClient } from '@/lib/supabase/server';
+import { requireProfile } from '@/lib/supabase/auth-helpers';
+import { packageSchema, slugify, type PackageFormValues } from '@/lib/validations/package';
+import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
+
+export type ActionState = { error?: string; fieldErrors?: Record<string, string> };
+
+async function logActivity(params: {
+  action: string;
+  entityType: string;
+  entityId: string;
+  beforeData?: unknown;
+  afterData?: unknown;
+}) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  await supabase.from('audit_logs').insert({
+    actor_id: user?.id ?? null,
+    action: params.action,
+    entity_type: params.entityType,
+    entity_id: params.entityId,
+    before_data: (params.beforeData as never) ?? null,
+    after_data: (params.afterData as never) ?? null,
+  });
+}
+
+export async function createPackage(
+  raw: PackageFormValues
+): Promise<ActionState & { id?: string }> {
+  await requireProfile(); // any logged-in staff can create a draft; publish gate is separate
+
+  const parsed = packageSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { error: 'Please fix the highlighted fields.' };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const { data, error } = await supabase
+    .from('travel_packages')
+    .insert({ ...parsed.data, status: 'draft', created_by: user?.id ?? null })
+    .select('id')
+    .single();
+
+  if (error) {
+    if (error.code === '23505') {
+      return { error: 'A package with this slug already exists.', fieldErrors: { slug: 'Already taken' } };
+    }
+    return { error: 'Could not create the package. Please try again.' };
+  }
+
+  await logActivity({
+    action: 'package.created',
+    entityType: 'travel_packages',
+    entityId: data.id,
+    afterData: parsed.data,
+  });
+
+  revalidatePath('/admin/packages');
+  return { id: data.id };
+}
+
+export async function updatePackage(
+  id: string,
+  raw: PackageFormValues
+): Promise<ActionState> {
+  await requireProfile();
+  const parsed = packageSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { error: 'Please fix the highlighted fields.' };
+  }
+
+  const supabase = await createClient();
+  const { data: before } = await supabase
+    .from('travel_packages')
+    .select('*')
+    .eq('id', id)
+    .single();
+
+  const { error } = await supabase
+    .from('travel_packages')
+    .update(parsed.data)
+    .eq('id', id);
+
+  if (error) {
+    if (error.code === '23505') {
+      return { error: 'A package with this slug already exists.', fieldErrors: { slug: 'Already taken' } };
+    }
+    return { error: 'Could not update the package. Please try again.' };
+  }
+
+  await logActivity({
+    action: 'package.updated',
+    entityType: 'travel_packages',
+    entityId: id,
+    beforeData: before,
+    afterData: parsed.data,
+  });
+
+  revalidatePath('/admin/packages');
+  revalidatePath(`/admin/packages/${id}`);
+  if (before?.slug) revalidatePath(`/packages/${before.slug}`);
+  return {};
+}
+
+async function setPackageStatus(id: string, status: 'draft' | 'published' | 'archived') {
+  const profile = await requireProfile();
+  const supabase = await createClient();
+
+  const { data: pkg } = await supabase
+    .from('travel_packages')
+    .select('slug, status')
+    .eq('id', id)
+    .single();
+
+  if (!pkg) return { error: 'Package not found.' };
+
+  const { error } = await supabase
+    .from('travel_packages')
+    .update({ status })
+    .eq('id', id);
+
+  if (error) return { error: 'Could not update package status.' };
+
+  await logActivity({
+    action: `package.${status}`,
+    entityType: 'travel_packages',
+    entityId: id,
+    beforeData: { status: pkg.status, by: profile.id },
+    afterData: { status },
+  });
+
+  revalidatePath('/admin/packages');
+  revalidatePath(`/packages/${pkg.slug}`);
+  return {};
+}
+
+export async function publishPackage(id: string) {
+  return setPackageStatus(id, 'published');
+}
+export async function unpublishPackage(id: string) {
+  return setPackageStatus(id, 'draft');
+}
+export async function archivePackage(id: string) {
+  return setPackageStatus(id, 'archived');
+}
+
+export async function duplicatePackage(id: string): Promise<ActionState & { id?: string }> {
+  await requireProfile();
+  const supabase = await createClient();
+
+  const { data: original, error: fetchError } = await supabase
+    .from('travel_packages')
+    .select('*')
+    .eq('id', id)
+    .single();
+
+  if (fetchError || !original) return { error: 'Package not found.' };
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  // Generate a unique-enough slug by appending -copy and, if that's taken
+  // too, a short timestamp suffix.
+  let newSlug = `${original.slug}-copy`;
+  const { data: clash } = await supabase
+    .from('travel_packages')
+    .select('id')
+    .eq('slug', newSlug)
+    .maybeSingle();
+  if (clash) newSlug = `${original.slug}-copy-${Date.now().toString(36)}`;
+
+  const {
+    id: _oldId,
+    created_at: _createdAt,
+    updated_at: _updatedAt,
+    seats_booked: _seatsBooked,
+    ...rest
+  } = original;
+
+  const { data: created, error } = await supabase
+    .from('travel_packages')
+    .insert({
+      ...rest,
+      title: `${original.title} (Copy)`,
+      slug: newSlug,
+      status: 'draft',
+      is_featured: false,
+      seats_booked: 0,
+      created_by: user?.id ?? null,
+    })
+    .select('id')
+    .single();
+
+  if (error || !created) return { error: 'Could not duplicate the package.' };
+
+  // Duplicate children: images, itinerary days, inclusions, exclusions.
+  const [{ data: images }, { data: itinerary }, { data: inclusions }, { data: exclusions }] =
+    await Promise.all([
+      supabase.from('package_images').select('*').eq('package_id', id),
+      supabase.from('package_itineraries').select('*').eq('package_id', id),
+      supabase.from('package_inclusions').select('*').eq('package_id', id),
+      supabase.from('package_exclusions').select('*').eq('package_id', id),
+    ]);
+
+  await Promise.all([
+    images?.length
+      ? supabase.from('package_images').insert(
+          images.map(({ id: _i, package_id: _p, created_at: _c, ...img }) => ({
+            ...img,
+            package_id: created.id,
+          }))
+        )
+      : Promise.resolve(),
+    itinerary?.length
+      ? supabase.from('package_itineraries').insert(
+          itinerary.map(({ id: _i, package_id: _p, ...day }) => ({
+            ...day,
+            package_id: created.id,
+          }))
+        )
+      : Promise.resolve(),
+    inclusions?.length
+      ? supabase.from('package_inclusions').insert(
+          inclusions.map(({ id: _i, package_id: _p, ...inc }) => ({
+            ...inc,
+            package_id: created.id,
+          }))
+        )
+      : Promise.resolve(),
+    exclusions?.length
+      ? supabase.from('package_exclusions').insert(
+          exclusions.map(({ id: _i, package_id: _p, ...exc }) => ({
+            ...exc,
+            package_id: created.id,
+          }))
+        )
+      : Promise.resolve(),
+  ]);
+
+  await logActivity({
+    action: 'package.duplicated',
+    entityType: 'travel_packages',
+    entityId: created.id,
+    beforeData: { duplicated_from: id },
+  });
+
+  revalidatePath('/admin/packages');
+  return { id: created.id };
+}
+
+export async function deletePackage(id: string): Promise<ActionState> {
+  const profile = await requireProfile();
+  if (!['admin', 'super_admin'].includes(profile.role)) {
+    return { error: 'Only admins can permanently delete a package.' };
+  }
+
+  const supabase = await createClient();
+  const { data: before } = await supabase
+    .from('travel_packages')
+    .select('*')
+    .eq('id', id)
+    .single();
+
+  const { error } = await supabase.from('travel_packages').delete().eq('id', id);
+  if (error) {
+    return { error: 'Could not delete the package. It may be referenced by an existing booking or enquiry — consider archiving instead.' };
+  }
+
+  await logActivity({
+    action: 'package.deleted',
+    entityType: 'travel_packages',
+    entityId: id,
+    beforeData: before,
+  });
+
+  revalidatePath('/admin/packages');
+  return {};
+}

@@ -1,0 +1,50 @@
+import { createClient } from '@/lib/supabase/server';
+import { redirect } from 'next/navigation';
+import type { Tables } from '@/types/database';
+
+export type CurrentProfile = Tables<'profiles'>;
+
+/**
+ * Fetches the logged-in user's profile row (id, role, etc). Redirects to
+ * /login if there's no session. Use this at the top of every admin
+ * page/layout that needs to know who's asking or gate by role — this is
+ * the app-layer half of authorization; RLS is the database-layer half,
+ * and neither substitutes for the other.
+ */
+export async function requireProfile(): Promise<CurrentProfile> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    redirect('/login');
+  }
+
+  const { data: profile, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', user.id)
+    .single();
+
+  if (error || !profile) {
+    redirect('/login');
+  }
+
+  if (!profile.is_active) {
+    await supabase.auth.signOut();
+    redirect('/login?reason=deactivated');
+  }
+
+  return profile;
+}
+
+/** Throws-away helper for pages that need to require a specific role tier. */
+export function assertRole(
+  profile: CurrentProfile,
+  allowed: CurrentProfile['role'][]
+) {
+  if (!allowed.includes(profile.role)) {
+    redirect('/admin?error=forbidden');
+  }
+}
