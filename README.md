@@ -292,3 +292,4 @@ Being direct about what's unverified or intentionally deferred:
    calculations in the system
 6. Consider a background job queue for WhatsApp campaign sends once
    recipient lists grow beyond what one request/response cycle should handle
+# Travinco
