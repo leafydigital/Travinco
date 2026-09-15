@@ -17,7 +17,7 @@ export default async function DestinationsPage() {
     .order('sort_order');
 
   return (
-    <div className="container-page py-12">
+    <div className="container-page pt-32 pb-12">
       <div className="mb-8">
         <h1 className="font-display text-3xl font-semibold text-ink-900">Destinations</h1>
         <p className="mt-2 text-ink-500">{(destinations ?? []).length} places we know well</p>
@@ -31,7 +31,7 @@ export default async function DestinationsPage() {
             <Link
               key={d.id}
               href={`/destinations/${d.slug}`}
-              className="card group overflow-hidden transition-shadow hover:shadow-md"
+              className="card-hover group overflow-hidden"
             >
               <div className="relative aspect-[4/3] bg-ink-100">
                 {d.cover_image_url ? (

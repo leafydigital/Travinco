@@ -1,14 +1,20 @@
 import type { UserRole } from '@/types/database';
-import {
-  LayoutDashboard, Package, MapPin, CalendarDays, Tag, Image as ImageIcon,
-  Inbox, ClipboardList, Users, MessageCircle, Megaphone, Wallet,
-  Receipt, BarChart3, Settings, ShieldCheck, ScrollText,
-} from 'lucide-react';
+
+// Icon is stored as a name (string), not a component reference — a live
+// React component can't be passed from this server-safe config module
+// into the client-side sidebar as plain data across the Server/Client
+// boundary. See admin-sidebar.tsx for where the name is resolved back
+// into an actual icon component.
+export const iconNames = [
+  'LayoutDashboard', 'Package', 'MapPin', 'Inbox', 'ImageIcon', 'Settings',
+] as const;
+
+export type IconName = (typeof iconNames)[number];
 
 export type NavItem = {
   label: string;
   href: string;
-  icon: typeof LayoutDashboard;
+  icon: IconName;
   roles?: UserRole[]; // omit = all staff roles
 };
 
@@ -17,77 +23,23 @@ export type NavSection = {
   items: NavItem[];
 };
 
+// Phase 2 scope: admin navigation intentionally limited to Dashboard,
+// Packages, Destinations, Enquiries, Gallery, Settings. The underlying
+// routes/pages for Bookings, Customers, WhatsApp, Income, Expenses,
+// Reports, Users and Activity Logs still exist in the codebase — only
+// removed from this nav list per the current phase's scope, not deleted.
 export const adminNav: NavSection[] = [
   {
-    items: [{ label: 'Dashboard', href: '/admin', icon: LayoutDashboard }],
-  },
-  {
-    title: 'Travel',
     items: [
-      { label: 'Packages', href: '/admin/packages', icon: Package },
-      { label: 'Destinations', href: '/admin/destinations', icon: MapPin },
-      { label: 'Events', href: '/admin/events', icon: CalendarDays },
-      { label: 'Offers', href: '/admin/offers', icon: Tag },
-      { label: 'Gallery', href: '/admin/gallery', icon: ImageIcon },
-    ],
-  },
-  {
-    title: 'Sales',
-    items: [
-      { label: 'Enquiries', href: '/admin/enquiries', icon: Inbox },
-      { label: 'Bookings', href: '/admin/bookings', icon: ClipboardList },
-      { label: 'Customers', href: '/admin/customers', icon: Users },
-    ],
-  },
-  {
-    title: 'Marketing',
-    items: [
-      { label: 'WhatsApp', href: '/admin/whatsapp', icon: MessageCircle },
-      { label: 'Campaigns', href: '/admin/whatsapp/campaigns', icon: Megaphone },
-    ],
-  },
-  {
-    title: 'Finance',
-    items: [
-      {
-        label: 'Income',
-        href: '/admin/income',
-        icon: Wallet,
-        roles: ['accounts_staff', 'admin', 'super_admin'],
-      },
-      {
-        label: 'Expenses',
-        href: '/admin/expenses',
-        icon: Receipt,
-        roles: ['accounts_staff', 'admin', 'super_admin'],
-      },
-      {
-        label: 'Reports',
-        href: '/admin/reports',
-        icon: BarChart3,
-        roles: ['accounts_staff', 'admin', 'super_admin'],
-      },
-    ],
-  },
-  {
-    title: 'System',
-    items: [
+      { label: 'Dashboard', href: '/admin', icon: 'LayoutDashboard' },
+      { label: 'Packages', href: '/admin/packages', icon: 'Package' },
+      { label: 'Destinations', href: '/admin/destinations', icon: 'MapPin' },
+      { label: 'Enquiries', href: '/admin/enquiries', icon: 'Inbox' },
+      { label: 'Gallery', href: '/admin/gallery', icon: 'ImageIcon' },
       {
         label: 'Settings',
         href: '/admin/settings',
-        icon: Settings,
-        roles: ['admin', 'super_admin'],
-      },
-      {
-        label: 'Admin users',
-        href: '/admin/users',
-        icon: ShieldCheck,
-        roles: ['super_admin'],
-      },
-      {
-        label: 'Activity logs',
-        href: '/admin/activity-logs',
-        icon: ScrollText,
+        icon: 'Settings',
         roles: ['admin', 'super_admin'],
       },
     ],

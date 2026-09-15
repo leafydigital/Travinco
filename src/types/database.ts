@@ -591,6 +591,28 @@ export interface Database {
         Update: Partial<Database['public']['Tables']['audit_logs']['Row']>;
       };
     };
+    Views: Record<string, never>;
+    Functions: Record<string, never>;
+    Enums: {
+      user_role: UserRole;
+      customer_source: CustomerSource;
+      package_status: PackageStatus;
+      package_category: PackageCategory;
+      enquiry_status: EnquiryStatus;
+      enquiry_priority: EnquiryPriority;
+      enquiry_source: EnquirySource;
+      followup_type: FollowupType;
+      booking_status: BookingStatus;
+      payment_status: PaymentStatus;
+      payment_method: PaymentMethod;
+      content_status: ContentStatus;
+      whatsapp_campaign_status: WhatsappCampaignStatus;
+      whatsapp_recipient_status: WhatsappRecipientStatus;
+      contact_message_status: ContactMessageStatus;
+      income_category: IncomeCategory;
+      notification_type: NotificationType;
+    };
+    CompositeTypes: Record<string, never>;
   };
 }
 

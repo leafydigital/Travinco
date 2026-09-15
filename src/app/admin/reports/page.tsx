@@ -88,7 +88,8 @@ export default async function ReportsPage({
 
   const expensesByCategory = Object.entries(
     (expenses ?? []).reduce<Record<string, number>>((acc, r) => {
-      const name = (r.expense_categories as { name: string } | null)?.name ?? 'Uncategorized';
+      const cat = r.expense_categories as { name: string } | { name: string }[] | null;
+      const name = (Array.isArray(cat) ? cat[0]?.name : cat?.name) ?? 'Uncategorized';
       acc[name] = (acc[name] ?? 0) + Number(r.amount);
       return acc;
     }, {})

@@ -25,7 +25,11 @@ export default async function CampaignDetailPage({ params }: { params: { id: str
 
   if (!campaign) notFound();
 
-  const template = campaign.whatsapp_templates as { name: string; body: string } | null;
+  const templateRaw = campaign.whatsapp_templates as
+    | { name: string; body: string }
+    | { name: string; body: string }[]
+    | null;
+  const template = Array.isArray(templateRaw) ? templateRaw[0] ?? null : templateRaw;
   const canSend = ['draft', 'scheduled'].includes(campaign.status) && (recipients?.length ?? 0) > 0;
 
   return (

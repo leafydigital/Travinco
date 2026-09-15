@@ -4,7 +4,7 @@ import { useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Send } from 'lucide-react';
-import { sendWhatsappCampaign } from '../actions';
+import { sendWhatsappCampaign } from '../../actions';
 
 export function SendCampaignButton({
   campaignId,

@@ -13,8 +13,16 @@
  *   delete from travel_packages where title like '[DEMO]%';
  */
 
+import { config } from 'dotenv';
+import { resolve } from 'path';
+
+// tsx/node scripts don't get Next.js's automatic .env.local loading, so
+// it has to be loaded explicitly here. Resolved relative to this file so
+// it works regardless of which directory you run the script from.
+config({ path: resolve(__dirname, '../../.env.local') });
+
 import { createClient } from '@supabase/supabase-js';
-import type { Database } from '../../src/types/database';
+
 
 if (process.env.ALLOW_DEMO_SEED !== 'true') {
   console.error(
@@ -32,7 +40,7 @@ if (!supabaseUrl || !serviceRoleKey) {
   process.exit(1);
 }
 
-const supabase = createClient<Database>(supabaseUrl, serviceRoleKey, {
+const supabase = createClient(supabaseUrl, serviceRoleKey, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
 
@@ -189,9 +197,9 @@ async function main() {
     .from('enquiries')
     .insert([
       {
-        customer_id: customers[0].id,
-        customer_name: customers[0].full_name,
-        phone: customers[0].phone,
+                customer_id: customers[0]!.id,
+        customer_name: customers[0]!.full_name,
+        phone: customers[0]!.phone,
         email: 'ritika.demo@example.com',
         package_id: goaPkg.id,
         destination: 'Goa',
@@ -203,9 +211,9 @@ async function main() {
         message: 'Looking for a honeymoon package in November, budget around 30k for two.',
       },
       {
-        customer_id: customers[1].id,
-        customer_name: customers[1].full_name,
-        phone: customers[1].phone,
+        customer_id: customers[1]!.id,
+        customer_name: customers[1]!.full_name,
+        phone: customers[1]!.phone,
         email: 'arjun.demo@example.com',
         package_id: manaliPkg.id,
         destination: 'Manali',
@@ -226,7 +234,7 @@ async function main() {
   const { data: booking, error: bookError } = await supabase
     .from('bookings')
     .insert({
-      customer_id: customers[1].id,
+      customer_id: customers[1]!.id,
       package_id: manaliPkg.id,
       travel_start_date: '2026-10-05',
       travel_end_date: '2026-10-09',
@@ -264,7 +272,7 @@ async function main() {
     income_date: new Date().toISOString().slice(0, 10),
     category: 'package_booking',
     description: '[DEMO] Advance payment — Manali booking',
-    customer_id: customers[1].id,
+    customer_id: customers[1]!.id,
     booking_id: booking.id,
     amount: 30000,
     payment_method: 'upi',

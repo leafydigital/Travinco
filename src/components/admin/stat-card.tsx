@@ -15,12 +15,12 @@ export function StatCard({
   const toneClasses: Record<string, string> = {
     default: 'bg-brand-50 text-brand-700',
     warning: 'bg-sand-100 text-sand-700',
-    danger: 'bg-red-50 text-red-600',
-    success: 'bg-brand-50 text-brand-700',
+    danger: 'bg-coral-50 text-coral-700',
+    success: 'bg-ocean-50 text-ocean-700',
   };
 
   return (
-    <div className="card p-5">
+    <div className="card-hover p-5">
       <div className="flex items-center justify-between">
         <p className="text-sm font-medium text-ink-500">{label}</p>
         <span className={cn('rounded-full p-2', toneClasses[tone])}>

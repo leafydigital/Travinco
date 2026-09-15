@@ -115,11 +115,22 @@ export default async function AdminBookingsPage({
                     </Link>
                   </td>
                   <td className="px-5 py-3">
-                    <p className="text-ink-700">{(b.customers as { full_name: string } | null)?.full_name ?? '—'}</p>
-                    <p className="text-xs text-ink-400">{(b.customers as { phone: string } | null)?.phone}</p>
+                    {(() => {
+                      const cust = b.customers as { full_name: string; phone: string } | { full_name: string; phone: string }[] | null;
+                      const c = Array.isArray(cust) ? cust[0] ?? null : cust;
+                      return (
+                        <>
+                          <p className="text-ink-700">{c?.full_name ?? '—'}</p>
+                          <p className="text-xs text-ink-400">{c?.phone}</p>
+                        </>
+                      );
+                    })()}
                   </td>
                   <td className="px-5 py-3 text-ink-600">
-                    {(b.travel_packages as { title: string } | null)?.title ?? '—'}
+                    {(() => {
+                      const pkg = b.travel_packages as { title: string } | { title: string }[] | null;
+                      return (Array.isArray(pkg) ? pkg[0]?.title : pkg?.title) ?? '—';
+                    })()}
                   </td>
                   <td className="px-5 py-3 text-ink-500">{formatDate(b.travel_start_date)}</td>
                   <td className="px-5 py-3 text-ink-700">{formatCurrency(b.total_amount)}</td>

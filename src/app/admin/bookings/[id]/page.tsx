@@ -28,8 +28,16 @@ export default async function BookingDetailPage({ params }: { params: { id: stri
 
   if (!booking) notFound();
 
-  const customer = booking.customers as { full_name: string; phone: string; email: string | null } | null;
-  const pkg = booking.travel_packages as { title: string; slug: string } | null;
+  const customerRaw = booking.customers as
+    | { full_name: string; phone: string; email: string | null }
+    | { full_name: string; phone: string; email: string | null }[]
+    | null;
+  const customer = Array.isArray(customerRaw) ? customerRaw[0] ?? null : customerRaw;
+  const pkgRaw = booking.travel_packages as
+    | { title: string; slug: string }
+    | { title: string; slug: string }[]
+    | null;
+  const pkg = Array.isArray(pkgRaw) ? pkgRaw[0] ?? null : pkgRaw;
   const canDeletePayment = ['accounts_staff', 'admin', 'super_admin'].includes(profile.role);
 
   return (

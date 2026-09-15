@@ -73,7 +73,10 @@ export default async function AdminExpensesPage({
                   <td className="px-5 py-3 text-ink-600">{formatDate(row.expense_date)}</td>
                   <td className="px-5 py-3 text-ink-500">{row.expense_number}</td>
                   <td className="px-5 py-3 text-ink-600">
-                    {(row.expense_categories as { name: string } | null)?.name ?? '—'}
+                    {(() => {
+                      const cat = row.expense_categories as { name: string } | { name: string }[] | null;
+                      return (Array.isArray(cat) ? cat[0]?.name : cat?.name) ?? '—';
+                    })()}
                   </td>
                   <td className="px-5 py-3 text-ink-600">{row.supplier ?? '—'}</td>
                   <td className="px-5 py-3 capitalize text-ink-500">{row.payment_method.replace('_', ' ')}</td>

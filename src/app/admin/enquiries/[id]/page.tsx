@@ -35,7 +35,11 @@ export default async function EnquiryDetailPage({ params }: { params: { id: stri
 
   if (!enquiry) notFound();
 
-  const pkg = enquiry.travel_packages as { title: string; slug: string } | null;
+  const pkgRaw = enquiry.travel_packages as
+    | { title: string; slug: string }
+    | { title: string; slug: string }[]
+    | null;
+  const pkg = Array.isArray(pkgRaw) ? pkgRaw[0] ?? null : pkgRaw;
 
   return (
     <div className="space-y-6 pb-16">
@@ -121,8 +125,11 @@ export default async function EnquiryDetailPage({ params }: { params: { id: stri
                     <p className="text-ink-700">{a.description}</p>
                     <p className="text-xs text-ink-400">
                       {formatDateTime(a.created_at)}
-                      {(a.profiles as { full_name: string } | null)?.full_name &&
-                        ` · ${(a.profiles as { full_name: string }).full_name}`}
+                      {(() => {
+                        const prof = a.profiles as { full_name: string } | { full_name: string }[] | null;
+                        const name = Array.isArray(prof) ? prof[0]?.full_name : prof?.full_name;
+                        return name && ` · ${name}`;
+                      })()}
                     </p>
                   </div>
                 </li>

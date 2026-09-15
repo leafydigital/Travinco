@@ -52,7 +52,10 @@ export default async function AdminOffersPage() {
                     </Link>
                   </td>
                   <td className="px-5 py-3 text-ink-500">
-                    {(o.travel_packages as { title: string } | null)?.title ?? '—'}
+                    {(() => {
+                      const pkg = o.travel_packages as { title: string } | { title: string }[] | null;
+                      return (Array.isArray(pkg) ? pkg[0]?.title : pkg?.title) ?? '—';
+                    })()}
                   </td>
                   <td className="px-5 py-3 text-ink-600">
                     {o.discount_percent ? `${o.discount_percent}%` : o.discount_flat ? `₹${o.discount_flat}` : '—'}

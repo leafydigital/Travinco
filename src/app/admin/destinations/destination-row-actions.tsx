@@ -3,7 +3,7 @@
 import { useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { setDestinationStatus, deleteDestination } from '../actions';
+import { setDestinationStatus, deleteDestination } from './actions';
 import type { ContentStatus } from '@/types/database';
 
 export function DestinationRowActions({ id, status }: { id: string; status: ContentStatus }) {

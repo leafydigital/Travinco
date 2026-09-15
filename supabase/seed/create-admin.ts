@@ -7,6 +7,14 @@
  * understanding it creates a real login with full access.
  */
 
+import { config } from 'dotenv';
+import { resolve } from 'path';
+
+// tsx/node scripts don't get Next.js's automatic .env.local loading, so
+// it has to be loaded explicitly here. Resolved relative to this file so
+// it works regardless of which directory you run the script from.
+config({ path: resolve(__dirname, '../../.env.local') });
+
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '../../src/types/database';
 
@@ -25,7 +33,7 @@ if (!supabaseUrl || !serviceRoleKey) {
   process.exit(1);
 }
 
-const supabase = createClient<Database>(supabaseUrl, serviceRoleKey, {
+const supabase = createClient(supabaseUrl, serviceRoleKey, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
 

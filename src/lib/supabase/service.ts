@@ -1,6 +1,5 @@
 import 'server-only';
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
-import type { Database } from '@/types/database';
 
 /**
  * Service-role client — BYPASSES ROW LEVEL SECURITY entirely.
@@ -18,6 +17,9 @@ import type { Database } from '@/types/database';
  *
  * NEVER expose SUPABASE_SERVICE_ROLE_KEY to the client. NEVER import this
  * module from src/app/(public)/** or any "use client" file.
+ *
+ * INTENTIONALLY UNTYPED — see server.ts for why the Database generic
+ * was removed from all Supabase clients in this project.
  */
 export function createServiceClient() {
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -28,7 +30,7 @@ export function createServiceClient() {
     );
   }
 
-  return createSupabaseClient<Database>(
+  return createSupabaseClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     serviceRoleKey,
     {

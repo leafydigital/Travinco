@@ -3,7 +3,7 @@
 import { useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { setWhatsappOptIn, deleteWhatsappContact } from '../actions';
+import { setWhatsappOptIn, deleteWhatsappContact } from './actions';
 
 export function ContactRowActions({ id, optIn }: { id: string; optIn: boolean }) {
   const router = useRouter();

@@ -3,9 +3,21 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils/cn';
-import type { NavSection } from '@/lib/admin-nav';
-import { LogOut } from 'lucide-react';
+import type { NavSection, IconName } from '@/lib/admin-nav';
+import {
+  LayoutDashboard, Package, MapPin, Inbox, Image as ImageIcon,
+  Settings, LogOut,
+  type LucideIcon,
+} from 'lucide-react';
 import { signOut } from '@/app/admin/actions';
+
+// Icon components are only ever referenced here, inside a Client
+// Component — admin-nav.ts (a server-safe config module) stores just the
+// name string, since a live component reference can't cross the
+// Server -> Client boundary as plain data.
+const iconMap: Record<IconName, LucideIcon> = {
+  LayoutDashboard, Package, MapPin, Inbox, ImageIcon, Settings,
+};
 
 export function AdminSidebar({
   sections,
@@ -19,10 +31,10 @@ export function AdminSidebar({
   const pathname = usePathname();
 
   return (
-    <aside className="flex h-screen w-64 flex-col border-r border-ink-100 bg-white">
-      <div className="flex h-16 items-center border-b border-ink-100 px-5">
-        <span className="font-display text-lg font-semibold text-brand-700">
-          Wayfarer Admin
+    <aside className="flex h-screen w-64 flex-col border-r border-ink-100 bg-white shadow-sm">
+      <div className="flex h-16 items-center border-b border-ink-100 bg-navy-900 px-5">
+        <span className="font-display text-lg font-semibold text-white">
+          Travinco Admin
         </span>
       </div>
 
@@ -39,16 +51,16 @@ export function AdminSidebar({
                 const active =
                   pathname === item.href ||
                   (item.href !== '/admin' && pathname.startsWith(item.href));
-                const Icon = item.icon;
+                const Icon = iconMap[item.icon];
                 return (
                   <li key={item.href}>
                     <Link
                       href={item.href}
                       className={cn(
-                        'flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                        'flex items-center gap-2.5 rounded-lg border-l-2 px-3 py-2 text-sm font-medium transition-colors',
                         active
-                          ? 'bg-brand-50 text-brand-700'
-                          : 'text-ink-600 hover:bg-ink-50'
+                          ? 'border-l-coral-500 bg-brand-50 text-brand-700'
+                          : 'border-l-transparent text-ink-600 hover:bg-ink-50'
                       )}
                     >
                       <Icon className="h-4 w-4 shrink-0" />
@@ -68,7 +80,7 @@ export function AdminSidebar({
         <form action={signOut} className="mt-3">
           <button
             type="submit"
-            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-ink-500 hover:bg-ink-50"
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-ink-500 transition-colors hover:bg-coral-50 hover:text-coral-700"
           >
             <LogOut className="h-4 w-4" />
             Sign out

@@ -30,7 +30,7 @@ export function TextField({
   required,
   className,
   ...props
-}: FieldWrapperProps & InputHTMLAttributes<HTMLInputElement>) {
+}: Omit<FieldWrapperProps, 'children'> & InputHTMLAttributes<HTMLInputElement>) {
   return (
     <FieldWrapper label={label} error={error} hint={hint} required={required}>
       <input
@@ -48,7 +48,7 @@ export function TextAreaField({
   required,
   className,
   ...props
-}: FieldWrapperProps & TextareaHTMLAttributes<HTMLTextAreaElement>) {
+}: Omit<FieldWrapperProps, 'children'> & TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return (
     <FieldWrapper label={label} error={error} hint={hint} required={required}>
       <textarea

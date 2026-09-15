@@ -154,6 +154,29 @@ export async function archivePackage(id: string) {
   return setPackageStatus(id, 'archived');
 }
 
+export async function toggleFeatured(id: string, isFeatured: boolean) {
+  const profile = await requireProfile();
+  const supabase = await createClient();
+
+  const { error } = await supabase
+    .from('travel_packages')
+    .update({ is_featured: isFeatured })
+    .eq('id', id);
+
+  if (error) return { error: 'Could not update featured status.' };
+
+  await logActivity({
+    action: isFeatured ? 'package.featured' : 'package.unfeatured',
+    entityType: 'travel_packages',
+    entityId: id,
+    afterData: { is_featured: isFeatured, by: profile.id },
+  });
+
+  revalidatePath('/admin/packages');
+  revalidatePath('/');
+  return {};
+}
+
 export async function duplicatePackage(id: string): Promise<ActionState & { id?: string }> {
   await requireProfile();
   const supabase = await createClient();

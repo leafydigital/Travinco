@@ -1,8 +1,8 @@
 import { createClient } from '@/lib/supabase/server';
 import { requireProfile } from '@/lib/supabase/auth-helpers';
 import { StatCard } from '@/components/admin/stat-card';
-import { formatCurrency, formatDate, toLabel } from '@/lib/utils/format';
-import { Inbox, ClipboardList, Wallet, AlertCircle } from 'lucide-react';
+import { formatDate, toLabel } from '@/lib/utils/format';
+import { Package, CheckCircle2, Inbox, Sparkles } from 'lucide-react';
 import Link from 'next/link';
 
 export const dynamic = 'force-dynamic';
@@ -10,47 +10,27 @@ export const dynamic = 'force-dynamic';
 export default async function AdminDashboardPage() {
   const profile = await requireProfile();
   const supabase = await createClient();
-  const canSeeFinance = ['accounts_staff', 'admin', 'super_admin'].includes(profile.role);
-
-  const today = new Date().toISOString().slice(0, 10);
 
   const [
+    { count: totalPackagesCount },
+    { count: publishedPackagesCount },
+    { count: totalEnquiriesCount },
     { count: newEnquiriesCount },
-    { count: followupsTodayCount },
-    { count: confirmedBookingsCount },
     { data: recentEnquiries },
-    financeTotals,
   ] = await Promise.all([
+    supabase.from('travel_packages').select('id', { count: 'exact', head: true }),
+    supabase
+      .from('travel_packages')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'published'),
+    supabase.from('enquiries').select('id', { count: 'exact', head: true }),
     supabase.from('enquiries').select('id', { count: 'exact', head: true }).eq('status', 'new'),
     supabase
-      .from('enquiry_followups')
-      .select('id', { count: 'exact', head: true })
-      .eq('followup_date', today)
-      .eq('is_completed', false),
-    supabase
-      .from('bookings')
-      .select('id', { count: 'exact', head: true })
-      .in('booking_status', ['confirmed', 'partially_paid', 'fully_paid']),
-    supabase
       .from('enquiries')
-      .select('id, enquiry_number, customer_name, status, created_at, package_id')
+      .select('id, enquiry_number, customer_name, status, created_at')
       .order('created_at', { ascending: false })
       .limit(8),
-    canSeeFinance
-      ? Promise.all([
-          supabase.from('income').select('amount'),
-          supabase.from('expenses').select('amount'),
-        ])
-      : Promise.resolve(null),
   ]);
-
-  let totalIncome = 0;
-  let totalExpenses = 0;
-  if (financeTotals) {
-    const [incomeRes, expenseRes] = financeTotals;
-    totalIncome = (incomeRes.data ?? []).reduce((sum, r) => sum + Number(r.amount), 0);
-    totalExpenses = (expenseRes.data ?? []).reduce((sum, r) => sum + Number(r.amount), 0);
-  }
 
   return (
     <div className="space-y-6">
@@ -62,22 +42,15 @@ export default async function AdminDashboardPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="New enquiries" value={newEnquiriesCount ?? 0} icon={Inbox} />
+        <StatCard label="Total packages" value={totalPackagesCount ?? 0} icon={Package} />
+        <StatCard label="Published packages" value={publishedPackagesCount ?? 0} icon={CheckCircle2} />
+        <StatCard label="Total enquiries" value={totalEnquiriesCount ?? 0} icon={Inbox} />
         <StatCard
-          label="Follow-ups due today"
-          value={followupsTodayCount ?? 0}
-          icon={AlertCircle}
-          tone={followupsTodayCount ? 'warning' : 'default'}
+          label="New enquiries"
+          value={newEnquiriesCount ?? 0}
+          icon={Sparkles}
+          tone={newEnquiriesCount ? 'warning' : 'default'}
         />
-        <StatCard label="Active bookings" value={confirmedBookingsCount ?? 0} icon={ClipboardList} />
-        {canSeeFinance && (
-          <StatCard
-            label="Net profit"
-            value={formatCurrency(totalIncome - totalExpenses)}
-            icon={Wallet}
-            tone={totalIncome - totalExpenses >= 0 ? 'success' : 'danger'}
-          />
-        )}
       </div>
 
       <div className="card">

@@ -16,16 +16,19 @@ export default async function BookingPage() {
     .order('title');
 
   return (
-    <div className="container-page py-14">
+    <div className="container-page pt-32 pb-14">
       <div className="mx-auto max-w-xl">
         <div className="mb-8 text-center">
+          <p className="mb-2 text-sm font-medium uppercase tracking-[0.15em] text-brand-600">
+            Let&apos;s plan it together
+          </p>
           <h1 className="font-display text-3xl font-semibold text-ink-900">Plan your trip</h1>
           <p className="mt-3 text-ink-600">
             Share a few details and our team will reach out with a tailored itinerary and quote.
           </p>
         </div>
 
-        <div className="card p-6">
+        <div className="card border-t-4 border-t-coral-500 p-6">
           {packages && packages.length > 0 && (
             <p className="mb-3 text-xs text-ink-400">
               Have a specific package in mind? Mention it in your message, or browse{' '}

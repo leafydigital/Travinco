@@ -63,7 +63,7 @@ export default async function WhatsappContactsPage() {
                   <td className="px-5 py-3 text-ink-600">{c.phone}</td>
                   <td className="px-5 py-3">
                     <div className="flex flex-wrap gap-1">
-                      {c.tags.map((t) => (
+                      {c.tags.map((t: string) => (
                         <span key={t} className="badge bg-ink-100 text-ink-600">
                           {t}
                         </span>

@@ -79,7 +79,10 @@ export default async function WhatsappCampaignsPage() {
                     </Link>
                   </td>
                   <td className="px-5 py-3 text-ink-500">
-                    {(c.whatsapp_templates as { name: string } | null)?.name ?? '—'}
+                    {(() => {
+                      const tpl = c.whatsapp_templates as { name: string } | { name: string }[] | null;
+                      return (Array.isArray(tpl) ? tpl[0]?.name : tpl?.name) ?? '—';
+                    })()}
                   </td>
                   <td className="px-5 py-3">
                     <StatusBadge status={c.status} />

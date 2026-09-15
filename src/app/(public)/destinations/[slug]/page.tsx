@@ -3,26 +3,34 @@ import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import Image from 'next/image';
 import { PackageCard } from '@/components/public/package-card';
+import type { Tables } from '@/types/database';
 
 export const revalidate = 300;
 
 async function getDestination(slug: string) {
   const supabase = await createClient();
-  const { data: destination } = await supabase
+  const { data: destination, error: destinationError } = await supabase
     .from('destinations')
     .select('*')
     .eq('slug', slug)
     .eq('status', 'published')
     .maybeSingle();
 
+  if (destinationError) {
+    console.error('Error loading destination:', destinationError);
+    return null;
+  }
+
   if (!destination) return null;
+
+  const destinationId: string = destination.id;
 
   const { data: packages } = await supabase
     .from('travel_packages')
     .select(
       'id, title, slug, cover_image_url, duration_days, duration_nights, base_price, discount_price, currency, short_description'
     )
-    .eq('destination_id', destination.id)
+    .eq('destination_id', destinationId)
     .eq('status', 'published');
 
   return { destination, packages: packages ?? [] };
@@ -49,11 +57,11 @@ export default async function DestinationDetailPage({ params }: { params: { slug
 
   return (
     <div>
-      <div className="relative h-[35vh] min-h-[260px] w-full bg-ink-200">
+      <div className="relative h-[35vh] min-h-[260px] w-full bg-ink-200 pt-20">
         {destination.cover_image_url && (
           <Image src={destination.cover_image_url} alt={destination.name} fill className="object-cover" priority />
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-t from-navy-900/85 via-navy-900/20 to-transparent" />
         <div className="container-page absolute inset-x-0 bottom-6 text-white">
           <h1 className="font-display text-3xl font-semibold sm:text-4xl">{destination.name}</h1>
           {destination.country && <p className="text-sm">{destination.country}</p>}

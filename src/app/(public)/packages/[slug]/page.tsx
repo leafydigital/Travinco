@@ -6,30 +6,56 @@ import { Clock, MapPin, Users, Check, X, MessageCircle, Phone } from 'lucide-rea
 import { formatCurrency } from '@/lib/utils/format';
 import { EnquiryForm } from '@/components/public/enquiry-form';
 import { getGeneralSettings } from '@/lib/settings';
+import type { Tables } from '@/types/database';
 
 export const revalidate = 300;
 
+type PackageWithDestination = Tables<'travel_packages'> & {
+  destinations: Pick<Tables<'destinations'>, 'id' | 'name' | 'slug' | 'country'> | null;
+};
+
 async function getPackage(slug: string) {
   const supabase = await createClient();
-  const { data: pkg } = await supabase
+
+  // Fetched as a plain (non-joined) query so the row type comes straight
+  // from Tables<'travel_packages'> with no join-string inference involved.
+  const { data: packageRow, error: pkgError } = await supabase
     .from('travel_packages')
-    .select('*, destinations(id, name, slug, country)')
+    .select('*')
     .eq('slug', slug)
     .eq('status', 'published')
     .maybeSingle();
 
-  if (!pkg) return null;
+  if (pkgError) {
+    console.error('Error loading travel package:', pkgError);
+    return null;
+  }
+
+  if (!packageRow) return null;
+
+  const packageId: string = packageRow.id;
+
+  const { data: destinationRow } = await supabase
+    .from('destinations')
+    .select('id, name, slug, country')
+    .eq('id', packageRow.destination_id)
+    .maybeSingle();
+
+  const pkg: PackageWithDestination = {
+    ...packageRow,
+    destinations: destinationRow ?? null,
+  };
 
   const [{ data: images }, { data: itinerary }, { data: inclusions }, { data: exclusions }] =
     await Promise.all([
-      supabase.from('package_images').select('*').eq('package_id', pkg.id).order('sort_order'),
+      supabase.from('package_images').select('*').eq('package_id', packageId).order('sort_order'),
       supabase
         .from('package_itineraries')
         .select('*')
-        .eq('package_id', pkg.id)
+        .eq('package_id', packageId)
         .order('day_number'),
-      supabase.from('package_inclusions').select('*').eq('package_id', pkg.id).order('sort_order'),
-      supabase.from('package_exclusions').select('*').eq('package_id', pkg.id).order('sort_order'),
+      supabase.from('package_inclusions').select('*').eq('package_id', packageId).order('sort_order'),
+      supabase.from('package_exclusions').select('*').eq('package_id', packageId).order('sort_order'),
     ]);
 
   return {
@@ -72,7 +98,11 @@ export default async function PackageDetailPage({ params }: { params: { slug: st
 
   const { pkg, images, itinerary, inclusions, exclusions } = result;
   const settings = await getGeneralSettings();
-  const destination = pkg.destinations as { name: string; country: string | null } | null;
+  const destinationRaw = pkg.destinations as
+    | { name: string; country: string | null }
+    | { name: string; country: string | null }[]
+    | null;
+  const destination = Array.isArray(destinationRaw) ? destinationRaw[0] ?? null : destinationRaw;
 
   const jsonLd = {
     '@context': 'https://schema.org',
@@ -95,11 +125,11 @@ export default async function PackageDetailPage({ params }: { params: { slug: st
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
 
-      <div className="relative h-[45vh] min-h-[320px] w-full bg-ink-200">
+      <div className="relative h-[45vh] min-h-[320px] w-full bg-ink-200 pt-20">
         {pkg.cover_image_url && (
           <Image src={pkg.cover_image_url} alt={pkg.title} fill className="object-cover" priority />
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-t from-navy-900/85 via-navy-900/20 to-transparent" />
         <div className="container-page absolute inset-x-0 bottom-6 text-white">
           {destination && (
             <p className="flex items-center gap-1.5 text-sm font-medium">
@@ -135,7 +165,7 @@ export default async function PackageDetailPage({ params }: { params: { slug: st
             <section>
               <h2 className="font-display text-xl font-semibold text-ink-900">Highlights</h2>
               <ul className="mt-3 grid gap-2 sm:grid-cols-2">
-                {pkg.highlights.map((h, i) => (
+                {pkg.highlights.map((h: string, i: number) => (
                   <li key={i} className="flex items-start gap-2 text-sm text-ink-600">
                     <Check className="mt-0.5 h-4 w-4 shrink-0 text-brand-600" /> {h}
                   </li>
@@ -186,7 +216,7 @@ export default async function PackageDetailPage({ params }: { params: { slug: st
                   <ul className="mt-3 space-y-1.5">
                     {exclusions.map((e) => (
                       <li key={e.id} className="flex items-start gap-2 text-sm text-ink-600">
-                        <X className="mt-0.5 h-4 w-4 shrink-0 text-red-500" /> {e.item}
+                        <X className="mt-0.5 h-4 w-4 shrink-0 text-coral-500" /> {e.item}
                       </li>
                     ))}
                   </ul>

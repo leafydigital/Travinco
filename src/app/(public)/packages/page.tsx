@@ -30,9 +30,11 @@ export default async function PackagesPage({
   const { data: packages } = await query;
 
   const filtered = searchParams.destination
-    ? (packages ?? []).filter(
-        (p) => (p.destinations as { slug: string } | null)?.slug === searchParams.destination
-      )
+    ? (packages ?? []).filter((p) => {
+        const dest = p.destinations as { slug: string } | { slug: string }[] | null;
+        const slug = Array.isArray(dest) ? dest[0]?.slug : dest?.slug;
+        return slug === searchParams.destination;
+      })
     : packages ?? [];
 
   const { data: destinations } = await supabase
@@ -42,7 +44,7 @@ export default async function PackagesPage({
     .order('name');
 
   return (
-    <div className="container-page py-12">
+    <div className="container-page pt-32 pb-12">
       <div className="mb-8">
         <h1 className="font-display text-3xl font-semibold text-ink-900">Travel packages</h1>
         <p className="mt-2 text-ink-500">
@@ -80,15 +82,19 @@ export default async function PackagesPage({
         </p>
       ) : (
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {filtered.map((pkg) => (
-            <PackageCard
-              key={pkg.id}
-              pkg={{
-                ...pkg,
-                destinationName: (pkg.destinations as { name: string } | null)?.name,
-              }}
-            />
-          ))}
+          {filtered.map((pkg) => {
+            const dest = pkg.destinations as { name: string } | { name: string }[] | null;
+            const destinationName = Array.isArray(dest) ? dest[0]?.name : dest?.name;
+            return (
+              <PackageCard
+                key={pkg.id}
+                pkg={{
+                  ...pkg,
+                  destinationName,
+                }}
+              />
+            );
+          })}
         </div>
       )}
     </div>

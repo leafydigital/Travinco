@@ -102,9 +102,20 @@ export async function addPackageImage(packageId: string, imageUrl: string, isCov
       .eq('package_id', packageId);
   }
 
+  // New images go to the end of the current order.
+  const { count } = await supabase
+    .from('package_images')
+    .select('id', { count: 'exact', head: true })
+    .eq('package_id', packageId);
+
   const { error } = await supabase
     .from('package_images')
-    .insert({ package_id: packageId, image_url: imageUrl, is_cover: isCover });
+    .insert({
+      package_id: packageId,
+      image_url: imageUrl,
+      is_cover: isCover,
+      sort_order: count ?? 0,
+    });
 
   if (error) return { error: 'Could not add image.' };
 
@@ -114,6 +125,65 @@ export async function addPackageImage(packageId: string, imageUrl: string, isCov
       .update({ cover_image_url: imageUrl })
       .eq('id', packageId);
   }
+
+  revalidatePath(`/admin/packages/${packageId}`);
+  return {};
+}
+
+export async function setCoverImage(packageId: string, imageId: string, imageUrl: string) {
+  await requireProfile();
+  const supabase = await createClient();
+
+  await supabase.from('package_images').update({ is_cover: false }).eq('package_id', packageId);
+  const { error } = await supabase
+    .from('package_images')
+    .update({ is_cover: true })
+    .eq('id', imageId);
+
+  if (error) return { error: 'Could not set cover image.' };
+
+  await supabase.from('travel_packages').update({ cover_image_url: imageUrl }).eq('id', packageId);
+
+  revalidatePath(`/admin/packages/${packageId}`);
+  return {};
+}
+
+/**
+ * Moves one image up or down in display order by swapping sort_order
+ * with its neighbor. Simple pairwise swap rather than a full reindex —
+ * fine for the small number of images a travel package typically has.
+ */
+export async function reorderPackageImage(
+  packageId: string,
+  imageId: string,
+  direction: 'up' | 'down'
+) {
+  await requireProfile();
+  const supabase = await createClient();
+
+  const { data: imagesData } = await supabase
+    .from('package_images')
+    .select('id, sort_order')
+    .eq('package_id', packageId)
+    .order('sort_order', { ascending: true });
+
+  const images = (imagesData ?? []) as { id: string; sort_order: number }[];
+  const index = images.findIndex((img) => img.id === imageId);
+  if (index === -1) return { error: 'Image not found.' };
+
+  const swapIndex = direction === 'up' ? index - 1 : index + 1;
+  if (swapIndex < 0 || swapIndex >= images.length) return {};
+
+  const current = images[index];
+const neighbor = images[swapIndex];
+if (!current || !neighbor) return { error: 'Could not reorder images.' };
+
+  const [{ error: err1 }, { error: err2 }] = await Promise.all([
+    supabase.from('package_images').update({ sort_order: neighbor.sort_order }).eq('id', current.id),
+    supabase.from('package_images').update({ sort_order: current.sort_order }).eq('id', neighbor.id),
+  ]);
+
+  if (err1 || err2) return { error: 'Could not reorder images.' };
 
   revalidatePath(`/admin/packages/${packageId}`);
   return {};

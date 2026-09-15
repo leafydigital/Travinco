@@ -11,10 +11,19 @@ import {
   archivePackage,
   duplicatePackage,
   deletePackage,
+  toggleFeatured,
 } from './actions';
 import { useState, useRef, useEffect } from 'react';
 
-export function PackageRowActions({ id, status }: { id: string; status: string }) {
+export function PackageRowActions({
+  id,
+  status,
+  isFeatured,
+}: {
+  id: string;
+  status: string;
+  isFeatured: boolean;
+}) {
   const [isPending, startTransition] = useTransition();
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -99,6 +108,17 @@ export function PackageRowActions({ id, status }: { id: string; status: string }
               Archive
             </button>
           )}
+          <button
+            onClick={() =>
+              run(
+                () => toggleFeatured(id, !isFeatured),
+                isFeatured ? 'Removed from featured' : 'Marked as featured'
+              )
+            }
+            className="block w-full px-3 py-1.5 text-left text-sm text-sand-700 hover:bg-ink-50"
+          >
+            {isFeatured ? 'Remove featured' : 'Mark as featured'}
+          </button>
           <button
             onClick={() => run(() => duplicatePackage(id), 'Package duplicated')}
             className="block w-full px-3 py-1.5 text-left text-sm text-ink-700 hover:bg-ink-50"

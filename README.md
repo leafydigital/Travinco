@@ -157,11 +157,27 @@ Recommended manual test path for your first run:
 
 ## 9. Production deployment (not done — you asked to stay on localhost)
 
-When ready: typical path is Vercel (frontend) + your Supabase project
-(already cloud-hosted unless you're using the local CLI). Set the same
-environment variables in your hosting provider's dashboard. Switch
-`WHATSAPP_PROVIDER` away from `mock` only once you have real, approved
-WhatsApp Business API credentials.
+Deployment config is included for **Netlify** (`netlify.toml` +
+`@netlify/plugin-nextjs` in `devDependencies`), which is the officially
+supported way to run a Next.js App Router project — including Server
+Actions (used throughout `/admin` and the public enquiry/contact forms) —
+on Netlify without a custom adapter.
+
+To deploy:
+1. Push this repo to GitHub/GitLab/Bitbucket.
+2. In Netlify: **Add new site → Import an existing project**, pick the repo.
+   Netlify auto-detects `netlify.toml` and the Next.js plugin.
+3. Under **Site settings → Environment variables**, add every variable
+   from `.env.example` with real values — same as local, except
+   `NEXT_PUBLIC_SITE_URL` should be your Netlify URL (or custom domain).
+4. Deploy. First build runs `npm run build` per `netlify.toml`.
+5. Keep `WHATSAPP_PROVIDER=mock` until you have real, approved WhatsApp
+   Business API credentials — switching it is just an env var change,
+   same as local.
+
+Vercel remains an equally valid alternative (arguably the more common
+choice for Next.js) if you'd rather use that — no code changes needed,
+just skip `netlify.toml` and import the repo into Vercel instead.
 
 ---
 
@@ -292,5 +308,3 @@ Being direct about what's unverified or intentionally deferred:
    calculations in the system
 6. Consider a background job queue for WhatsApp campaign sends once
    recipient lists grow beyond what one request/response cycle should handle
-# Travinco
-# Travinco

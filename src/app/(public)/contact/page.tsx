@@ -12,7 +12,7 @@ export default async function ContactPage() {
   const settings = await getGeneralSettings();
 
   return (
-    <div className="container-page py-14">
+    <div className="container-page pt-32 pb-14">
       <div className="mb-10 max-w-2xl">
         <h1 className="font-display text-3xl font-semibold text-ink-900 sm:text-4xl">Contact us</h1>
         <p className="mt-3 text-ink-600">Tell us where you want to go, and we&apos;ll take it from there.</p>
@@ -66,7 +66,7 @@ export default async function ContactPage() {
         </div>
 
         <div className="lg:col-span-2">
-          <div className="card p-6">
+          <div className="card border-t-4 border-t-coral-500 p-6">
             <ContactForm />
           </div>
         </div>

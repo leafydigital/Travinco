@@ -3,6 +3,7 @@ import { requireProfile } from '@/lib/supabase/auth-helpers';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { formatCurrency } from '@/lib/utils/format';
 import Link from 'next/link';
+import Image from 'next/image';
 import { Plus, Search } from 'lucide-react';
 import { PackageRowActions } from './package-row-actions';
 
@@ -33,7 +34,7 @@ export default async function AdminPackagesPage({
 
   let query = supabase
     .from('travel_packages')
-    .select('id, title, slug, status, base_price, discount_price, currency, is_featured, destinations(name)', {
+    .select('id, title, slug, status, base_price, discount_price, currency, duration_days, duration_nights, cover_image_url, is_featured, destinations(name)', {
       count: 'exact',
     })
     .order('created_at', { ascending: false })
@@ -88,17 +89,20 @@ export default async function AdminPackagesPage({
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-ink-100 text-left text-xs uppercase tracking-wide text-ink-400">
+                <th className="px-5 py-3">Image</th>
                 <th className="px-5 py-3">Package</th>
                 <th className="px-5 py-3">Destination</th>
+                <th className="px-5 py-3">Duration</th>
                 <th className="px-5 py-3">Price</th>
                 <th className="px-5 py-3">Status</th>
+                <th className="px-5 py-3">Featured</th>
                 <th className="px-5 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
               {(packages ?? []).length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-5 py-10 text-center text-ink-400">
+                  <td colSpan={8} className="px-5 py-10 text-center text-ink-400">
                     No packages found. Try adjusting your search or create a new one.
                   </td>
                 </tr>
@@ -106,18 +110,38 @@ export default async function AdminPackagesPage({
               {(packages ?? []).map((pkg) => (
                 <tr key={pkg.id} className="border-b border-ink-50 last:border-0 hover:bg-ink-50/50">
                   <td className="px-5 py-3">
+                    <div className="relative h-12 w-16 overflow-hidden rounded-lg bg-ink-100">
+                      {pkg.cover_image_url ? (
+                        <Image
+                          src={pkg.cover_image_url}
+                          alt={pkg.title}
+                          fill
+                          className="object-cover"
+                          sizes="64px"
+                        />
+                      ) : (
+                        <div className="flex h-full items-center justify-center text-[10px] text-ink-300">
+                          No image
+                        </div>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-5 py-3">
                     <Link
                       href={`/admin/packages/${pkg.id}`}
                       className="font-medium text-ink-800 hover:text-brand-700"
                     >
                       {pkg.title}
                     </Link>
-                    {pkg.is_featured && (
-                      <span className="ml-2 badge bg-sand-100 text-sand-800">Featured</span>
-                    )}
                   </td>
                   <td className="px-5 py-3 text-ink-600">
-                    {(pkg.destinations as { name: string } | null)?.name ?? '—'}
+                    {(() => {
+                      const dest = pkg.destinations as { name: string } | { name: string }[] | null;
+                      return (Array.isArray(dest) ? dest[0]?.name : dest?.name) ?? '—';
+                    })()}
+                  </td>
+                  <td className="px-5 py-3 text-ink-600">
+                    {pkg.duration_days}D / {pkg.duration_nights}N
                   </td>
                   <td className="px-5 py-3 text-ink-700">
                     {pkg.discount_price ? (
@@ -134,8 +158,15 @@ export default async function AdminPackagesPage({
                   <td className="px-5 py-3">
                     <StatusBadge status={pkg.status} />
                   </td>
+                  <td className="px-5 py-3">
+                    {pkg.is_featured ? (
+                      <span className="badge bg-sand-100 text-sand-800">Featured</span>
+                    ) : (
+                      <span className="text-ink-300">—</span>
+                    )}
+                  </td>
                   <td className="px-5 py-3 text-right">
-                    <PackageRowActions id={pkg.id} status={pkg.status} />
+                    <PackageRowActions id={pkg.id} status={pkg.status} isFeatured={pkg.is_featured} />
                   </td>
                 </tr>
               ))}

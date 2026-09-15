@@ -5,7 +5,13 @@
 // following the same pattern as `gallery`, and swap this file for a
 // Supabase query. Content below is original, not copied from any source.
 
-export const testimonials = [
+export interface Testimonial {
+  name: string;
+  trip: string;
+  quote: string;
+}
+
+export const testimonials: Testimonial[] = [
   {
     name: 'Ritika & Arjun',
     trip: 'Kerala backwaters honeymoon',

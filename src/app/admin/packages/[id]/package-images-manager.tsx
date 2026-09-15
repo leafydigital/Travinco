@@ -4,8 +4,8 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import Image from 'next/image';
-import { X, Star, Plus } from 'lucide-react';
-import { addPackageImage, removePackageImage } from '../sub-resource-actions';
+import { X, Star, Plus, ArrowUp, ArrowDown } from 'lucide-react';
+import { addPackageImage, removePackageImage, setCoverImage, reorderPackageImage } from '../sub-resource-actions';
 import type { Tables } from '@/types/database';
 
 export function PackageImagesManager({
@@ -40,17 +40,34 @@ export function PackageImagesManager({
     });
   }
 
+  function makeCover(id: string, imageUrl: string) {
+    startTransition(async () => {
+      const result = await setCoverImage(packageId, id, imageUrl);
+      if (result.error) toast.error(result.error);
+      router.refresh();
+    });
+  }
+
+  function move(id: string, direction: 'up' | 'down') {
+    startTransition(async () => {
+      const result = await reorderPackageImage(packageId, id, direction);
+      if (result.error) toast.error(result.error);
+      router.refresh();
+    });
+  }
+
+  const sorted = [...images].sort((a, b) => a.sort_order - b.sort_order);
+
   return (
     <div className="space-y-4">
       <p className="text-xs text-ink-400">
-        Paste an image URL from your Supabase Storage bucket (or any public image host). Direct
-        file upload from this screen is wired up in the storage phase — see README for the
-        Supabase Storage bucket setup.
+        Paste an image URL from your Supabase Storage bucket (or any public image host). Use the
+        arrows to reorder, the star to set the cover image shown on the public site.
       </p>
 
-      {images.length > 0 && (
+      {sorted.length > 0 && (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          {images.map((img) => (
+          {sorted.map((img, i) => (
             <div key={img.id} className="group relative aspect-video overflow-hidden rounded-lg border border-ink-100">
               <Image src={img.image_url} alt={img.alt_text ?? ''} fill className="object-cover" unoptimized />
               {img.is_cover && (
@@ -58,14 +75,48 @@ export function PackageImagesManager({
                   <Star className="h-3 w-3 fill-current" />
                 </span>
               )}
-              <button
-                type="button"
-                onClick={() => remove(img.id)}
-                className="absolute right-1.5 top-1.5 rounded-full bg-black/60 p-1 text-white opacity-0 transition-opacity group-hover:opacity-100"
-                aria-label="Remove image"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
+              <div className="absolute inset-x-0 bottom-0 flex items-center justify-between bg-gradient-to-t from-navy-900/80 to-transparent p-1.5 opacity-0 transition-opacity group-hover:opacity-100">
+                <div className="flex gap-1">
+                  <button
+                    type="button"
+                    onClick={() => move(img.id, 'up')}
+                    disabled={isPending || i === 0}
+                    className="rounded-full bg-white/90 p-1 text-ink-700 disabled:opacity-40"
+                    aria-label="Move earlier"
+                  >
+                    <ArrowUp className="h-3 w-3" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => move(img.id, 'down')}
+                    disabled={isPending || i === sorted.length - 1}
+                    className="rounded-full bg-white/90 p-1 text-ink-700 disabled:opacity-40"
+                    aria-label="Move later"
+                  >
+                    <ArrowDown className="h-3 w-3" />
+                  </button>
+                  {!img.is_cover && (
+                    <button
+                      type="button"
+                      onClick={() => makeCover(img.id, img.image_url)}
+                      disabled={isPending}
+                      className="rounded-full bg-white/90 p-1 text-sand-700"
+                      aria-label="Set as cover"
+                    >
+                      <Star className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => remove(img.id)}
+                  disabled={isPending}
+                  className="rounded-full bg-coral-600 p-1 text-white"
+                  aria-label="Remove image"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
             </div>
           ))}
         </div>

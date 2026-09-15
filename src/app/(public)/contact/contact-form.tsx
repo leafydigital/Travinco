@@ -45,7 +45,7 @@ export function ContactForm() {
       <textarea name="message" required rows={4} placeholder="Your message*" className="input" />
 
       {state.error && (
-        <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{state.error}</p>
+        <p className="rounded-lg bg-coral-50 px-3 py-2 text-sm text-coral-700">{state.error}</p>
       )}
 
       <SubmitButton />

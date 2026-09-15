@@ -1,7 +1,7 @@
 'use client';
 
 import { useFormState, useFormStatus } from 'react-dom';
-import { submitEnquiry, type EnquirySubmitState } from '../actions';
+import { submitEnquiry, type EnquirySubmitState } from '@/app/(public)/actions';
 import { CheckCircle2 } from 'lucide-react';
 
 const initialState: EnquirySubmitState = {};
@@ -83,7 +83,7 @@ export function EnquiryForm({
       />
 
       {state.error && (
-        <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{state.error}</p>
+        <p className="rounded-lg bg-coral-50 px-3 py-2 text-sm text-coral-700">{state.error}</p>
       )}
 
       <SubmitButton label={buttonLabel} />

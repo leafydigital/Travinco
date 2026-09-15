@@ -4,7 +4,7 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Plus } from 'lucide-react';
-import { createWhatsappContact } from '../actions';
+import { createWhatsappContact } from './actions';
 
 export function ContactAddForm({ customers }: { customers: { id: string; full_name: string }[] }) {
   const router = useRouter();

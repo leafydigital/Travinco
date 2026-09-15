@@ -79,9 +79,18 @@ export default async function AdminIncomePage({
                   <td className="px-5 py-3 text-ink-500">{row.income_number}</td>
                   <td className="px-5 py-3 capitalize text-ink-600">{row.category.replace('_', ' ')}</td>
                   <td className="px-5 py-3 text-ink-600">
-                    {(row.customers as { full_name: string } | null)?.full_name ?? '—'}
-                    {(row.bookings as { booking_number: string } | null)?.booking_number &&
-                      ` · ${(row.bookings as { booking_number: string }).booking_number}`}
+                    {(() => {
+                      const cust = row.customers as { full_name: string } | { full_name: string }[] | null;
+                      const bk = row.bookings as { booking_number: string } | { booking_number: string }[] | null;
+                      const customerName = (Array.isArray(cust) ? cust[0]?.full_name : cust?.full_name) ?? '—';
+                      const booking = Array.isArray(bk) ? bk[0] : bk;
+                      return (
+                        <>
+                          {customerName}
+                          {booking?.booking_number && ` · ${booking.booking_number}`}
+                        </>
+                      );
+                    })()}
                   </td>
                   <td className="px-5 py-3 capitalize text-ink-500">{row.payment_method.replace('_', ' ')}</td>
                   <td className="px-5 py-3 text-right font-medium text-brand-700">

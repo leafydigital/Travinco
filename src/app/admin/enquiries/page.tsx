@@ -165,7 +165,10 @@ export default async function AdminEnquiriesPage({
                       <StatusBadge status={e.priority} />
                     </td>
                     <td className="px-5 py-3 text-ink-500">
-                      {(e.profiles as { full_name: string } | null)?.full_name ?? 'Unassigned'}
+                      {(() => {
+                        const prof = e.profiles as { full_name: string } | { full_name: string }[] | null;
+                        return (Array.isArray(prof) ? prof[0]?.full_name : prof?.full_name) ?? 'Unassigned';
+                      })()}
                     </td>
                     <td className={`px-5 py-3 ${isOverdue ? 'font-medium text-red-600' : 'text-ink-500'}`}>
                       {e.next_followup_date ? formatDate(e.next_followup_date) : '—'}

@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import { TextField, TextAreaField } from '@/components/ui/form-fields';
 import { slugify } from '@/lib/validations/package';
 import type { DestinationFormValues } from '@/lib/validations/settings';
-import { createDestination, updateDestination } from '../actions';
+import { createDestination, updateDestination } from './actions';
 
 export function DestinationForm({
   destinationId,

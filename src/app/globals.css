@@ -7,13 +7,16 @@
     scroll-behavior: smooth;
   }
   body {
-    @apply bg-white text-ink-800 antialiased;
+    @apply bg-white text-ink-900 antialiased;
   }
   h1,
   h2,
   h3,
   h4 {
     @apply font-display;
+  }
+  :focus-visible {
+    @apply outline-none ring-2 ring-brand-500 ring-offset-2;
   }
 }
 
@@ -23,16 +26,19 @@
   }
 
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm font-medium transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-50;
   }
   .btn-primary {
-    @apply btn bg-brand-600 text-white hover:bg-brand-700;
+    @apply btn bg-brand-700 text-white shadow-sm hover:-translate-y-0.5 hover:bg-brand-800 hover:shadow-md;
+  }
+  .btn-cta {
+    @apply btn bg-coral-500 text-white shadow-sm hover:-translate-y-0.5 hover:bg-coral-600 hover:shadow-md;
   }
   .btn-secondary {
     @apply btn bg-sand-100 text-sand-800 hover:bg-sand-200;
   }
   .btn-outline {
-    @apply btn border border-ink-200 bg-white text-ink-700 hover:bg-ink-50;
+    @apply btn border border-ink-200 bg-white text-ink-700 hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700;
   }
   .btn-ghost {
     @apply btn bg-transparent text-ink-600 hover:bg-ink-50;
@@ -42,7 +48,10 @@
   }
 
   .card {
-    @apply rounded-xl2 border border-ink-100 bg-white shadow-sm;
+    @apply rounded-xl2 border border-ink-100 bg-white shadow-sm transition-all duration-200;
+  }
+  .card-hover {
+    @apply card hover:-translate-y-1 hover:shadow-lg;
   }
 
   .input {
@@ -58,4 +67,42 @@
   .badge {
     @apply inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium;
   }
+  .badge-featured {
+    @apply badge bg-sand-100 text-sand-800;
+  }
+  .badge-discount {
+    @apply badge bg-coral-500 text-white;
+  }
+  .badge-duration {
+    @apply badge bg-ocean-50 text-ocean-800;
+  }
+  .badge-destination {
+    @apply badge bg-brand-50 text-brand-800;
+  }
+  .badge-event {
+    @apply badge bg-navy-800 text-white;
+  }
+  .badge-offer {
+    @apply badge bg-coral-50 text-coral-700;
+  }
+  .badge-status {
+    @apply badge bg-brand-100 text-brand-800;
+  }
+
+  /* Alternating section background tokens — used across public pages to
+     create the "visual rhythm" called for in the design brief, instead
+     of every section defaulting to the same dark background. */
+  .section-light {
+    @apply bg-white;
+  }
+  .section-aqua {
+    @apply bg-ocean-50;
+  }
+  .section-sand {
+    @apply bg-sand-50;
+  }
+  .section-navy {
+    @apply bg-navy-900 text-white;
+  }
 }
+

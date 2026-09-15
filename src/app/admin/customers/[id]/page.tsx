@@ -76,8 +76,11 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
                   <div>
                     <p className="font-medium text-ink-700">{e.enquiry_number}</p>
                     <p className="text-xs text-ink-400">
-                      {(e.travel_packages as { title: string } | null)?.title ?? 'No package linked'} ·{' '}
-                      {formatDate(e.created_at)}
+                      {(() => {
+                        const pkg = e.travel_packages as { title: string } | { title: string }[] | null;
+                        return (Array.isArray(pkg) ? pkg[0]?.title : pkg?.title) ?? 'No package linked';
+                      })()}{' '}
+                      · {formatDate(e.created_at)}
                     </p>
                   </div>
                   <StatusBadge status={e.status} />
@@ -101,7 +104,11 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
                   <div>
                     <p className="font-medium text-ink-700">{b.booking_number}</p>
                     <p className="text-xs text-ink-400">
-                      {(b.travel_packages as { title: string } | null)?.title} · {formatDate(b.travel_start_date)}
+                      {(() => {
+                        const pkg = b.travel_packages as { title: string } | { title: string }[] | null;
+                        return Array.isArray(pkg) ? pkg[0]?.title : pkg?.title;
+                      })()}{' '}
+                      · {formatDate(b.travel_start_date)}
                     </p>
                   </div>
                   <div className="text-right">
