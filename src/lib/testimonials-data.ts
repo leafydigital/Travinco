@@ -9,6 +9,7 @@ export interface Testimonial {
   name: string;
   trip: string;
   quote: string;
+  rating: number;
 }
 
 export const testimonials: Testimonial[] = [
@@ -17,17 +18,20 @@ export const testimonials: Testimonial[] = [
     trip: 'Kerala backwaters honeymoon',
     quote:
       'Every hotel and houseboat was exactly as described, and our contact answered within minutes whenever we had a question. Genuinely stress-free.',
+    rating: 5,
   },
   {
     name: 'The Nair family',
     trip: 'Himachal family trip',
     quote:
       'They planned around our kids\u2019 nap schedule without us even asking twice. Small thing, but it told us they were actually listening.',
+    rating: 5,
   },
   {
     name: 'Devika S.',
     trip: 'Solo trip to Ladakh',
     quote:
       'I was nervous about traveling alone at altitude. The itinerary paced the acclimatization properly and the local guide was fantastic.',
+    rating: 4,
   },
 ];

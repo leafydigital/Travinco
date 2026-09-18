@@ -4,6 +4,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { formatDate } from '@/lib/utils/format';
 import Link from 'next/link';
 import { Search } from 'lucide-react';
+import { EnquiryRowActions } from './enquiry-row-actions';
 
 const PAGE_SIZE = 25;
 
@@ -135,12 +136,13 @@ export default async function AdminEnquiriesPage({
                 <th className="px-5 py-3">Assigned</th>
                 <th className="px-5 py-3">Follow-up</th>
                 <th className="px-5 py-3">Date</th>
+                <th className="px-5 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
               {(enquiries ?? []).length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-5 py-10 text-center text-ink-400">
+                  <td colSpan={8} className="px-5 py-10 text-center text-ink-400">
                     No enquiries match these filters.
                   </td>
                 </tr>
@@ -174,6 +176,9 @@ export default async function AdminEnquiriesPage({
                       {e.next_followup_date ? formatDate(e.next_followup_date) : '—'}
                     </td>
                     <td className="px-5 py-3 text-ink-500">{formatDate(e.created_at)}</td>
+                    <td className="px-5 py-3">
+                      <EnquiryRowActions id={e.id} />
+                    </td>
                   </tr>
                 );
               })}

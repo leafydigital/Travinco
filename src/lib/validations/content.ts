@@ -17,6 +17,20 @@ export const eventSchema = z.object({
 
 export type EventFormValues = z.infer<typeof eventSchema>;
 
+export const blogPostSchema = z.object({
+  title: z.string().min(3, 'Title is required').max(200),
+  slug: z
+    .string()
+    .min(3)
+    .max(220)
+    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Lowercase letters, numbers and hyphens only'),
+  excerpt: z.string().max(500).optional().nullable(),
+  content: z.string().optional().nullable(),
+  cover_image_url: z.string().url().optional().nullable().or(z.literal('')),
+});
+
+export type BlogPostFormValues = z.infer<typeof blogPostSchema>;
+
 export const offerSchema = z
   .object({
     title: z.string().min(3, 'Title is required').max(200),
@@ -32,6 +46,10 @@ export const offerSchema = z
     discount_flat: z.coerce.number().min(0).optional().nullable(),
     valid_from: z.string().min(1, 'Start date is required'),
     valid_to: z.string().min(1, 'End date is required'),
+    // Convenience-only field, never stored: when set, the create form
+    // computes valid_to as "today + N days" client-side instead of
+    // requiring the admin to pick a specific end date.
+    days_from_now: z.coerce.number().int().min(1).optional().nullable(),
     image_url: z.string().url().optional().nullable().or(z.literal('')),
     terms: z.string().optional().nullable(),
   })

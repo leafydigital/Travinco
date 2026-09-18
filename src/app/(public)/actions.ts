@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { enquiryFormSchema } from '@/lib/validations/enquiry';
 import { headers } from 'next/headers';
+import { wasEnquiryEmailRecentlyVerified } from '@/lib/enquiry-otp';
 
 export type EnquirySubmitState = {
   error?: string;
@@ -34,6 +35,15 @@ export async function submitEnquiry(
   _prev: EnquirySubmitState,
   formData: FormData
 ): Promise<EnquirySubmitState> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { error: 'Please log in to your account before submitting a request.' };
+  }
+
   const headersList = await headers();
   const ip = headersList.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
 
@@ -45,7 +55,10 @@ export async function submitEnquiry(
   const parsed = enquiryFormSchema.safeParse(raw);
 
   if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? 'Please check the form and try again.' };
+    const firstIssue = parsed.error.issues[0];
+    const fieldName = firstIssue?.path?.[0];
+    const message = firstIssue?.message ?? 'Please check the form and try again.';
+    return { error: fieldName ? `${fieldName}: ${message}` : message };
   }
 
   // Honeypot tripped — silently pretend success so bots don't learn to
@@ -54,7 +67,16 @@ export async function submitEnquiry(
     return { success: true, enquiryNumber: 'ENQ-0000-00000' };
   }
 
-  const supabase = await createClient();
+  // If an email was given, it must have been verified via the OTP flow
+  // just before submitting — this is the actual enforcement point; the
+  // OTP UI alone is decorative without this check.
+  if (parsed.data.email) {
+    const verified = await wasEnquiryEmailRecentlyVerified(parsed.data.email);
+    if (!verified) {
+      return { error: 'Please verify your email before submitting.' };
+    }
+  }
+
   const { data, error } = await supabase
     .from('enquiries')
     .insert({
@@ -67,6 +89,7 @@ export async function submitEnquiry(
       travel_date: parsed.data.travel_date || null,
       number_of_adults: parsed.data.number_of_adults,
       number_of_children: parsed.data.number_of_children,
+      number_of_infants: parsed.data.number_of_infants,
       budget: parsed.data.budget || null,
       message: parsed.data.message || null,
       source: 'website',

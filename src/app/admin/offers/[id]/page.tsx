@@ -10,7 +10,7 @@ export default async function EditOfferPage({ params }: { params: { id: string }
   const supabase = await createClient();
   const [{ data: offer }, { data: packages }] = await Promise.all([
     supabase.from('offers').select('*').eq('id', params.id).single(),
-    supabase.from('travel_packages').select('id, title').order('title'),
+    supabase.from('travel_packages').select('id, title, base_price, currency').order('title'),
   ]);
 
   if (!offer) notFound();

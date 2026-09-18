@@ -9,12 +9,21 @@ export default async function AdminGalleryPage() {
   const { data: images } = await supabase
     .from('gallery')
     .select('*')
-    .order('created_at', { ascending: false });
+    .order('country', { ascending: true })
+    .order('category', { ascending: true })
+    .order('sort_order', { ascending: true });
+
+  const existingCountries = Array.from(
+    new Set((images ?? []).map((img) => img.country).filter((c): c is string => Boolean(c)))
+  ).sort();
+  const existingCategories = Array.from(
+    new Set((images ?? []).map((img) => img.category).filter((c): c is string => Boolean(c)))
+  ).sort();
 
   return (
     <div className="space-y-5">
       <h1 className="text-xl font-semibold text-ink-900">Gallery</h1>
-      <GalleryAddForm />
+      <GalleryAddForm existingCountries={existingCountries} existingCategories={existingCategories} />
       <GalleryGrid images={images ?? []} />
     </div>
   );

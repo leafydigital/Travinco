@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { TextField, TextAreaField } from '@/components/ui/form-fields';
 import type { GeneralSettingsFormValues } from '@/lib/validations/settings';
 import { saveGeneralSettings } from './actions';
+import { uploadLogoImage } from './upload-actions';
 
 export function GeneralSettingsForm({
   initialValues,
@@ -14,6 +15,7 @@ export function GeneralSettingsForm({
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [isUploading, setIsUploading] = useState(false);
   const [values, setValues] = useState<Partial<GeneralSettingsFormValues>>({
     social: { facebook: '', instagram: '', twitter: '' },
     ...initialValues,
@@ -21,6 +23,23 @@ export function GeneralSettingsForm({
 
   function set<K extends keyof GeneralSettingsFormValues>(key: K, value: GeneralSettingsFormValues[K]) {
     setValues((v) => ({ ...v, [key]: value }));
+  }
+
+  async function handleLogoSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsUploading(true);
+    const formData = new FormData();
+    formData.set('file', file);
+    const result = await uploadLogoImage(formData);
+    if (result.error) {
+      toast.error(result.error);
+    } else if (result.url) {
+      set('logo_url', result.url);
+      toast.success('Logo uploaded');
+    }
+    setIsUploading(false);
+    e.target.value = '';
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -45,11 +64,23 @@ export function GeneralSettingsForm({
           value={values.business_name ?? ''}
           onChange={(e) => set('business_name', e.target.value)}
         />
-        <TextField
-          label="Logo URL"
-          value={values.logo_url ?? ''}
-          onChange={(e) => set('logo_url', e.target.value)}
-        />
+        <div>
+          <label className="label">Logo</label>
+          {values.logo_url && (
+            <div className="mb-2 h-16 w-40 overflow-hidden rounded-lg border border-ink-100 bg-white p-1">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={values.logo_url} alt="" className="h-full w-full object-contain" />
+            </div>
+          )}
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            onChange={handleLogoSelect}
+            disabled={isUploading}
+            className="block w-full text-sm text-ink-600 file:mr-3 file:rounded-full file:border-0 file:bg-brand-50 file:px-4 file:py-2 file:text-sm file:font-medium file:text-brand-700 hover:file:bg-brand-100"
+          />
+          {isUploading && <p className="mt-1.5 text-xs text-brand-600">Uploading…</p>}
+        </div>
         <TextField label="Phone" value={values.phone ?? ''} onChange={(e) => set('phone', e.target.value)} />
         <TextField
           label="WhatsApp number"

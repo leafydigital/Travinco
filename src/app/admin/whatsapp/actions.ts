@@ -33,6 +33,13 @@ export async function createWhatsappContact(raw: unknown) {
   return {};
 }
 
+/**
+ * Toggles a contact's opt-in status. Recording opted_in_at / opted_out_at
+ * is not cosmetic — it's the audit trail that proves consent (or its
+ * withdrawal) if that's ever questioned, and the DB trigger in migration
+ * 006 refuses to add an opted-out contact to a campaign regardless of
+ * what this action does, so consent is enforced at two layers.
+ */
 export async function setWhatsappOptIn(id: string, optIn: boolean) {
   await requireProfile();
   const supabase = await createClient();
@@ -113,6 +120,9 @@ export async function createWhatsappCampaign(raw: unknown) {
 
   if (error || !campaign) return { error: 'Could not create campaign.' };
 
+  // Build the recipient list now from opted-in contacts matching the
+  // audience tag (or all opted-in contacts if no tag filter given). The
+  // DB trigger still re-verifies opt-in on each insert as a second gate.
   let contactsQuery = supabase.from('whatsapp_contacts').select('id').eq('opt_in', true);
   if (parsed.data.audience_tag) {
     contactsQuery = contactsQuery.contains('tags', [parsed.data.audience_tag]);
@@ -141,6 +151,15 @@ export async function deleteWhatsappCampaign(id: string) {
   return {};
 }
 
+/**
+ * Sends a campaign through the configured provider (mock by default).
+ * Processes recipients sequentially and updates each recipient row's
+ * delivery_status as results come back, so the admin can watch progress
+ * rather than getting a single all-or-nothing result. Runs as one server
+ * action call — fine for the recipient volumes a small agency sends; for
+ * very large lists this would move to a background job queue rather than
+ * a single request/response cycle.
+ */
 export async function sendWhatsappCampaign(campaignId: string) {
   await requireProfile();
   const supabase = await createClient();

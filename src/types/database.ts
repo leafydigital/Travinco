@@ -107,7 +107,7 @@ export interface Database {
       travel_packages: {
         Row: {
           id: string;
-          destination_id: string;
+          destination_id: string | null;
           title: string;
           slug: string;
           category: PackageCategory;
@@ -128,6 +128,7 @@ export interface Database {
           seats_booked: number;
           pickup_info: string | null;
           cover_image_url: string | null;
+          video_url: string | null;
           meta_title: string | null;
           meta_description: string | null;
           created_by: string | null;
@@ -135,7 +136,6 @@ export interface Database {
           updated_at: string;
         };
         Insert: Partial<Database['public']['Tables']['travel_packages']['Row']> & {
-          destination_id: string;
           title: string;
           slug: string;
           duration_days: number;
@@ -159,6 +159,20 @@ export interface Database {
           image_url: string;
         };
         Update: Partial<Database['public']['Tables']['package_images']['Row']>;
+      };
+      package_videos: {
+        Row: {
+          id: string;
+          package_id: string;
+          video_url: string;
+          sort_order: number;
+          created_at: string;
+        };
+        Insert: Partial<Database['public']['Tables']['package_videos']['Row']> & {
+          package_id: string;
+          video_url: string;
+        };
+        Update: Partial<Database['public']['Tables']['package_videos']['Row']>;
       };
       package_itineraries: {
         Row: {
@@ -196,18 +210,83 @@ export interface Database {
         };
         Update: Partial<Database['public']['Tables']['package_exclusions']['Row']>;
       };
+      enquiry_email_otps: {
+        Row: {
+          id: string;
+          email: string;
+          code_hash: string;
+          expires_at: string;
+          attempts: number;
+          verified_at: string | null;
+          created_at: string;
+        };
+        Insert: Partial<Database['public']['Tables']['enquiry_email_otps']['Row']> & {
+          email: string;
+          code_hash: string;
+          expires_at: string;
+        };
+        Update: Partial<Database['public']['Tables']['enquiry_email_otps']['Row']>;
+      };
+      staff_permissions: {
+        Row: {
+          id: string;
+          profile_id: string;
+          module: string;
+          can_view: boolean;
+          can_edit: boolean;
+          created_at: string;
+        };
+        Insert: Partial<Database['public']['Tables']['staff_permissions']['Row']> & {
+          profile_id: string;
+          module: string;
+        };
+        Update: Partial<Database['public']['Tables']['staff_permissions']['Row']>;
+      };
+      customer_accounts: {
+        Row: {
+          id: string;
+          full_name: string | null;
+          email: string;
+          created_at: string;
+        };
+        Insert: Partial<Database['public']['Tables']['customer_accounts']['Row']> & {
+          id: string;
+          email: string;
+        };
+        Update: Partial<Database['public']['Tables']['customer_accounts']['Row']>;
+      };
       gallery: {
         Row: {
           id: string;
           title: string | null;
           image_url: string;
           category: string | null;
+          country: string | null;
           status: ContentStatus;
           sort_order: number;
           created_at: string;
         };
         Insert: Partial<Database['public']['Tables']['gallery']['Row']> & { image_url: string };
         Update: Partial<Database['public']['Tables']['gallery']['Row']>;
+      };
+      blog_posts: {
+        Row: {
+          id: string;
+          title: string;
+          slug: string;
+          excerpt: string | null;
+          content: string | null;
+          cover_image_url: string | null;
+          status: ContentStatus;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database['public']['Tables']['blog_posts']['Row']> & {
+          title: string;
+          slug: string;
+        };
+        Update: Partial<Database['public']['Tables']['blog_posts']['Row']>;
       };
       enquiries: {
         Row: {

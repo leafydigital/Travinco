@@ -3,12 +3,13 @@
 import { createClient } from '@/lib/supabase/server';
 import { headers } from 'next/headers';
 import { z } from 'zod';
+import { wasEnquiryEmailRecentlyVerified } from '@/lib/enquiry-otp';
 
 const contactSchema = z.object({
   name: z.string().min(2, 'Please enter your name').max(120),
   phone: z.string().max(20).optional().or(z.literal('')),
   whatsapp_number: z.string().max(20).optional().or(z.literal('')),
-  email: z.string().email('Enter a valid email').optional().or(z.literal('')),
+  email: z.string().email('Enter a valid email — we verify it before accepting your message'),
   subject: z.string().max(200).optional().or(z.literal('')),
   message: z.string().min(5, 'Message is too short').max(2000),
   website: z.string().max(0).optional().or(z.literal('')), // honeypot
@@ -43,26 +44,35 @@ export async function submitContactMessage(
   const parsed = contactSchema.safeParse(raw);
 
   if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? 'Please check the form and try again.' };
+    const firstIssue = parsed.error.issues[0];
+    const fieldName = firstIssue?.path?.[0];
+    const message = firstIssue?.message ?? 'Please check the form and try again.';
+    return { error: fieldName ? `${fieldName}: ${message}` : message };
   }
 
   if (parsed.data.website) {
     return { success: true }; // honeypot tripped — pretend success, write nothing
   }
 
-  if (!parsed.data.phone && !parsed.data.email) {
-    return { error: 'Please provide a phone number or email so we can reach you back.' };
+  const verified = await wasEnquiryEmailRecentlyVerified(parsed.data.email);
+  if (!verified) {
+    return { error: 'Please verify your email before submitting.' };
   }
 
   const supabase = await createClient();
-  const { error } = await supabase.from('contact_messages').insert({
-    name: parsed.data.name,
-    phone: parsed.data.phone || null,
+
+  // Written into the same enquiries table the enquiry/booking forms
+  // use, so every way a visitor can reach out shows up together in
+  // Admin -> Enquiries, rather than being split across two separate
+  // places. The message is prefixed so staff can tell at a glance this
+  // came from the Contact page rather than a package enquiry.
+  const { error } = await supabase.from('enquiries').insert({
+    customer_name: parsed.data.name,
+    phone: parsed.data.phone || 'Not provided',
     whatsapp_number: parsed.data.whatsapp_number || null,
     email: parsed.data.email || null,
-    subject: parsed.data.subject || null,
-    message: parsed.data.message,
-    ip_address: ip !== 'unknown' ? ip : null,
+    message: `[Contact form${parsed.data.subject ? ` — ${parsed.data.subject}` : ''}] ${parsed.data.message}`,
+    source: 'other',
   });
 
   if (error) {

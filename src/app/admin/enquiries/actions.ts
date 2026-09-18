@@ -78,6 +78,65 @@ export async function assignEnquiry(enquiryId: string, staffId: string | null) {
   return {};
 }
 
+const editEnquirySchema = z.object({
+  customer_name: z.string().min(2, 'Please enter a name').max(120),
+  phone: z.string().min(4).max(20),
+  whatsapp_number: z.string().max(20).optional().or(z.literal('')),
+  email: z.string().email('Enter a valid email'),
+  destination: z.string().max(120).optional().or(z.literal('')),
+  travel_date: z.string().optional().or(z.literal('')),
+  return_date: z.string().optional().or(z.literal('')),
+  number_of_adults: z.coerce.number().int().min(1),
+  number_of_children: z.coerce.number().int().min(0),
+  number_of_infants: z.coerce.number().int().min(0),
+  budget: z.coerce.number().min(0).optional(),
+  message: z.string().max(2000).optional().or(z.literal('')),
+});
+
+/**
+ * Lets staff correct/update the customer-submitted details on an
+ * enquiry — e.g. the customer calls to change their travel dates or
+ * headcount after submitting. Distinct from updateEnquiryStatus/
+ * updateEnquiryPriority above, which only touch the internal
+ * workflow fields, not what the customer actually asked for.
+ */
+export async function updateEnquiryDetails(enquiryId: string, raw: unknown) {
+  await requireProfile();
+  const parsed = editEnquirySchema.safeParse(raw);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    const field = issue?.path?.[0];
+    return { error: field ? `${field}: ${issue.message}` : issue?.message ?? 'Please check the form.' };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from('enquiries')
+    .update({
+      customer_name: parsed.data.customer_name,
+      phone: parsed.data.phone,
+      whatsapp_number: parsed.data.whatsapp_number || null,
+      email: parsed.data.email,
+      destination: parsed.data.destination || null,
+      travel_date: parsed.data.travel_date || null,
+      return_date: parsed.data.return_date || null,
+      number_of_adults: parsed.data.number_of_adults,
+      number_of_children: parsed.data.number_of_children,
+      number_of_infants: parsed.data.number_of_infants,
+      budget: parsed.data.budget ?? null,
+      message: parsed.data.message || null,
+    })
+    .eq('id', enquiryId);
+
+  if (error) return { error: 'Could not update enquiry details.' };
+
+  await logEnquiryActivity(enquiryId, 'details_edited', 'Trip details updated by staff');
+
+  revalidatePath(`/admin/enquiries/${enquiryId}`);
+  revalidatePath('/admin/enquiries');
+  return {};
+}
+
 export async function updateEnquiryPriority(
   enquiryId: string,
   priority: 'low' | 'medium' | 'high' | 'urgent'
@@ -254,7 +313,12 @@ export async function convertEnquiryToBooking(enquiryId: string) {
       package_id: enquiry.package_id,
       travel_start_date: travelStart,
       travel_end_date: travelEnd,
-      number_of_adults: enquiry.number_of_adults,
+      // bookings.number_of_adults has a `>= 1` check constraint. Most
+      // enquiries are created through validation that already enforces
+      // this, but older rows (or any other insert path) could still
+      // have 0 here — this floor keeps a bad historical value from
+      // making the whole conversion fail.
+      number_of_adults: Math.max(enquiry.number_of_adults, 1),
       number_of_children: enquiry.number_of_children,
       number_of_infants: enquiry.number_of_infants,
       base_amount: unitPrice * Math.max(paxCount, 1),
@@ -263,7 +327,11 @@ export async function convertEnquiryToBooking(enquiryId: string) {
     .select('id')
     .single();
 
-  if (bookingError || !booking) return { error: 'Could not create booking.' };
+  if (bookingError) {
+    console.error('convertEnquiryToBooking insert failed:', bookingError);
+    return { error: bookingError.message || 'Could not create booking.' };
+  }
+  if (!booking) return { error: 'Could not create booking.' };
 
   await supabase.from('enquiries').update({ status: 'confirmed' }).eq('id', enquiryId);
 
@@ -271,7 +339,40 @@ export async function convertEnquiryToBooking(enquiryId: string) {
     booking_id: booking.id,
   });
 
+  // Best-effort — a customer's booking confirmation succeeding should
+  // never depend on the email actually going out, so failures here are
+  // swallowed rather than surfaced as an error on the conversion itself.
+  if (enquiry.email) {
+    try {
+      const { sendGmail, isGmailConfigured } = await import('@/lib/email/gmail');
+      if (isGmailConfigured()) {
+        const trackUrl = `${process.env.NEXT_PUBLIC_SITE_URL ?? ''}/account/bookings`;
+        await sendGmail({
+          to: enquiry.email,
+          subject: 'Your booking has been confirmed',
+          html: `<p>Hi ${enquiry.customer_name},</p><p>Your enquiry has been confirmed as a booking. You can track its status any time by logging in to <a href="${trackUrl}">your account</a>.</p><p>We'll be in touch with next steps shortly.</p>`,
+        });
+      }
+    } catch {
+      // Swallowed intentionally — see comment above.
+    }
+  }
+
   revalidatePath('/admin/enquiries');
   revalidatePath('/admin/bookings');
   return { bookingId: booking.id };
+}
+
+export async function deleteEnquiry(enquiryId: string) {
+  const profile = await requireProfile();
+  if (!['admin', 'super_admin'].includes(profile.role)) {
+    return { error: 'Only admins can delete enquiries.' };
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase.from('enquiries').delete().eq('id', enquiryId);
+  if (error) return { error: 'Could not delete this enquiry.' };
+
+  revalidatePath('/admin/enquiries');
+  return {};
 }

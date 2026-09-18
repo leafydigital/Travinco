@@ -23,6 +23,9 @@ config({ path: resolve(__dirname, '../../.env.local') });
 
 import { createClient } from '@supabase/supabase-js';
 
+// Untyped client, matching the rest of this project's Supabase clients —
+// see src/lib/supabase/server.ts for why the Database generic was
+// removed everywhere.
 
 if (process.env.ALLOW_DEMO_SEED !== 'true') {
   console.error(
@@ -197,7 +200,7 @@ async function main() {
     .from('enquiries')
     .insert([
       {
-                customer_id: customers[0]!.id,
+        customer_id: customers[0]!.id,
         customer_name: customers[0]!.full_name,
         phone: customers[0]!.phone,
         email: 'ritika.demo@example.com',

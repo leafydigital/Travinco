@@ -9,11 +9,10 @@ export const metadata: Metadata = {
 
 export default async function BookingPage() {
   const supabase = await createClient();
-  const { data: packages } = await supabase
-    .from('travel_packages')
-    .select('id, title')
-    .eq('status', 'published')
-    .order('title');
+  const [{ data: packages }, { data: { user } }] = await Promise.all([
+    supabase.from('travel_packages').select('id, title').eq('status', 'published').order('title'),
+    supabase.auth.getUser(),
+  ]);
 
   return (
     <div className="container-page pt-32 pb-14">
@@ -38,7 +37,7 @@ export default async function BookingPage() {
               first.
             </p>
           )}
-          <EnquiryForm buttonLabel="Request a quote" />
+          <EnquiryForm buttonLabel="Request a quote" isLoggedIn={Boolean(user)} />
         </div>
       </div>
     </div>

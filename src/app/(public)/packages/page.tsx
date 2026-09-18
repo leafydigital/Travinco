@@ -13,6 +13,7 @@ export default async function PackagesPage({
   searchParams: { destination?: string; category?: string };
 }) {
   const supabase = await createClient();
+  const today = new Date().toISOString().slice(0, 10);
 
   let query = supabase
     .from('travel_packages')
@@ -27,7 +28,21 @@ export default async function PackagesPage({
     query = query.eq('category', searchParams.category);
   }
 
-  const { data: packages } = await query;
+  const [{ data: packages }, { data: activeOffers }] = await Promise.all([
+    query,
+    supabase
+      .from('offers')
+      .select('package_id, discount_percent, discount_flat, valid_to')
+      .eq('status', 'published')
+      .lte('valid_from', today)
+      .gte('valid_to', today),
+  ]);
+
+  // Keyed by package_id so each card can look up its own active offer (if
+  // any) in O(1) — an offer is only "active" while today falls inside its
+  // valid_from/valid_to window, so this naturally stops applying and the
+  // package reverts to its normal price with no cleanup job needed.
+  const offersByPackage = new Map((activeOffers ?? []).map((o) => [o.package_id, o]));
 
   const filtered = searchParams.destination
     ? (packages ?? []).filter((p) => {
@@ -85,12 +100,22 @@ export default async function PackagesPage({
           {filtered.map((pkg) => {
             const dest = pkg.destinations as { name: string } | { name: string }[] | null;
             const destinationName = Array.isArray(dest) ? dest[0]?.name : dest?.name;
+            const activeOffer = offersByPackage.get(pkg.id);
+            const offerPrice = activeOffer
+              ? activeOffer.discount_percent
+                ? pkg.base_price * (1 - activeOffer.discount_percent / 100)
+                : activeOffer.discount_flat
+                ? pkg.base_price - activeOffer.discount_flat
+                : null
+              : null;
             return (
               <PackageCard
                 key={pkg.id}
                 pkg={{
                   ...pkg,
                   destinationName,
+                  discount_price: offerPrice ?? pkg.discount_price,
+                  hasActiveOffer: Boolean(activeOffer),
                 }}
               />
             );

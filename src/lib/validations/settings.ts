@@ -28,6 +28,12 @@ export const bookingSettingsSchema = z.object({
 
 export type BookingSettingsFormValues = z.infer<typeof bookingSettingsSchema>;
 
+export const termsSettingsSchema = z.object({
+  terms_and_conditions: z.string().optional().or(z.literal('')),
+});
+
+export type TermsSettingsFormValues = z.infer<typeof termsSettingsSchema>;
+
 export const destinationSchema = z.object({
   name: z.string().min(2, 'Name is required').max(120),
   slug: z

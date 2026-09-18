@@ -28,3 +28,14 @@ export async function getGeneralSettings(): Promise<GeneralSettings> {
   const settings = await getSetting<GeneralSettings>('general');
   return settings ?? {};
 }
+
+export type TermsSettings = {
+  terms_and_conditions?: string;
+};
+
+/** The single, shared terms & conditions text shown on every package's
+ * detail page, replacing the old per-package field. */
+export async function getTermsSettings(): Promise<TermsSettings> {
+  const settings = await getSetting<TermsSettings>('terms');
+  return settings ?? {};
+}

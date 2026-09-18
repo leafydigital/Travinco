@@ -58,12 +58,15 @@ create or replace function public.recalc_booking_balance()
 returns trigger
 language plpgsql
 as $$
+declare
+  computed_total numeric(10, 2);
 begin
-  new.balance_amount := new.total_amount - new.amount_received;
+  computed_total := new.base_amount - new.discount_amount + new.tax_amount;
+  new.balance_amount := computed_total - new.amount_received;
 
   if new.amount_received <= 0 then
     new.payment_status := 'pending';
-  elsif new.amount_received >= new.total_amount then
+  elsif new.amount_received >= computed_total then
     new.payment_status := 'paid';
   else
     new.payment_status := 'partial';

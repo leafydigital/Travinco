@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils/cn';
 import type { NavSection, IconName } from '@/lib/admin-nav';
 import {
   LayoutDashboard, Package, MapPin, Inbox, Image as ImageIcon,
-  Settings, LogOut,
+  Settings, Tag, BookOpen, Users, LogOut,
   type LucideIcon,
 } from 'lucide-react';
 import { signOut } from '@/app/admin/actions';
@@ -16,7 +16,7 @@ import { signOut } from '@/app/admin/actions';
 // name string, since a live component reference can't cross the
 // Server -> Client boundary as plain data.
 const iconMap: Record<IconName, LucideIcon> = {
-  LayoutDashboard, Package, MapPin, Inbox, ImageIcon, Settings,
+  LayoutDashboard, Package, MapPin, Inbox, ImageIcon, Settings, Tag, BookOpen, Users,
 };
 
 export function AdminSidebar({
@@ -31,7 +31,7 @@ export function AdminSidebar({
   const pathname = usePathname();
 
   return (
-    <aside className="flex h-screen w-64 flex-col border-r border-ink-100 bg-white shadow-sm">
+    <aside className="sticky top-0 flex h-screen w-64 shrink-0 flex-col border-r border-ink-100 bg-white shadow-sm">
       <div className="flex h-16 items-center border-b border-ink-100 bg-navy-900 px-5">
         <span className="font-display text-lg font-semibold text-white">
           Travinco Admin

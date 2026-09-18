@@ -7,6 +7,7 @@ import { TextField, TextAreaField } from '@/components/ui/form-fields';
 import { slugify } from '@/lib/validations/package';
 import type { DestinationFormValues } from '@/lib/validations/settings';
 import { createDestination, updateDestination } from './actions';
+import { uploadDestinationImage } from './upload-actions';
 
 export function DestinationForm({
   destinationId,
@@ -17,7 +18,9 @@ export function DestinationForm({
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [isUploading, setIsUploading] = useState(false);
   const [slugTouched, setSlugTouched] = useState(Boolean(destinationId));
+  const [showSlugField, setShowSlugField] = useState(Boolean(destinationId));
   const [values, setValues] = useState<Partial<DestinationFormValues>>({
     is_featured: false,
     ...initialValues,
@@ -25,6 +28,23 @@ export function DestinationForm({
 
   function set<K extends keyof DestinationFormValues>(key: K, value: DestinationFormValues[K]) {
     setValues((v) => ({ ...v, [key]: value }));
+  }
+
+  async function handleCoverImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsUploading(true);
+    const formData = new FormData();
+    formData.set('file', file);
+    const result = await uploadDestinationImage(formData);
+    if (result.error) {
+      toast.error(result.error);
+    } else if (result.url) {
+      set('cover_image_url', result.url);
+      toast.success('Cover image uploaded');
+    }
+    setIsUploading(false);
+    e.target.value = '';
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -58,22 +78,50 @@ export function DestinationForm({
             if (!slugTouched) set('slug', slugify(e.target.value));
           }}
         />
-        <TextField
-          label="Slug"
-          required
-          value={values.slug ?? ''}
-          onChange={(e) => {
-            setSlugTouched(true);
-            set('slug', e.target.value);
-          }}
-        />
         <TextField label="Country" value={values.country ?? ''} onChange={(e) => set('country', e.target.value)} />
-        <TextField
-          label="Cover image URL"
-          value={values.cover_image_url ?? ''}
-          onChange={(e) => set('cover_image_url', e.target.value)}
-        />
       </div>
+
+      <div>
+        <label className="label">Cover image</label>
+        {values.cover_image_url && (
+          <div className="mb-2 h-32 w-full max-w-xs overflow-hidden rounded-lg border border-ink-100">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={values.cover_image_url} alt="" className="h-full w-full object-cover" />
+          </div>
+        )}
+        <input
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          onChange={handleCoverImageSelect}
+          disabled={isUploading}
+          className="block w-full text-sm text-ink-600 file:mr-3 file:rounded-full file:border-0 file:bg-brand-50 file:px-4 file:py-2 file:text-sm file:font-medium file:text-brand-700 hover:file:bg-brand-100"
+        />
+        {isUploading && <p className="mt-1.5 text-xs text-brand-600">Uploading…</p>}
+      </div>
+
+      <div>
+        {!showSlugField ? (
+          <button
+            type="button"
+            onClick={() => setShowSlugField(true)}
+            className="text-xs text-brand-600 hover:underline"
+          >
+            Customize page URL
+          </button>
+        ) : (
+          <TextField
+            label="Slug (URL)"
+            required
+            value={values.slug ?? ''}
+            onChange={(e) => {
+              setSlugTouched(true);
+              set('slug', e.target.value);
+            }}
+            hint="Used in the public URL, e.g. /destinations/munnar. Filled in automatically from the name — only change this if you specifically need a different URL."
+          />
+        )}
+      </div>
+
       <TextAreaField
         label="Description"
         rows={4}

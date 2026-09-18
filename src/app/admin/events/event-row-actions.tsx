@@ -39,11 +39,6 @@ export function EventRowActions({ id, status }: { id: string; status: ContentSta
           Unpublish
         </button>
       )}
-      {status !== 'archived' && (
-        <button onClick={() => setStatus('archived')} disabled={isPending} className="text-ink-500 hover:underline">
-          Archive
-        </button>
-      )}
       <button onClick={remove} disabled={isPending} className="text-red-600 hover:underline">
         Delete
       </button>

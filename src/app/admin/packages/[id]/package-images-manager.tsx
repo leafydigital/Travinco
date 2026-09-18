@@ -16,18 +16,35 @@ export function PackageImagesManager({
   images: Tables<'package_images'>[];
 }) {
   const router = useRouter();
-  const [url, setUrl] = useState('');
+  const [urlsText, setUrlsText] = useState('');
   const [isPending, startTransition] = useTransition();
 
-  function add(isCover: boolean) {
-    if (!url.trim()) return;
+  function parseUrls(text: string): string[] {
+    return text
+      .split(/[\n,]/)
+      .map((u) => u.trim())
+      .filter(Boolean);
+  }
+
+  function add() {
+    const urls = parseUrls(urlsText);
+    if (urls.length === 0) return;
     startTransition(async () => {
-      const result = await addPackageImage(packageId, url.trim(), isCover);
-      if (result.error) {
-        toast.error(result.error);
-        return;
+      let addedCount = 0;
+      let firstError: string | null = null;
+      for (const url of urls) {
+        const result = await addPackageImage(packageId, url, false);
+        if (result.error) {
+          firstError = firstError ?? result.error;
+        } else {
+          addedCount += 1;
+        }
       }
-      setUrl('');
+      if (firstError) toast.error(firstError);
+      if (addedCount > 0) {
+        toast.success(addedCount === 1 ? 'Image added' : `${addedCount} images added`);
+        setUrlsText('');
+      }
       router.refresh();
     });
   }
@@ -57,12 +74,14 @@ export function PackageImagesManager({
   }
 
   const sorted = [...images].sort((a, b) => a.sort_order - b.sort_order);
+  const pendingCount = parseUrls(urlsText).length;
 
   return (
     <div className="space-y-4">
       <p className="text-xs text-ink-400">
-        Paste an image URL from your Supabase Storage bucket (or any public image host). Use the
-        arrows to reorder, the star to set the cover image shown on the public site.
+        Paste one image URL per line (or separate with commas) to add several photos at once —
+        from your Supabase Storage bucket or any public image host. Use the arrows to reorder,
+        the star to set the cover image shown on the public site.
       </p>
 
       {sorted.length > 0 && (
@@ -122,20 +141,24 @@ export function PackageImagesManager({
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-2">
-        <input
-          type="url"
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          placeholder="https://…"
-          className="input flex-1 min-w-[220px]"
+      <div className="space-y-2">
+        <textarea
+          value={urlsText}
+          onChange={(e) => setUrlsText(e.target.value)}
+          placeholder={'https://…\nhttps://… (one per line, or comma-separated)'}
+          rows={3}
+          className="input w-full"
         />
-        <button type="button" onClick={() => add(false)} disabled={isPending} className="btn-outline">
-          <Plus className="h-4 w-4" /> Add
-        </button>
-        <button type="button" onClick={() => add(true)} disabled={isPending} className="btn-secondary">
-          <Star className="h-4 w-4" /> Add as cover
-        </button>
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={add} disabled={isPending || pendingCount === 0} className="btn-outline">
+            <Plus className="h-4 w-4" />
+            {pendingCount > 1 ? `Add ${pendingCount} images` : 'Add image'}
+          </button>
+          <span className="text-xs text-ink-400">
+            The first image you add becomes the cover automatically if none is set yet — use the
+            star on any image afterwards to change it.
+          </span>
+        </div>
       </div>
     </div>
   );

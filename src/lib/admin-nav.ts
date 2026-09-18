@@ -6,7 +6,7 @@ import type { UserRole } from '@/types/database';
 // boundary. See admin-sidebar.tsx for where the name is resolved back
 // into an actual icon component.
 export const iconNames = [
-  'LayoutDashboard', 'Package', 'MapPin', 'Inbox', 'ImageIcon', 'Settings',
+  'LayoutDashboard', 'Package', 'MapPin', 'Inbox', 'ImageIcon', 'Settings', 'Tag', 'BookOpen', 'Users',
 ] as const;
 
 export type IconName = (typeof iconNames)[number];
@@ -23,11 +23,11 @@ export type NavSection = {
   items: NavItem[];
 };
 
-// Phase 2 scope: admin navigation intentionally limited to Dashboard,
-// Packages, Destinations, Enquiries, Gallery, Settings. The underlying
-// routes/pages for Bookings, Customers, WhatsApp, Income, Expenses,
-// Reports, Users and Activity Logs still exist in the codebase — only
-// removed from this nav list per the current phase's scope, not deleted.
+// Nav scope: Dashboard, Packages, Destinations, Enquiries, Special
+// Offers, Gallery, Settings. The underlying routes/pages for Events,
+// Bookings, Customers, WhatsApp, Income, Expenses, Reports, Users and
+// Activity Logs still exist in the codebase — only removed from this
+// nav list, not deleted.
 export const adminNav: NavSection[] = [
   {
     items: [
@@ -35,12 +35,20 @@ export const adminNav: NavSection[] = [
       { label: 'Packages', href: '/admin/packages', icon: 'Package' },
       { label: 'Destinations', href: '/admin/destinations', icon: 'MapPin' },
       { label: 'Enquiries', href: '/admin/enquiries', icon: 'Inbox' },
+      { label: 'Special offers', href: '/admin/offers', icon: 'Tag' },
       { label: 'Gallery', href: '/admin/gallery', icon: 'ImageIcon' },
+      { label: 'Blog', href: '/admin/blog', icon: 'BookOpen' },
       {
         label: 'Settings',
         href: '/admin/settings',
         icon: 'Settings',
         roles: ['admin', 'super_admin'],
+      },
+      {
+        label: 'Users',
+        href: '/admin/users',
+        icon: 'Users',
+        roles: ['super_admin'],
       },
     ],
   },

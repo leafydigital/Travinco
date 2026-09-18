@@ -6,7 +6,7 @@ export const packageCategories = [
 
 export const packageSchema = z
   .object({
-    destination_id: z.string().uuid('Select a destination'),
+    destination_id: z.string().uuid().optional().nullable(),
     title: z.string().min(3, 'Title is too short').max(200),
     slug: z
       .string()
@@ -22,12 +22,12 @@ export const packageSchema = z
     short_description: z.string().max(500).optional().nullable(),
     full_description: z.string().optional().nullable(),
     highlights: z.array(z.string().min(1)).default([]),
-    terms_and_conditions: z.string().optional().nullable(),
     available_from: z.string().optional().nullable(),
     available_to: z.string().optional().nullable(),
     total_seats: z.coerce.number().int().min(1).optional().nullable(),
     pickup_info: z.string().optional().nullable(),
     cover_image_url: z.string().url().optional().nullable(),
+    video_url: z.string().url().optional().nullable().or(z.literal('')),
     is_featured: z.coerce.boolean().default(false),
     meta_title: z.string().max(160).optional().nullable(),
     meta_description: z.string().max(320).optional().nullable(),

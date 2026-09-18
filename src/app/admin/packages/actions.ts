@@ -8,6 +8,21 @@ import { redirect } from 'next/navigation';
 
 export type ActionState = { error?: string; fieldErrors?: Record<string, string> };
 
+/**
+ * Fills in meta_title/meta_description from the package's own title and
+ * short_description whenever the admin leaves those SEO fields blank, so
+ * SEO metadata is automatic by default rather than a manual chore. An
+ * admin who types something into either field always keeps what they
+ * typed — this only fills genuinely empty fields.
+ */
+function withAutoSeo(data: PackageFormValues): PackageFormValues {
+  const meta_title = data.meta_title?.trim() ? data.meta_title : data.title;
+  const meta_description = data.meta_description?.trim()
+    ? data.meta_description
+    : (data.short_description?.trim() ?? null);
+  return { ...data, meta_title, meta_description };
+}
+
 async function logActivity(params: {
   action: string;
   entityType: string;
@@ -31,13 +46,21 @@ async function logActivity(params: {
 }
 
 export async function createPackage(
-  raw: PackageFormValues
+  raw: PackageFormValues,
+  imageUrls: string[] = []
 ): Promise<ActionState & { id?: string }> {
   await requireProfile(); // any logged-in staff can create a draft; publish gate is separate
 
   const parsed = packageSchema.safeParse(raw);
   if (!parsed.success) {
-    return { error: 'Please fix the highlighted fields.' };
+    const fieldErrors: Record<string, string> = {};
+    for (const issue of parsed.error.issues) {
+      const field = issue.path[0];
+      if (typeof field === 'string' && !fieldErrors[field]) {
+        fieldErrors[field] = issue.message;
+      }
+    }
+    return { error: 'Please fix the highlighted fields.', fieldErrors };
   }
 
   const supabase = await createClient();
@@ -47,7 +70,7 @@ export async function createPackage(
 
   const { data, error } = await supabase
     .from('travel_packages')
-    .insert({ ...parsed.data, status: 'draft', created_by: user?.id ?? null })
+    .insert({ ...withAutoSeo(parsed.data), status: 'draft', created_by: user?.id ?? null })
     .select('id')
     .single();
 
@@ -56,6 +79,28 @@ export async function createPackage(
       return { error: 'A package with this slug already exists.', fieldErrors: { slug: 'Already taken' } };
     }
     return { error: 'Could not create the package. Please try again.' };
+  }
+
+  // Any images pasted on the create form go in right away — no cap on
+  // how many, matching the multi-URL paste flow already used on the
+  // edit page's image manager. The first image becomes the cover if
+  // none is otherwise set.
+  const validImageUrls = imageUrls.map((u) => u.trim()).filter(Boolean);
+  if (validImageUrls.length > 0) {
+    const { error: imagesError } = await supabase.from('package_images').insert(
+      validImageUrls.map((image_url, index) => ({
+        package_id: data.id,
+        image_url,
+        is_cover: index === 0,
+        sort_order: index,
+      }))
+    );
+    if (!imagesError) {
+      await supabase
+        .from('travel_packages')
+        .update({ cover_image_url: validImageUrls[0] })
+        .eq('id', data.id);
+    }
   }
 
   await logActivity({
@@ -76,7 +121,14 @@ export async function updatePackage(
   await requireProfile();
   const parsed = packageSchema.safeParse(raw);
   if (!parsed.success) {
-    return { error: 'Please fix the highlighted fields.' };
+    const fieldErrors: Record<string, string> = {};
+    for (const issue of parsed.error.issues) {
+      const field = issue.path[0];
+      if (typeof field === 'string' && !fieldErrors[field]) {
+        fieldErrors[field] = issue.message;
+      }
+    }
+    return { error: 'Please fix the highlighted fields.', fieldErrors };
   }
 
   const supabase = await createClient();
@@ -88,7 +140,7 @@ export async function updatePackage(
 
   const { error } = await supabase
     .from('travel_packages')
-    .update(parsed.data)
+    .update(withAutoSeo(parsed.data))
     .eq('id', id);
 
   if (error) {
@@ -112,7 +164,7 @@ export async function updatePackage(
   return {};
 }
 
-async function setPackageStatus(id: string, status: 'draft' | 'published' | 'archived') {
+async function setPackageStatus(id: string, status: 'draft' | 'published') {
   const profile = await requireProfile();
   const supabase = await createClient();
 
@@ -149,9 +201,6 @@ export async function publishPackage(id: string) {
 }
 export async function unpublishPackage(id: string) {
   return setPackageStatus(id, 'draft');
-}
-export async function archivePackage(id: string) {
-  return setPackageStatus(id, 'archived');
 }
 
 export async function toggleFeatured(id: string, isFeatured: boolean) {

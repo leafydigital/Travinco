@@ -7,7 +7,7 @@ export default async function NewOfferPage() {
   const supabase = await createClient();
   const { data: packages } = await supabase
     .from('travel_packages')
-    .select('id, title')
+    .select('id, title, base_price, currency')
     .order('title');
 
   return (

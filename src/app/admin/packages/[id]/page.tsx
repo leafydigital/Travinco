@@ -6,6 +6,7 @@ import { ItineraryManager } from './itinerary-manager';
 import { InclusionExclusionManager } from './inclusion-exclusion-manager';
 import { addInclusion, removeInclusion, addExclusion, removeExclusion } from '../sub-resource-actions';
 import { PackageImagesManager } from './package-images-manager';
+import { PackageVideosManager } from './package-videos-manager';
 import { StatusBadge } from '@/components/ui/status-badge';
 import Link from 'next/link';
 
@@ -13,8 +14,15 @@ export default async function EditPackagePage({ params }: { params: { id: string
   await requireProfile();
   const supabase = await createClient();
 
-  const [{ data: pkg }, { data: destinations }, { data: itinerary }, { data: inclusions }, { data: exclusions }, { data: images }] =
-    await Promise.all([
+  const [
+    { data: pkg },
+    { data: destinations },
+    { data: itinerary },
+    { data: inclusions },
+    { data: exclusions },
+    { data: images },
+    { data: videos },
+  ] = await Promise.all([
       supabase.from('travel_packages').select('*').eq('id', params.id).single(),
       supabase.from('destinations').select('id, name').order('name'),
       supabase
@@ -34,6 +42,11 @@ export default async function EditPackagePage({ params }: { params: { id: string
         .order('sort_order'),
       supabase
         .from('package_images')
+        .select('*')
+        .eq('package_id', params.id)
+        .order('sort_order'),
+      supabase
+        .from('package_videos')
         .select('*')
         .eq('package_id', params.id)
         .order('sort_order'),
@@ -72,7 +85,6 @@ export default async function EditPackagePage({ params }: { params: { id: string
           short_description: pkg.short_description,
           full_description: pkg.full_description,
           highlights: pkg.highlights,
-          terms_and_conditions: pkg.terms_and_conditions,
           available_from: pkg.available_from,
           available_to: pkg.available_to,
           total_seats: pkg.total_seats,
@@ -113,6 +125,11 @@ export default async function EditPackagePage({ params }: { params: { id: string
       <div className="card space-y-4 p-5">
         <h2 className="text-sm font-semibold text-ink-800">Gallery images</h2>
         <PackageImagesManager packageId={pkg.id} images={images ?? []} />
+      </div>
+
+      <div className="card space-y-4 p-5">
+        <h2 className="text-sm font-semibold text-ink-800">Videos</h2>
+        <PackageVideosManager packageId={pkg.id} videos={videos ?? []} />
       </div>
     </div>
   );

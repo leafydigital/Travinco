@@ -6,6 +6,7 @@ import { formatCurrency, formatDate, formatDateTime } from '@/lib/utils/format';
 import { EnquiryControls } from './enquiry-controls';
 import { NotesPanel, FollowupsPanel } from './notes-followups';
 import { ConvertToBookingButton } from './convert-button';
+import { EnquiryDetailsEditForm } from './enquiry-details-edit-form';
 import { Phone, Mail, MessageCircle } from 'lucide-react';
 import Link from 'next/link';
 
@@ -58,6 +59,8 @@ export default async function EnquiryDetailPage({ params }: { params: { id: stri
           </Link>
         </div>
       </div>
+
+      <EnquiryDetailsEditForm enquiry={enquiry} />
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">

@@ -175,8 +175,8 @@ export async function reorderPackageImage(
   if (swapIndex < 0 || swapIndex >= images.length) return {};
 
   const current = images[index];
-const neighbor = images[swapIndex];
-if (!current || !neighbor) return { error: 'Could not reorder images.' };
+  const neighbor = images[swapIndex];
+  if (!current || !neighbor) return { error: 'Could not reorder images.' };
 
   const [{ error: err1 }, { error: err2 }] = await Promise.all([
     supabase.from('package_images').update({ sort_order: neighbor.sort_order }).eq('id', current.id),
@@ -194,6 +194,76 @@ export async function removePackageImage(packageId: string, id: string) {
   const supabase = await createClient();
   const { error } = await supabase.from('package_images').delete().eq('id', id);
   if (error) return { error: 'Could not remove image.' };
+  revalidatePath(`/admin/packages/${packageId}`);
+  return {};
+}
+
+export async function addPackageVideo(packageId: string, videoUrl: string) {
+  await requireProfile();
+  const supabase = await createClient();
+
+  const { count } = await supabase
+    .from('package_videos')
+    .select('id', { count: 'exact', head: true })
+    .eq('package_id', packageId);
+
+  const { error } = await supabase.from('package_videos').insert({
+    package_id: packageId,
+    video_url: videoUrl,
+    sort_order: count ?? 0,
+  });
+
+  if (error) return { error: 'Could not add video.' };
+  revalidatePath(`/admin/packages/${packageId}`);
+  return {};
+}
+
+export async function removePackageVideo(packageId: string, id: string) {
+  await requireProfile();
+  const supabase = await createClient();
+  const { error } = await supabase.from('package_videos').delete().eq('id', id);
+  if (error) return { error: 'Could not remove video.' };
+  revalidatePath(`/admin/packages/${packageId}`);
+  return {};
+}
+
+/**
+ * Moves one video up or down in display order by swapping sort_order
+ * with its neighbor — same pairwise-swap approach as
+ * reorderPackageImage above.
+ */
+export async function reorderPackageVideo(
+  packageId: string,
+  videoId: string,
+  direction: 'up' | 'down'
+) {
+  await requireProfile();
+  const supabase = await createClient();
+
+  const { data: videosData } = await supabase
+    .from('package_videos')
+    .select('id, sort_order')
+    .eq('package_id', packageId)
+    .order('sort_order', { ascending: true });
+
+  const videos = (videosData ?? []) as { id: string; sort_order: number }[];
+  const index = videos.findIndex((v) => v.id === videoId);
+  if (index === -1) return { error: 'Video not found.' };
+
+  const swapIndex = direction === 'up' ? index - 1 : index + 1;
+  if (swapIndex < 0 || swapIndex >= videos.length) return {};
+
+  const current = videos[index];
+  const neighbor = videos[swapIndex];
+  if (!current || !neighbor) return { error: 'Could not reorder videos.' };
+
+  const [{ error: err1 }, { error: err2 }] = await Promise.all([
+    supabase.from('package_videos').update({ sort_order: neighbor.sort_order }).eq('id', current.id),
+    supabase.from('package_videos').update({ sort_order: current.sort_order }).eq('id', neighbor.id),
+  ]);
+
+  if (err1 || err2) return { error: 'Could not reorder videos.' };
+
   revalidatePath(`/admin/packages/${packageId}`);
   return {};
 }

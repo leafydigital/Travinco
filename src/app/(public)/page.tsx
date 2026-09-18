@@ -3,10 +3,13 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { HeroSearch } from '@/components/public/hero-search';
 import { SectionHeading } from '@/components/public/section-heading';
+import { TranslatedSectionHeading } from '@/components/public/translated-section-heading';
+import { TranslatedCta } from '@/components/public/translated-cta';
 import { PackageCard } from '@/components/public/package-card';
+import { ImageCarousel } from '@/components/public/image-carousel';
 import { testimonials } from '@/lib/testimonials-data';
 import { formatDate } from '@/lib/utils/format';
-import { ShieldCheck, Wallet, HeadphonesIcon, MapPinned, Quote, ArrowRight } from 'lucide-react';
+import { ShieldCheck, Wallet, HeadphonesIcon, MapPinned, Quote, ArrowRight, Star } from 'lucide-react';
 import { getGeneralSettings } from '@/lib/settings';
 
 export const revalidate = 120;
@@ -20,8 +23,8 @@ export default async function HomePage() {
     { data: destinations },
     { data: featuredPackages },
     { data: offers },
-    { data: events },
     { data: galleryPreview },
+    { data: recentPosts },
   ] = await Promise.all([
     supabase
       .from('destinations')
@@ -43,13 +46,13 @@ export default async function HomePage() {
       .eq('status', 'published')
       .gte('valid_to', today)
       .limit(3),
-    supabase
-      .from('events')
-      .select('id, title, slug, event_date, image_url')
-      .eq('status', 'published')
-      .order('event_date', { ascending: true })
-      .limit(3),
     supabase.from('gallery').select('id, image_url, title').eq('status', 'published').limit(8),
+    supabase
+      .from('blog_posts')
+      .select('id, title, slug, excerpt, cover_image_url, created_at')
+      .eq('status', 'published')
+      .order('created_at', { ascending: false })
+      .limit(3),
   ]);
 
   const heroImageUrl = (destinations ?? []).find((d) => d.cover_image_url)?.cover_image_url ?? null;
@@ -64,50 +67,53 @@ export default async function HomePage() {
 
   return (
     <div>
-      {/* HERO — full-bleed image with dark overlay, tagline + heading + a
-          floating "quote" card, mirroring travinco.com's hero pattern
-          (small overline, big heading, a Mark-Twain-style quote card,
-          primary CTA). All copy is original. */}
-      <section className="relative flex min-h-[85vh] items-center overflow-hidden bg-gradient-to-br from-navy-900 via-brand-900 to-brand-800 text-white">
+      {/* HERO — larger full-bleed imagery, bolder scale, search panel as a
+          floating card. Original copy and layout. */}
+      <section className="relative flex min-h-[92vh] items-end overflow-hidden bg-navy-900 text-white sm:items-center">
         <div className="absolute inset-0">
           {heroImageUrl ? (
-            <Image src={heroImageUrl} alt="" fill priority className="object-cover opacity-25" />
+            <Image src={heroImageUrl} alt="" fill priority className="object-cover" />
           ) : null}
-          <div className="absolute inset-0 bg-gradient-to-t from-navy-900/90 via-navy-900/50 to-transparent" />
-          {/* subtle decorative accent shapes, per the design brief's request
-              for travel-inspired gradient shapes rather than a flat block */}
-          <div className="absolute -right-24 -top-24 h-96 w-96 rounded-full bg-ocean-400/10 blur-3xl" />
-          <div className="absolute -bottom-32 left-1/3 h-96 w-96 rounded-full bg-coral-400/10 blur-3xl" />
+          <div className="absolute inset-0 bg-gradient-to-t from-navy-900 via-navy-900/60 to-navy-900/10" />
+          <div className="absolute inset-0 bg-gradient-to-r from-navy-900/70 via-navy-900/10 to-transparent" />
         </div>
 
-        <div className="container-page relative pt-20">
-          <p className="mb-4 text-sm font-medium uppercase tracking-[0.2em] text-ocean-300">
-            Explore without the guesswork
-          </p>
-          <h1 className="max-w-3xl font-display text-4xl font-semibold leading-tight sm:text-6xl">
-            Trips planned like someone who actually knows the place
-          </h1>
-          <p className="mt-5 max-w-xl text-lg text-white/80">
-            Handpicked packages across India and beyond, built around your pace and
-            budget — with a real team on call while you travel.
-          </p>
+        <div className="container-page relative w-full pb-14 pt-24 sm:pb-24">
+          <div className="max-w-2xl">
+            <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.2em] text-ocean-200 backdrop-blur-sm">
+              Explore without the guesswork
+            </p>
+            <h1 className="font-display text-5xl font-semibold leading-[1.05] sm:text-7xl">
+              Trips planned like
+              <br />
+              someone who&apos;s
+              <br />
+              <span className="text-ocean-300">actually been there.</span>
+            </h1>
+            <p className="mt-6 max-w-lg text-lg text-white/80">
+              Handpicked packages across India and beyond, built around your pace and
+              budget — with a real team on call while you travel.
+            </p>
+          </div>
 
-          <div className="mt-10 max-w-xl">
+          <div className="mt-10 max-w-3xl rounded-xl2 bg-white p-3 shadow-2xl sm:p-3.5">
             <HeroSearch destinations={(destinations ?? []).map((d) => ({ slug: d.slug, name: d.name }))} />
           </div>
 
-          <div className="mt-14 max-w-md rounded-xl2 border border-white/15 bg-white/10 p-5 backdrop-blur-md">
-            <Quote className="h-5 w-5 text-coral-300" />
-            <p className="mt-3 font-display text-lg italic text-white/90">
-              &ldquo;The trip that stays with you is the one someone actually planned for
-              you — not the one assembled from ten browser tabs.&rdquo;
-            </p>
+          <div className="mt-8 flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-2 backdrop-blur-sm">
+              <Quote className="h-4 w-4 shrink-0 text-coral-300" />
+              <p className="text-sm italic text-white/80">
+                &ldquo;The trip that stays with you is the one someone actually planned for
+                you.&rdquo;
+              </p>
+            </div>
           </div>
         </div>
       </section>
 
-      {/* INTRO — "What we do" narrative + image collage, mirroring
-          travinco.com's introductory block. Original copy throughout. */}
+      {/* INTRO — "What we do" narrative + image collage. Original copy
+          written for this project. */}
       <section className="container-page py-20">
         <div className="grid items-center gap-12 lg:grid-cols-2">
           <div>
@@ -147,8 +153,23 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* SNAPSHOT OF PACKAGES — destination-led package cards, the
-          equivalent of travinco.com's "Snapshot of Our Packages" grid. */}
+      {(galleryPreview ?? []).length > 0 && (
+        <section className="section-aqua py-16">
+          <div className="container-page">
+            <SectionHeading eyebrow="From the road" title="A few favorite shots" />
+            <div className="mt-8">
+              <ImageCarousel
+                images={(galleryPreview ?? []).map((img) => ({
+                  url: img.image_url,
+                  alt: img.title ?? '',
+                }))}
+              />
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* SNAPSHOT OF PACKAGES — destination-led package cards. */}
       {(featuredPackages ?? []).length > 0 && (
         <section className="section-sand py-20">
           <div className="container-page">
@@ -191,10 +212,13 @@ export default async function HomePage() {
                       sizes="200px"
                     />
                   )}
-                  <div className="absolute inset-0 bg-gradient-to-t from-navy-900/80 via-navy-900/10 to-transparent" />
-                  <span className="absolute bottom-0 left-0 right-0 border-b-2 border-coral-400 p-3 text-sm font-semibold text-white">
-                    {d.name}
-                  </span>
+                  <div className="absolute inset-0 bg-gradient-to-t from-navy-900/85 via-navy-900/20 to-transparent" />
+                  <div className="absolute bottom-0 left-0 right-0 border-b-2 border-coral-400 p-3">
+                    <span className="block text-sm font-semibold text-white">{d.name}</span>
+                    <span className="mt-0.5 flex items-center gap-1 text-xs text-white/70 opacity-0 transition-opacity group-hover:opacity-100">
+                      Explore <ArrowRight className="h-3 w-3" />
+                    </span>
+                  </div>
                 </div>
               </Link>
             ))}
@@ -202,10 +226,8 @@ export default async function HomePage() {
         </section>
       )}
 
-      {/* THEMED FEATURE BANNER — full-width promo band, the equivalent of
-          travinco.com's Ayurveda/wellness banner. Points at whichever
-          offer is currently active rather than a fixed made-up vertical,
-          since this system has no wellness-specific data model. */}
+      {/* THEMED FEATURE BANNER — full-width promo band pointing at
+          whichever offer is currently active. */}
       {topOffer && (
         <section className="relative overflow-hidden bg-gradient-to-br from-brand-800 via-brand-700 to-ocean-700 py-20 text-white">
           {topOffer.image_url && (
@@ -252,7 +274,7 @@ export default async function HomePage() {
       <section className="section-navy relative overflow-hidden py-16">
         <div className="absolute -right-20 top-0 h-72 w-72 rounded-full bg-brand-500/10 blur-3xl" />
         <div className="container-page relative">
-          <SectionHeading eyebrow="Why us" title="Trip planning without the guesswork" />
+          <TranslatedSectionHeading eyebrowKey="home_why_us_eyebrow" titleKey="home_why_us_title" />
           <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-4">
             {whyChooseUs.map((w) => (
               <div key={w.title}>
@@ -265,26 +287,36 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {(events ?? []).length > 0 && (
-        <section className="container-page py-16">
-          <SectionHeading eyebrow="Happening soon" title="Upcoming events" />
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
-            {(events ?? []).map((e) => (
-              <Link key={e.id} href="/events" className="card-hover group overflow-hidden">
-                <div className="relative aspect-video bg-ink-100">
-                  {e.image_url && <Image src={e.image_url} alt={e.title} fill className="object-cover transition-transform duration-300 group-hover:scale-105" />}
-                  {e.event_date && (
-                    <span className="badge-event absolute left-3 top-3">{formatDate(e.event_date)}</span>
-                  )}
-                </div>
-                <div className="p-4">
-                  <p className="font-medium text-ink-900 transition-colors group-hover:text-coral-600">{e.title}</p>
-                </div>
-              </Link>
-            ))}
-          </div>
-        </section>
-      )}
+      {/* HOW IT WORKS — three-step overview of the booking process.
+          Original copy and structure. */}
+      <section className="container-page py-16">
+        <TranslatedSectionHeading eyebrowKey="home_how_it_works_eyebrow" titleKey="home_how_it_works_title" />
+        <div className="grid grid-cols-1 gap-8 sm:grid-cols-3">
+          {[
+            {
+              step: '01',
+              title: 'Tell us what you have in mind',
+              body: 'Share a destination, a rough budget, or just a feeling — a beach week, a family trip, a solo reset.',
+            },
+            {
+              step: '02',
+              title: 'Get a plan built around you',
+              body: 'We put together an itinerary and a real quote, not a generic package with your name pasted on top.',
+            },
+            {
+              step: '03',
+              title: 'Travel with backup on call',
+              body: 'Once you\u2019re on the ground, our team is a phone call away if plans need to change.',
+            },
+          ].map((s) => (
+            <div key={s.step} className="relative rounded-xl2 border border-ink-100 p-6">
+              <span className="font-display text-4xl font-semibold text-brand-100">{s.step}</span>
+              <p className="mt-3 font-medium text-ink-900">{s.title}</p>
+              <p className="mt-1.5 text-sm text-ink-500">{s.body}</p>
+            </div>
+          ))}
+        </div>
+      </section>
 
       <section className="section-aqua py-16">
         <div className="container-page">
@@ -294,7 +326,19 @@ export default async function HomePage() {
               const borders = ['border-t-brand-400', 'border-t-sand-400', 'border-t-coral-400', 'border-t-ocean-400'];
               return (
                 <div key={t.name} className={`card border-t-4 p-5 ${borders[i % borders.length]}`}>
-                  <Quote className="h-5 w-5 text-ink-300" />
+                  <div className="flex items-center justify-between">
+                    <Quote className="h-5 w-5 text-ink-300" />
+                    <div className="flex gap-0.5" aria-label={`${t.rating} out of 5 stars`}>
+                      {Array.from({ length: 5 }).map((_, starIndex) => (
+                        <Star
+                          key={starIndex}
+                          className={`h-3.5 w-3.5 ${
+                            starIndex < t.rating ? 'fill-sand-400 text-sand-400' : 'text-ink-200'
+                          }`}
+                        />
+                      ))}
+                    </div>
+                  </div>
                   <p className="mt-3 text-sm text-ink-600">{t.quote}</p>
                   <p className="mt-4 text-sm font-medium text-ink-800">{t.name}</p>
                   <p className="text-xs text-ink-400">{t.trip}</p>
@@ -305,26 +349,33 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {(galleryPreview ?? []).length > 0 && (
+      {(recentPosts ?? []).length > 0 && (
         <section className="container-page py-16">
-          <SectionHeading eyebrow="From the road" title="Gallery" />
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {(galleryPreview ?? []).slice(0, 8).map((img) => (
-              <div key={img.id} className="group relative aspect-square overflow-hidden rounded-xl2 shadow-sm transition-shadow duration-300 hover:shadow-lg">
-                <Image
-                  src={img.image_url}
-                  alt={img.title ?? ''}
-                  fill
-                  className="object-cover transition-transform duration-500 group-hover:scale-110"
-                />
-                <div className="absolute inset-0 bg-navy-900/0 transition-colors duration-300 group-hover:bg-navy-900/20" />
-              </div>
+          <TranslatedSectionHeading eyebrowKey="home_blog_eyebrow" titleKey="home_blog_title" />
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
+            {(recentPosts ?? []).map((post) => (
+              <Link key={post.id} href={`/blog/${post.slug}`} className="card-hover group overflow-hidden">
+                <div className="relative aspect-video bg-ink-100">
+                  {post.cover_image_url && (
+                    <Image
+                      src={post.cover_image_url}
+                      alt={post.title}
+                      fill
+                      className="object-cover transition-transform duration-300 group-hover:scale-105"
+                    />
+                  )}
+                </div>
+                <div className="p-4">
+                  <p className="text-xs text-ink-400">{formatDate(post.created_at)}</p>
+                  <p className="mt-1 font-medium text-ink-900 transition-colors group-hover:text-coral-600">
+                    {post.title}
+                  </p>
+                  {post.excerpt && (
+                    <p className="mt-1.5 text-sm text-ink-500 line-clamp-2">{post.excerpt}</p>
+                  )}
+                </div>
+              </Link>
             ))}
-          </div>
-          <div className="mt-8 text-center">
-            <Link href="/gallery" className="btn-outline">
-              View full gallery
-            </Link>
           </div>
         </section>
       )}
@@ -333,10 +384,7 @@ export default async function HomePage() {
         <div className="absolute -left-16 -top-16 h-64 w-64 rounded-full bg-ocean-300/10 blur-3xl" />
         <div className="absolute -bottom-20 right-0 h-72 w-72 rounded-full bg-coral-400/10 blur-3xl" />
         <div className="container-page relative text-center">
-          <h2 className="font-display text-2xl font-semibold sm:text-3xl">Ready to start planning?</h2>
-          <p className="mx-auto mt-2 max-w-md text-white/80">
-            Tell us what you have in mind — we&apos;ll take it from there.
-          </p>
+          <TranslatedCta />
           <Link href="/booking" className="btn-cta mt-6 inline-flex">
             Plan my trip
           </Link>

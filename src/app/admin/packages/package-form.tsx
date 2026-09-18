@@ -7,6 +7,7 @@ import { TextField, TextAreaField, SelectField } from '@/components/ui/form-fiel
 import { StringListEditor } from '@/components/admin/string-list-editor';
 import { packageCategories, slugify, type PackageFormValues } from '@/lib/validations/package';
 import { createPackage, updatePackage } from './actions';
+import { uploadPackageImage } from './upload-actions';
 
 type Destination = { id: string; name: string };
 
@@ -22,7 +23,12 @@ export function PackageForm({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [slugTouched, setSlugTouched] = useState(Boolean(packageId));
+  const [showSlugField, setShowSlugField] = useState(Boolean(packageId));
+  const [showSeoFields, setShowSeoFields] = useState(Boolean(packageId));
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [imageUrlsText, setImageUrlsText] = useState('');
+  const [uploadedUrls, setUploadedUrls] = useState<string[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
 
   const [values, setValues] = useState<Partial<PackageFormValues>>({
     category: 'other',
@@ -46,14 +52,43 @@ export function PackageForm({
     }
   }
 
+  async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
+    setIsUploading(true);
+    const newUrls: string[] = [];
+    for (const file of files) {
+      const formData = new FormData();
+      formData.set('file', file);
+      const result = await uploadPackageImage(formData);
+      if (result.error) {
+        toast.error(`${file.name}: ${result.error}`);
+      } else if (result.url) {
+        newUrls.push(result.url);
+      }
+    }
+    if (newUrls.length > 0) {
+      setUploadedUrls((prev) => [...prev, ...newUrls]);
+      toast.success(newUrls.length === 1 ? 'Image uploaded' : `${newUrls.length} images uploaded`);
+    }
+    setIsUploading(false);
+    e.target.value = '';
+  }
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setErrors({});
 
     startTransition(async () => {
+      const pastedUrls = imageUrlsText
+        .split(/[\n,]/)
+        .map((u) => u.trim())
+        .filter(Boolean);
+      const allImageUrls = [...uploadedUrls, ...pastedUrls];
+
       const result = packageId
         ? await updatePackage(packageId, values as PackageFormValues)
-        : await createPackage(values as PackageFormValues);
+        : await createPackage(values as PackageFormValues, allImageUrls);
 
       if (result.error) {
         toast.error(result.error);
@@ -63,7 +98,7 @@ export function PackageForm({
 
       toast.success(packageId ? 'Package updated' : 'Package created as draft');
       if (!packageId && 'id' in result && result.id) {
-        router.push(`/admin/packages/${result.id}`);
+        router.push(`/admin/packages/${result.id}/preview`);
       } else {
         router.refresh();
       }
@@ -79,26 +114,16 @@ export function PackageForm({
             label="Package title"
             required
             value={values.title ?? ''}
+            error={errors.title}
             onChange={(e) => handleTitleChange(e.target.value)}
           />
-          <TextField
-            label="Slug (URL)"
-            required
-            value={values.slug ?? ''}
-            error={errors.slug}
-            onChange={(e) => {
-              setSlugTouched(true);
-              set('slug', e.target.value);
-            }}
-            hint="Used in the public URL, e.g. /packages/kerala-munnar-backwaters"
-          />
           <SelectField
-            label="Destination"
-            required
+            label="Destination (optional)"
             value={values.destination_id ?? ''}
-            onChange={(e) => set('destination_id', e.target.value)}
+            error={errors.destination_id}
+            onChange={(e) => set('destination_id', e.target.value || null)}
           >
-            <option value="">Select a destination…</option>
+            <option value="">No specific destination</option>
             {destinations.map((d) => (
               <option key={d.id} value={d.id}>
                 {d.name}
@@ -121,18 +146,45 @@ export function PackageForm({
             type="number"
             min={1}
             required
-            value={values.duration_days ?? 1}
-            onChange={(e) => set('duration_days', Number(e.target.value))}
+            value={values.duration_days ?? ''}
+            error={errors.duration_days}
+            onChange={(e) => set('duration_days', e.target.value === '' ? 1 : Number(e.target.value))}
           />
           <TextField
             label="Duration (nights)"
             type="number"
             min={0}
             required
-            value={values.duration_nights ?? 0}
-            onChange={(e) => set('duration_nights', Number(e.target.value))}
+            value={values.duration_nights === 0 ? '' : values.duration_nights ?? ''}
+            error={errors.duration_nights}
+            onChange={(e) => set('duration_nights', e.target.value === '' ? 0 : Number(e.target.value))}
           />
         </div>
+
+        <div>
+          {!showSlugField ? (
+            <button
+              type="button"
+              onClick={() => setShowSlugField(true)}
+              className="text-xs text-brand-600 hover:underline"
+            >
+              Customize page URL
+            </button>
+          ) : (
+            <TextField
+              label="Slug (URL)"
+              required
+              value={values.slug ?? ''}
+              error={errors.slug}
+              onChange={(e) => {
+                setSlugTouched(true);
+                set('slug', e.target.value);
+              }}
+              hint="Used in the public URL, e.g. /packages/kerala-munnar-backwaters. Filled in automatically from the title — only change this if you specifically need a different URL."
+            />
+          )}
+        </div>
+
         <TextAreaField
           label="Short description"
           rows={2}
@@ -156,8 +208,8 @@ export function PackageForm({
             type="number"
             min={0}
             required
-            value={values.base_price ?? 0}
-            onChange={(e) => set('base_price', Number(e.target.value))}
+            value={values.base_price === 0 ? '' : values.base_price ?? ''}
+            onChange={(e) => set('base_price', e.target.value === '' ? 0 : Number(e.target.value))}
           />
           <TextField
             label="Discount price"
@@ -215,35 +267,103 @@ export function PackageForm({
       </div>
 
       <div className="card space-y-4 p-5">
-        <h2 className="text-sm font-semibold text-ink-800">Highlights & terms</h2>
+        <h2 className="text-sm font-semibold text-ink-800">Highlights</h2>
         <StringListEditor
           label="Highlights"
           items={values.highlights ?? []}
           onChange={(items) => set('highlights', items)}
           placeholder="e.g. Private houseboat stay in Alleppey"
         />
-        <TextAreaField
-          label="Terms and conditions"
-          rows={4}
-          value={values.terms_and_conditions ?? ''}
-          onChange={(e) => set('terms_and_conditions', e.target.value)}
-        />
+        <p className="text-xs text-ink-400">
+          Terms &amp; conditions are now managed once for all packages under{' '}
+          <a href="/admin/settings" className="text-brand-600 hover:underline">
+            Settings
+          </a>
+          , instead of being entered separately here.
+        </p>
       </div>
 
       <div className="card space-y-4 p-5">
-        <h2 className="text-sm font-semibold text-ink-800">SEO</h2>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <TextField
-            label="Meta title"
-            value={values.meta_title ?? ''}
-            onChange={(e) => set('meta_title', e.target.value)}
-          />
-          <TextField
-            label="Meta description"
-            value={values.meta_description ?? ''}
-            onChange={(e) => set('meta_description', e.target.value)}
+        <h2 className="text-sm font-semibold text-ink-800">Video</h2>
+        <TextField
+          label="Video URL (YouTube or Vimeo)"
+          placeholder="https://www.youtube.com/watch?v=..."
+          value={values.video_url ?? ''}
+          onChange={(e) => set('video_url', e.target.value)}
+        />
+        <p className="text-xs text-ink-400">
+          Paste a normal YouTube or Vimeo link — it plays inline on the package page, the
+          visitor never leaves the site.
+        </p>
+      </div>
+
+      {!packageId && (
+        <div className="card space-y-3 p-5">
+          <h2 className="text-sm font-semibold text-ink-800">Photos</h2>
+          <p className="text-xs text-ink-400">
+            Upload JPG, PNG or WEBP files directly, and/or paste image URLs below — one per
+            line, or comma-separated. There&apos;s no limit on how many. The first photo becomes
+            the cover automatically; you can change that, reorder, or add more later once the
+            package is saved.
+          </p>
+
+          <div>
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              multiple
+              onChange={handleFileSelect}
+              disabled={isUploading}
+              className="block w-full text-sm text-ink-600 file:mr-3 file:rounded-full file:border-0 file:bg-brand-50 file:px-4 file:py-2 file:text-sm file:font-medium file:text-brand-700 hover:file:bg-brand-100"
+            />
+            {isUploading && <p className="mt-1.5 text-xs text-brand-600">Uploading…</p>}
+          </div>
+
+          {uploadedUrls.length > 0 && (
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+              {uploadedUrls.map((url) => (
+                <div key={url} className="relative aspect-square overflow-hidden rounded-lg border border-ink-100">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={url} alt="" className="h-full w-full object-cover" />
+                </div>
+              ))}
+            </div>
+          )}
+
+          <textarea
+            value={imageUrlsText}
+            onChange={(e) => setImageUrlsText(e.target.value)}
+            placeholder={'https://…\nhttps://… (one per line, or comma-separated)'}
+            rows={3}
+            className="input w-full"
           />
         </div>
+      )}
+
+      <div className="card space-y-4 p-5">
+        <h2 className="text-sm font-semibold text-ink-800">SEO</h2>
+        {!showSeoFields ? (
+          <button
+            type="button"
+            onClick={() => setShowSeoFields(true)}
+            className="text-xs text-brand-600 hover:underline"
+          >
+            Customize SEO
+          </button>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2">
+            <TextField
+              label="Meta title (optional — auto-generated from the package title if left blank)"
+              value={values.meta_title ?? ''}
+              onChange={(e) => set('meta_title', e.target.value)}
+            />
+            <TextField
+              label="Meta description (optional — auto-generated from the short description if left blank)"
+              value={values.meta_description ?? ''}
+              onChange={(e) => set('meta_description', e.target.value)}
+            />
+          </div>
+        )}
       </div>
 
       <div className="flex justify-end gap-3">

@@ -3,8 +3,12 @@ import { requireProfile } from '@/lib/supabase/auth-helpers';
 import { redirect } from 'next/navigation';
 import { GeneralSettingsForm } from './general-settings-form';
 import { BookingSettingsForm } from './booking-settings-form';
-import { ExpenseCategoryManager } from './expense-category-manager';
-import type { GeneralSettingsFormValues, BookingSettingsFormValues } from '@/lib/validations/settings';
+import { TermsSettingsForm } from './terms-settings-form';
+import type {
+  GeneralSettingsFormValues,
+  BookingSettingsFormValues,
+  TermsSettingsFormValues,
+} from '@/lib/validations/settings';
 
 export default async function AdminSettingsPage() {
   const profile = await requireProfile();
@@ -13,11 +17,12 @@ export default async function AdminSettingsPage() {
   }
 
   const supabase = await createClient();
-  const [{ data: generalRow }, { data: bookingRow }, { data: categories }] = await Promise.all([
-    supabase.from('website_settings').select('value').eq('key', 'general').maybeSingle(),
-    supabase.from('website_settings').select('value').eq('key', 'booking').maybeSingle(),
-    supabase.from('expense_categories').select('*').order('sort_order'),
-  ]);
+  const [{ data: generalRow }, { data: bookingRow }, { data: termsRow }] =
+    await Promise.all([
+      supabase.from('website_settings').select('value').eq('key', 'general').maybeSingle(),
+      supabase.from('website_settings').select('value').eq('key', 'booking').maybeSingle(),
+      supabase.from('website_settings').select('value').eq('key', 'terms').maybeSingle(),
+    ]);
 
   return (
     <div className="max-w-3xl space-y-8 pb-16">
@@ -34,8 +39,8 @@ export default async function AdminSettingsPage() {
       </div>
 
       <div className="card p-5">
-        <h2 className="mb-4 text-sm font-semibold text-ink-800">Finance — expense categories</h2>
-        <ExpenseCategoryManager categories={categories ?? []} />
+        <h2 className="mb-4 text-sm font-semibold text-ink-800">Terms & conditions</h2>
+        <TermsSettingsForm initialValues={(termsRow?.value as TermsSettingsFormValues) ?? {}} />
       </div>
 
       <div className="card p-5">

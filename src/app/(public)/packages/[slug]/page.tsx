@@ -2,10 +2,11 @@ import { createClient } from '@/lib/supabase/server';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import Image from 'next/image';
-import { Clock, MapPin, Users, Check, X, MessageCircle, Phone } from 'lucide-react';
-import { formatCurrency } from '@/lib/utils/format';
+import { Clock, MapPin, Users, Check, X, MessageCircle, Phone, Sparkles } from 'lucide-react';
+import { formatCurrency, getVideoEmbedUrl } from '@/lib/utils/format';
 import { EnquiryForm } from '@/components/public/enquiry-form';
-import { getGeneralSettings } from '@/lib/settings';
+import { ImageLightbox } from '@/components/public/image-lightbox';
+import { getGeneralSettings, getTermsSettings } from '@/lib/settings';
 import type { Tables } from '@/types/database';
 
 export const revalidate = 300;
@@ -46,7 +47,7 @@ async function getPackage(slug: string) {
     destinations: destinationRow ?? null,
   };
 
-  const [{ data: images }, { data: itinerary }, { data: inclusions }, { data: exclusions }] =
+  const [{ data: images }, { data: itinerary }, { data: inclusions }, { data: exclusions }, { data: videos }] =
     await Promise.all([
       supabase.from('package_images').select('*').eq('package_id', packageId).order('sort_order'),
       supabase
@@ -56,7 +57,21 @@ async function getPackage(slug: string) {
         .order('day_number'),
       supabase.from('package_inclusions').select('*').eq('package_id', packageId).order('sort_order'),
       supabase.from('package_exclusions').select('*').eq('package_id', packageId).order('sort_order'),
+      supabase.from('package_videos').select('*').eq('package_id', packageId).order('sort_order'),
     ]);
+
+  // Same live date-window check as the packages listing page — an offer
+  // is only "active" while today falls between valid_from and valid_to,
+  // so it reverts on its own once the window closes with no cleanup job.
+  const today = new Date().toISOString().slice(0, 10);
+  const { data: activeOffer } = await supabase
+    .from('offers')
+    .select('discount_percent, discount_flat, valid_to')
+    .eq('package_id', packageId)
+    .eq('status', 'published')
+    .lte('valid_from', today)
+    .gte('valid_to', today)
+    .maybeSingle();
 
   return {
     pkg,
@@ -64,6 +79,8 @@ async function getPackage(slug: string) {
     itinerary: itinerary ?? [],
     inclusions: inclusions ?? [],
     exclusions: exclusions ?? [],
+    videos: videos ?? [],
+    activeOffer,
   };
 }
 
@@ -96,8 +113,26 @@ export default async function PackageDetailPage({ params }: { params: { slug: st
   const result = await getPackage(params.slug);
   if (!result) notFound();
 
-  const { pkg, images, itinerary, inclusions, exclusions } = result;
+  const supabaseForAuth = await createClient();
+  const {
+    data: { user },
+  } = await supabaseForAuth.auth.getUser();
+
+  const { pkg, images, itinerary, inclusions, exclusions, videos, activeOffer } = result;
+  const offerPrice = activeOffer
+    ? activeOffer.discount_percent
+      ? pkg.base_price * (1 - activeOffer.discount_percent / 100)
+      : activeOffer.discount_flat
+      ? pkg.base_price - activeOffer.discount_flat
+      : null
+    : null;
+  const effectivePrice = offerPrice ?? pkg.discount_price;
+  const videoEmbedUrls = [
+    getVideoEmbedUrl(pkg.video_url),
+    ...videos.map((v) => getVideoEmbedUrl(v.video_url)),
+  ].filter((url): url is string => Boolean(url));
   const settings = await getGeneralSettings();
+  const termsSettings = await getTermsSettings();
   const destinationRaw = pkg.destinations as
     | { name: string; country: string | null }
     | { name: string; country: string | null }[]
@@ -228,21 +263,38 @@ export default async function PackageDetailPage({ params }: { params: { slug: st
           {images.length > 0 && (
             <section>
               <h2 className="font-display text-xl font-semibold text-ink-900">Gallery</h2>
-              <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
-                {images.map((img) => (
-                  <div key={img.id} className="relative aspect-square overflow-hidden rounded-lg">
-                    <Image src={img.image_url} alt={img.alt_text ?? pkg.title} fill className="object-cover" />
+              <ImageLightbox
+                images={images.map((img) => ({ url: img.image_url, alt: img.alt_text ?? pkg.title }))}
+              />
+            </section>
+          )}
+
+          {videoEmbedUrls.length > 0 && (
+            <section>
+              <h2 className="font-display text-xl font-semibold text-ink-900">
+                {videoEmbedUrls.length > 1 ? 'Videos' : 'Video'}
+              </h2>
+              <div className="mt-3 grid gap-4 sm:grid-cols-2">
+                {videoEmbedUrls.map((embedUrl, i) => (
+                  <div key={embedUrl} className="aspect-video overflow-hidden rounded-xl2 bg-ink-100">
+                    <iframe
+                      src={embedUrl}
+                      title={`${pkg.title} — video ${i + 1}`}
+                      className="h-full w-full"
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                      allowFullScreen
+                    />
                   </div>
                 ))}
               </div>
             </section>
           )}
 
-          {pkg.terms_and_conditions && (
+          {termsSettings.terms_and_conditions && (
             <section>
               <h2 className="font-display text-lg font-semibold text-ink-900">Terms & conditions</h2>
               <p className="mt-2 whitespace-pre-line text-sm text-ink-500">
-                {pkg.terms_and_conditions}
+                {termsSettings.terms_and_conditions}
               </p>
             </section>
           )}
@@ -251,13 +303,18 @@ export default async function PackageDetailPage({ params }: { params: { slug: st
         <aside className="lg:col-span-1">
           <div className="card sticky top-24 space-y-4 p-5">
             <div>
-              {pkg.discount_price ? (
+              {activeOffer && (
+                <span className="badge-discount mb-2 inline-flex">
+                  <Sparkles className="mr-1 h-3 w-3" /> Special offer
+                </span>
+              )}
+              {effectivePrice ? (
                 <div>
                   <span className="text-sm text-ink-400 line-through">
                     {formatCurrency(pkg.base_price, pkg.currency)}
                   </span>
                   <p className="text-2xl font-semibold text-brand-700">
-                    {formatCurrency(pkg.discount_price, pkg.currency)}{' '}
+                    {formatCurrency(effectivePrice, pkg.currency)}{' '}
                     <span className="text-sm font-normal text-ink-400">/ person</span>
                   </p>
                 </div>
@@ -295,6 +352,7 @@ export default async function PackageDetailPage({ params }: { params: { slug: st
                 packageId={pkg.id}
                 destinationName={destination?.name}
                 buttonLabel="Enquire now"
+                isLoggedIn={Boolean(user)}
               />
             </div>
           </div>

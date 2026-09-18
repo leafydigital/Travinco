@@ -16,7 +16,10 @@ import { resolve } from 'path';
 config({ path: resolve(__dirname, '../../.env.local') });
 
 import { createClient } from '@supabase/supabase-js';
-import type { Database } from '../../src/types/database';
+
+// Untyped client, matching the rest of this project's Supabase clients —
+// see src/lib/supabase/server.ts for why the Database generic was
+// removed everywhere.
 
 const [, , email, password] = process.argv;
 

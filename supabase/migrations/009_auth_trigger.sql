@@ -7,6 +7,11 @@
 -- whenever a new auth.users row appears, whatever the creation path.
 -- New accounts default to the lowest-privilege role; a super_admin
 -- must explicitly promote them afterwards.
+--
+-- Updated by migration 021: skips rows created through the public
+-- customer signup form (flagged is_customer_signup=true in user
+-- metadata), so a customer signing up on the public site never also
+-- gets a staff profiles row / admin access.
 -- =========================================================
 
 create or replace function public.handle_new_user()
@@ -16,6 +21,10 @@ security definer
 set search_path = public
 as $$
 begin
+  if new.raw_user_meta_data->>'is_customer_signup' = 'true' then
+    return new;
+  end if;
+
   insert into public.profiles (id, full_name, email, role)
   values (
     new.id,
