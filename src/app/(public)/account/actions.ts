@@ -48,9 +48,14 @@ export async function signUpCustomer(raw: unknown) {
   });
 
   if (error) {
-    if (error.message.toLowerCase().includes('already registered')) {
+    const message = error.message.toLowerCase();
+    if (message.includes('already registered') || message.includes('already exists') || message.includes('user already')) {
       return { error: 'An account with this email already exists. Try logging in instead.' };
     }
+    // Logged server-side so the real Supabase error (rate limit, SMTP
+    // failure, misconfiguration, etc.) is visible in Vercel's function
+    // logs — the message shown to the visitor stays generic on purpose.
+    console.error('signUpCustomer failed:', error.message);
     return { error: 'Could not create your account. Please try again.' };
   }
 
