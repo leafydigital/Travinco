@@ -22,8 +22,12 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js';
  * was removed from all Supabase clients in this project.
  */
 export function createServiceClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
+  if (!supabaseUrl) {
+    throw new Error('NEXT_PUBLIC_SUPABASE_URL is not set. Refusing to create a service client.');
+  }
   if (!serviceRoleKey) {
     throw new Error(
       'SUPABASE_SERVICE_ROLE_KEY is not set. Refusing to create a service client.'
@@ -31,7 +35,7 @@ export function createServiceClient() {
   }
 
   return createSupabaseClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    supabaseUrl,
     serviceRoleKey,
     {
       auth: {
