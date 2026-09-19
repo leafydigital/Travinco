@@ -15,9 +15,26 @@ import { NextResponse, type NextRequest } from 'next/server';
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request });
 
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    // A missing/misconfigured env var here otherwise throws a generic,
+    // hard-to-diagnose crash (previously via a `!` non-null assertion)
+    // during every request, including Next.js's own _not-found page
+    // generation at build time — which is exactly what broke the
+    // Vercel build that led to this check being added. This makes the
+    // real cause immediately obvious in the build/runtime logs instead.
+    console.error(
+      'Middleware: NEXT_PUBLIC_SUPABASE_URL and/or NEXT_PUBLIC_SUPABASE_ANON_KEY are not set. ' +
+        'Set them in your hosting platform\'s environment variables and redeploy.'
+    );
+    return response;
+  }
+
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    supabaseUrl,
+    supabaseAnonKey,
     {
       cookies: {
         getAll() {
