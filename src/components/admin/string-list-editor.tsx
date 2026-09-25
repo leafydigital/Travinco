@@ -30,9 +30,9 @@ export function StringListEditor({
   }
 
   function startEdit(index: number) {
-    setEditingIndex(index);
-    setEditValue(items[index]);
-  }
+  setEditingIndex(index);
+  setEditValue(items[index] ?? "");
+}
 
   function saveEdit(index: number) {
     const value = editValue.trim();
