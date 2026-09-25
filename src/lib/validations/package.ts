@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { imageUrlSchema } from './image-url';
 
 export const packageCategories = [
   'honeymoon', 'family', 'adventure', 'group', 'luxury', 'budget', 'pilgrimage', 'other',
@@ -18,6 +19,7 @@ export const packageSchema = z
     duration_nights: z.coerce.number().int().min(0),
     base_price: z.coerce.number().min(0, 'Price cannot be negative'),
     discount_price: z.coerce.number().min(0).nullable().optional(),
+    child_price: z.coerce.number().min(0).nullable().optional(),
     currency: z.string().length(3).default('INR'),
     short_description: z.string().max(500).optional().nullable(),
     full_description: z.string().optional().nullable(),
@@ -26,7 +28,7 @@ export const packageSchema = z
     available_to: z.string().optional().nullable(),
     total_seats: z.coerce.number().int().min(1).optional().nullable(),
     pickup_info: z.string().optional().nullable(),
-    cover_image_url: z.string().url().optional().nullable(),
+    cover_image_url: imageUrlSchema.optional().nullable(),
     video_url: z.string().url().optional().nullable().or(z.literal('')),
     is_featured: z.coerce.boolean().default(false),
     meta_title: z.string().max(160).optional().nullable(),
@@ -54,7 +56,7 @@ export const itineraryDaySchema = z.object({
   meals: z.string().max(100).optional().nullable(),
   transport: z.string().max(200).optional().nullable(),
   activities: z.array(z.string()).default([]),
-  image_url: z.string().url().optional().nullable(),
+  image_url: imageUrlSchema.optional().nullable(),
 });
 
 export const inclusionExclusionSchema = z.object({

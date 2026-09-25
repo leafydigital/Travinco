@@ -4,7 +4,10 @@ import { notFound } from 'next/navigation';
 import { PackageForm } from '../package-form';
 import { ItineraryManager } from './itinerary-manager';
 import { InclusionExclusionManager } from './inclusion-exclusion-manager';
-import { addInclusion, removeInclusion, addExclusion, removeExclusion } from '../sub-resource-actions';
+import {
+  addInclusion, addInclusionsBulk, updateInclusion, removeInclusion,
+  addExclusion, addExclusionsBulk, updateExclusion, removeExclusion,
+} from '../sub-resource-actions';
 import { PackageImagesManager } from './package-images-manager';
 import { PackageVideosManager } from './package-videos-manager';
 import { StatusBadge } from '@/components/ui/status-badge';
@@ -72,6 +75,7 @@ export default async function EditPackagePage({ params }: { params: { id: string
       <PackageForm
         destinations={destinations ?? []}
         packageId={pkg.id}
+        currentStatus={pkg.status}
         initialValues={{
           destination_id: pkg.destination_id,
           title: pkg.title,
@@ -106,6 +110,8 @@ export default async function EditPackagePage({ params }: { params: { id: string
           packageId={pkg.id}
           items={inclusions ?? []}
           onAdd={addInclusion}
+          onAddBulk={addInclusionsBulk}
+          onUpdate={updateInclusion}
           onRemove={removeInclusion}
           label="What's included"
         />
@@ -117,6 +123,8 @@ export default async function EditPackagePage({ params }: { params: { id: string
           packageId={pkg.id}
           items={exclusions ?? []}
           onAdd={addExclusion}
+          onAddBulk={addExclusionsBulk}
+          onUpdate={updateExclusion}
           onRemove={removeExclusion}
           label="What's not included"
         />
@@ -130,6 +138,18 @@ export default async function EditPackagePage({ params }: { params: { id: string
       <div className="card space-y-4 p-5">
         <h2 className="text-sm font-semibold text-ink-800">Videos</h2>
         <PackageVideosManager packageId={pkg.id} videos={videos ?? []} />
+      </div>
+
+      {/* Triggers PackageForm's own submit via the form="package-form"
+          link — same save logic, just visually last on the page, to
+          match the create page where the button is naturally the last
+          element. The itinerary/inclusions/exclusions/images/videos
+          managers above each save independently as you use them; this
+          button only saves the basic-info fields further up. */}
+      <div className="flex justify-end">
+        <button type="submit" form="package-form" className="btn-primary">
+          Save changes
+        </button>
       </div>
     </div>
   );

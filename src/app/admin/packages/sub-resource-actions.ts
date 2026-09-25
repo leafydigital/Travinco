@@ -58,6 +58,40 @@ export async function addInclusion(packageId: string, raw: unknown) {
   return {};
 }
 
+/**
+ * Adds several inclusions in one call — the text area on the manager
+ * lets staff paste/type multiple lines and add them all together,
+ * instead of one Enter-press per item.
+ */
+export async function addInclusionsBulk(packageId: string, items: string[]) {
+  await requireProfile();
+  const cleaned = items.map((i) => i.trim()).filter(Boolean);
+  if (cleaned.length === 0) return { error: 'No items to add.' };
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from('package_inclusions')
+    .insert(cleaned.map((item) => ({ package_id: packageId, item })));
+  if (error) return { error: 'Could not add inclusions.' };
+  revalidatePath(`/admin/packages/${packageId}`);
+  return {};
+}
+
+export async function updateInclusion(packageId: string, id: string, raw: unknown) {
+  await requireProfile();
+  const parsed = itemSchema.safeParse(raw);
+  if (!parsed.success) return { error: 'Item cannot be empty.' };
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from('package_inclusions')
+    .update({ item: parsed.data.item })
+    .eq('id', id);
+  if (error) return { error: 'Could not update inclusion.' };
+  revalidatePath(`/admin/packages/${packageId}`);
+  return {};
+}
+
 export async function removeInclusion(packageId: string, id: string) {
   await requireProfile();
   const supabase = await createClient();
@@ -77,6 +111,35 @@ export async function addExclusion(packageId: string, raw: unknown) {
     .from('package_exclusions')
     .insert({ package_id: packageId, item: parsed.data.item });
   if (error) return { error: 'Could not add exclusion.' };
+  revalidatePath(`/admin/packages/${packageId}`);
+  return {};
+}
+
+export async function addExclusionsBulk(packageId: string, items: string[]) {
+  await requireProfile();
+  const cleaned = items.map((i) => i.trim()).filter(Boolean);
+  if (cleaned.length === 0) return { error: 'No items to add.' };
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from('package_exclusions')
+    .insert(cleaned.map((item) => ({ package_id: packageId, item })));
+  if (error) return { error: 'Could not add exclusions.' };
+  revalidatePath(`/admin/packages/${packageId}`);
+  return {};
+}
+
+export async function updateExclusion(packageId: string, id: string, raw: unknown) {
+  await requireProfile();
+  const parsed = itemSchema.safeParse(raw);
+  if (!parsed.success) return { error: 'Item cannot be empty.' };
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from('package_exclusions')
+    .update({ item: parsed.data.item })
+    .eq('id', id);
+  if (error) return { error: 'Could not update exclusion.' };
   revalidatePath(`/admin/packages/${packageId}`);
   return {};
 }

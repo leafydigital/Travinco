@@ -10,6 +10,11 @@ import nodemailer from 'nodemailer';
  *
  * Requires GMAIL_USER (the full address) and GMAIL_APP_PASSWORD (the
  * 16-character App Password) as environment variables.
+ *
+ * Note: raw SMTP on port 587 is frequently blocked or unreliable on
+ * serverless hosting (Netlify, Vercel). If sendMail keeps failing even
+ * with confirmed-correct credentials, that's the most likely cause —
+ * see the error logged below for the actual underlying reason.
  */
 export function isGmailConfigured() {
   return Boolean(process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD);
@@ -33,9 +38,10 @@ export async function sendGmail({
 
   const transporter = nodemailer.createTransport({
     host: 'smtp.gmail.com',
-    port: 587,
-    secure: false,
+    port: 465,
+    secure: true,
     auth: { user, pass },
+    connectionTimeout: 10000,
   });
 
   try {
@@ -46,7 +52,13 @@ export async function sendGmail({
       html,
     });
     return {};
-  } catch {
-    return { error: 'send_failed' };
+  } catch (err) {
+    // Logged server-side (visible in Netlify's function logs) so the
+    // actual SMTP failure reason is diagnosable — the generic message
+    // returned to the browser stays vague on purpose, but this at
+    // least gives something concrete to act on.
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('sendGmail failed:', message);
+    return { error: `send_failed: ${message}` };
   }
 }

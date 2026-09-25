@@ -35,7 +35,7 @@ export default async function HomePage() {
     supabase
       .from('travel_packages')
       .select(
-        'id, title, slug, cover_image_url, duration_days, duration_nights, base_price, discount_price, currency, short_description, destinations(name)'
+        'id, title, slug, cover_image_url, tile_image_url, duration_days, duration_nights, base_price, discount_price, currency, short_description, destinations(name)'
       )
       .eq('status', 'published')
       .eq('is_featured', true)
@@ -56,6 +56,10 @@ export default async function HomePage() {
   ]);
 
   const heroImageUrl = (destinations ?? []).find((d) => d.cover_image_url)?.cover_image_url ?? null;
+  const heroCollage = (destinations ?? [])
+    .map((d) => d.cover_image_url)
+    .filter((u): u is string => Boolean(u))
+    .slice(0, 4);
   const topOffer = (offers ?? [])[0] ?? null;
 
   const whyChooseUs = [
@@ -67,85 +71,86 @@ export default async function HomePage() {
 
   return (
     <div>
-      {/* HERO — larger full-bleed imagery, bolder scale, search panel as a
-          floating card. Original copy and layout. */}
-      <section className="relative flex min-h-[92vh] items-end overflow-hidden bg-navy-900 text-white sm:items-center">
-        <div className="absolute inset-0">
-          {heroImageUrl ? (
-            <Image src={heroImageUrl} alt="" fill priority className="object-cover" />
-          ) : null}
-          <div className="absolute inset-0 bg-gradient-to-t from-navy-900 via-navy-900/60 to-navy-900/10" />
-          <div className="absolute inset-0 bg-gradient-to-r from-navy-900/70 via-navy-900/10 to-transparent" />
+      {/* HERO — four-panel image collage with a centered headline, matching
+          travinco.com's split-image hero. Falls back to a single hero image
+          (or a plain brand-colored panel) when fewer than 4 destination
+          photos are published yet. */}
+      <section className="relative flex min-h-[85vh] items-center overflow-hidden bg-brand-900 text-white">
+        <div className="absolute inset-0 grid grid-cols-2 sm:grid-cols-4">
+          {(heroCollage.length > 0 ? heroCollage : heroImageUrl ? [heroImageUrl] : []).length === 0 ? (
+            <div className="col-span-4 bg-gradient-to-br from-brand-800 to-brand-900" />
+          ) : (
+            Array.from({ length: 4 }).map((_, i) => {
+              const pool = heroCollage.length > 0 ? heroCollage : [heroImageUrl!];
+              const src = pool[i % pool.length];
+              return (
+                <div key={i} className="relative h-full w-full">
+                  <Image src={src} alt="" fill priority className="object-cover" sizes="25vw" />
+                </div>
+              );
+            })
+          )}
+          <div className="absolute inset-0 bg-black/45" />
         </div>
 
-        <div className="container-page relative w-full pb-14 pt-24 sm:pb-24">
-          <div className="max-w-2xl">
-            <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.2em] text-ocean-200 backdrop-blur-sm">
-              Explore without the guesswork
-            </p>
-            <h1 className="font-display text-5xl font-semibold leading-[1.05] sm:text-7xl">
-              Trips planned like
-              <br />
-              someone who&apos;s
-              <br />
-              <span className="text-ocean-300">actually been there.</span>
-            </h1>
-            <p className="mt-6 max-w-lg text-lg text-white/80">
-              Handpicked packages across India and beyond, built around your pace and
-              budget — with a real team on call while you travel.
-            </p>
+        <div className="container-page relative w-full py-24 text-center">
+          <p className="mb-4 inline-flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.3em] text-white/90">
+            Explore Beyond Boundaries
+          </p>
+          <h1 className="font-display text-4xl font-bold uppercase leading-tight sm:text-6xl">
+            {settings.business_name ? `Discover Asia with ${settings.business_name}` : 'Discover Asia With Us'}
+          </h1>
+          <div className="mx-auto mt-6">
+            <Link href="/packages" className="btn-cta">
+              Learn More
+            </Link>
           </div>
+        </div>
+      </section>
 
-          <div className="mt-10 max-w-3xl rounded-xl2 bg-white p-3 shadow-2xl sm:p-3.5">
-            <HeroSearch destinations={(destinations ?? []).map((d) => ({ slug: d.slug, name: d.name }))} />
-          </div>
+      {/* QUOTE — short pull-quote band, matching the Mark Twain line on
+          travinco.com. */}
+      <section className="container-page py-14 text-center">
+        <Quote className="mx-auto h-8 w-8 text-ink-200" />
+        <p className="mx-auto mt-2 max-w-xl text-lg text-ink-600">
+          Sail away from the safe harbor. Explore. Dream. Discover.
+        </p>
+        <p className="mt-2 text-sm text-ink-400">Mark Twain</p>
 
-          <div className="mt-8 flex flex-wrap items-center gap-4">
-            <div className="flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-2 backdrop-blur-sm">
-              <Quote className="h-4 w-4 shrink-0 text-coral-300" />
-              <p className="text-sm italic text-white/80">
-                &ldquo;The trip that stays with you is the one someone actually planned for
-                you.&rdquo;
-              </p>
-            </div>
-          </div>
+        <div className="mx-auto mt-8 max-w-3xl rounded-xl2 bg-white p-3 text-left shadow-lg sm:p-3.5">
+          <HeroSearch destinations={(destinations ?? []).map((d) => ({ slug: d.slug, name: d.name }))} />
         </div>
       </section>
 
       {/* INTRO — "What we do" narrative + image collage. Original copy
           written for this project. */}
       <section className="container-page py-20">
-        <div className="grid items-center gap-12 lg:grid-cols-2">
+        <div className="grid items-start gap-12 lg:grid-cols-2">
           <div>
-            <SectionHeading eyebrow="What we do" title="Travel planning, taken off your plate" />
+            <SectionHeading title="What We Do" />
             <p className="text-ink-600">
-              We&apos;re {settings.business_name ?? 'a travel planning studio'}, built around one
-              idea: a good trip is planned by someone who has actually been there. Our
-              itineraries come from relationships we maintain directly with hotels, drivers and
-              local guides — not a marketplace of unreviewed listings.
+              Welcome to {settings.business_name ?? 'Travinco Travel Solutions'}, a premier travel
+              agency built around one idea: a good trip is planned by someone who has actually
+              been there. Our itineraries come from relationships we maintain directly with
+              hotels, drivers and local guides — not a marketplace of unreviewed listings.
             </p>
             <p className="mt-4 text-ink-600">
               Whether it&apos;s a weekend escape, a family holiday, or a longer multi-destination
               trip, we handle the logistics — accommodation, transport, permits where needed —
               so what&apos;s left for you is the part worth showing up for.
             </p>
-            <Link href="/about" className="btn-outline mt-6 inline-flex">
-              More about us <ArrowRight className="h-4 w-4" />
+            <Link href="/about" className="btn-cta mt-6 inline-flex">
+              Learn More <ArrowRight className="h-4 w-4" />
             </Link>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            {(galleryPreview ?? []).slice(0, 4).map((img, i) => (
-              <div
-                key={img.id}
-                className={`relative overflow-hidden rounded-xl2 bg-ink-100 ${
-                  i === 0 ? 'col-span-2 aspect-video' : 'aspect-square'
-                }`}
-              >
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {(galleryPreview ?? []).slice(0, 6).map((img) => (
+              <div key={img.id} className="relative aspect-square overflow-hidden rounded-xl2 bg-ink-100">
                 <Image src={img.image_url} alt={img.title ?? ''} fill className="object-cover" />
               </div>
             ))}
             {(galleryPreview ?? []).length === 0 && (
-              <div className="col-span-2 flex aspect-video items-center justify-center rounded-xl2 bg-ink-100 text-sm text-ink-400">
+              <div className="col-span-2 flex aspect-video items-center justify-center rounded-xl2 bg-ink-100 text-sm text-ink-400 sm:col-span-3">
                 Add gallery images to show them here
               </div>
             )}
@@ -174,9 +179,9 @@ export default async function HomePage() {
         <section className="section-sand py-20">
           <div className="container-page">
             <SectionHeading
-              eyebrow="Snapshot of our trips"
-              title="Featured packages"
+              title="Snapshot of Our Packages"
               description="A sample of what we plan most often — every one of these is fully customizable."
+            
             />
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
               {(featuredPackages ?? []).map((pkg) => {
@@ -226,18 +231,25 @@ export default async function HomePage() {
         </section>
       )}
 
-      {/* THEMED FEATURE BANNER — full-width promo band pointing at
-          whichever offer is currently active. */}
+      {/* THEMED FEATURE BANNER — full-bleed photo band pointing at whichever
+          offer is currently active, matching the "Rejuvenating Kerala"
+          style band on travinco.com (full photo, dark overlay, left-aligned
+          text block). */}
       {topOffer && (
-        <section className="relative overflow-hidden bg-gradient-to-br from-brand-800 via-brand-700 to-ocean-700 py-20 text-white">
-          {topOffer.image_url && (
-            <Image src={topOffer.image_url} alt="" fill className="object-cover opacity-20" />
-          )}
-          <div className="absolute -right-20 top-1/2 h-80 w-80 -translate-y-1/2 rounded-full bg-coral-400/10 blur-3xl" />
-          <div className="container-page relative text-center">
+        <section className="relative overflow-hidden py-24 text-white">
+          <div className="absolute inset-0 bg-brand-900">
+            {topOffer.image_url && (
+              <Image src={topOffer.image_url} alt="" fill className="object-cover opacity-70" />
+            )}
+            <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/40 to-transparent" />
+          </div>
+          <div className="container-page relative max-w-xl">
             <span className="badge-discount mb-3 inline-flex">Limited time</span>
-            <h2 className="font-display text-3xl font-semibold sm:text-4xl">{topOffer.title}</h2>
-            <p className="mx-auto mt-3 max-w-xl text-white/80">
+            <h2 className="font-display text-3xl font-bold uppercase leading-tight sm:text-4xl">
+              {topOffer.title}
+            </h2>
+            <div className="mt-4 h-[3px] w-12 bg-brand-400" />
+            <p className="mt-4 text-white/85">
               {topOffer.discount_percent
                 ? `Save ${topOffer.discount_percent}% when you book before ${formatDate(topOffer.valid_to)}.`
                 : `Save ₹${topOffer.discount_flat} when you book before ${formatDate(topOffer.valid_to)}.`}

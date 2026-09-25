@@ -117,6 +117,7 @@ export interface Database {
           duration_nights: number;
           base_price: number;
           discount_price: number | null;
+          child_price: number | null;
           currency: string;
           short_description: string | null;
           full_description: string | null;
@@ -159,6 +160,21 @@ export interface Database {
           image_url: string;
         };
         Update: Partial<Database['public']['Tables']['package_images']['Row']>;
+      };
+      package_faqs: {
+        Row: {
+          id: string;
+          package_id: string;
+          question: string;
+          answer: string;
+          sort_order: number;
+        };
+        Insert: Partial<Database['public']['Tables']['package_faqs']['Row']> & {
+          package_id: string;
+          question: string;
+          answer: string;
+        };
+        Update: Partial<Database['public']['Tables']['package_faqs']['Row']>;
       };
       package_videos: {
         Row: {

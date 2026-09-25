@@ -4,7 +4,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { formatCurrency } from '@/lib/utils/format';
 import Link from 'next/link';
 import Image from 'next/image';
-import { Plus, Search } from 'lucide-react';
+import { Plus, Search, ArrowLeft } from 'lucide-react';
 import { PackageRowActions } from './package-row-actions';
 
 const PAGE_SIZE = 20;
@@ -54,6 +54,9 @@ export default async function AdminPackagesPage({
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
+          <Link href="/admin" className="mb-1 flex items-center gap-1 text-sm text-ink-500 hover:text-brand-700">
+            <ArrowLeft className="h-4 w-4" /> Back to dashboard
+          </Link>
           <h1 className="text-xl font-semibold text-ink-900">Travel packages</h1>
           <p className="text-sm text-ink-500">{count ?? 0} total packages</p>
         </div>

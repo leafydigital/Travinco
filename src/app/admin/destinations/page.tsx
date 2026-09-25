@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server';
 import { requireProfile } from '@/lib/supabase/auth-helpers';
 import { StatusBadge } from '@/components/ui/status-badge';
 import Link from 'next/link';
-import { Plus } from 'lucide-react';
+import { Plus, ArrowLeft } from 'lucide-react';
 import { DestinationRowActions } from './destination-row-actions';
 
 export default async function AdminDestinationsPage() {
@@ -13,7 +13,12 @@ export default async function AdminDestinationsPage() {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-semibold text-ink-900">Destinations</h1>
+        <div>
+          <Link href="/admin" className="mb-1 flex items-center gap-1 text-sm text-ink-500 hover:text-brand-700">
+            <ArrowLeft className="h-4 w-4" /> Back to dashboard
+          </Link>
+          <h1 className="text-xl font-semibold text-ink-900">Destinations</h1>
+        </div>
         <Link href="/admin/destinations/new" className="btn-primary">
           <Plus className="h-4 w-4" /> New destination
         </Link>

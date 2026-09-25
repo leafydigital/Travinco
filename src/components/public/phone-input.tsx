@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { ChevronDown } from 'lucide-react';
 
 /**
  * Country dial codes with their expected national-number length (digits
@@ -33,7 +32,6 @@ export const COUNTRY_PHONE_CODES = [
   { code: '+81', country: 'Japan', digits: 10 },
   { code: '+82', country: 'South Korea', digits: 10 },
   { code: '+86', country: 'China', digits: 11 },
-  { code: '+65', country: 'Singapore', digits: 8 },
   { code: '+27', country: 'South Africa', digits: 9 },
   { code: '+55', country: 'Brazil', digits: 11 },
   { code: '+52', country: 'Mexico', digits: 10 },
@@ -46,25 +44,40 @@ export function PhoneInput({
   placeholder,
   defaultDialCode = '+91',
   onValidityChange,
+  value: controlledValue,
+  onChange: controlledOnChange,
 }: {
   name: string;
   required?: boolean;
   placeholder?: string;
   defaultDialCode?: string;
   onValidityChange?: (isValid: boolean) => void;
+  /** Optional controlled mode — used by the "same as phone number" sync. */
+  value?: { dialCode: string; number: string };
+  onChange?: (value: { dialCode: string; number: string }) => void;
 }) {
-  const [dialCode, setDialCode] = useState(defaultDialCode);
-  const [number, setNumber] = useState('');
+  const [internalDialCode, setInternalDialCode] = useState(defaultDialCode);
+  const [internalNumber, setInternalNumber] = useState('');
   const [touched, setTouched] = useState(false);
+
+  const isControlled = controlledValue !== undefined;
+  const dialCode = isControlled ? controlledValue.dialCode : internalDialCode;
+  const number = isControlled ? controlledValue.number : internalNumber;
+
+  function setDialCode(next: string) {
+    if (isControlled) controlledOnChange?.({ dialCode: next, number });
+    else setInternalDialCode(next);
+  }
+  function setNumber(next: string) {
+    if (isControlled) controlledOnChange?.({ dialCode, number: next });
+    else setInternalNumber(next);
+  }
 
   const country = COUNTRY_PHONE_CODES.find((c) => c.code === dialCode) ?? COUNTRY_PHONE_CODES[0];
   const digitsOnly = number.replace(/\D/g, '');
   const isValidLength = digitsOnly.length === country.digits;
   const showError = touched && number.length > 0 && !isValidLength;
 
-  // A field that's empty and not required is "valid" (nothing to
-  // check); empty-but-required or wrong-length both count as invalid,
-  // so the parent form can gate its submit button on this.
   useEffect(() => {
     const valid = number.length === 0 ? !required : isValidLength;
     onValidityChange?.(valid);
@@ -80,7 +93,7 @@ export function PhoneInput({
             setDialCode(e.target.value);
             setTouched(false);
           }}
-          className="input w-28 shrink-0"
+          className="input w-28 shrink-0 text-base"
           aria-label="Country code"
         >
           {COUNTRY_PHONE_CODES.map((c, i) => (
@@ -97,7 +110,10 @@ export function PhoneInput({
           value={number}
           onChange={(e) => setNumber(e.target.value.replace(/[^\d]/g, ''))}
           onBlur={() => setTouched(true)}
-          className="input flex-1"
+          // Larger, bolder text specifically for phone numbers — these
+          // get mistyped easily, so legibility matters more here than
+          // on most fields.
+          className="input flex-1 text-base font-medium tracking-wide"
         />
       </div>
       {showError && (

@@ -1,8 +1,9 @@
 import { z } from 'zod';
+import { imageUrlSchema } from './image-url';
 
 export const generalSettingsSchema = z.object({
   business_name: z.string().min(1, 'Business name is required').max(200),
-  logo_url: z.string().url().optional().or(z.literal('')),
+  logo_url: imageUrlSchema.optional().or(z.literal('')),
   phone: z.string().max(20).optional().or(z.literal('')),
   whatsapp: z.string().max(20).optional().or(z.literal('')),
   email: z.string().email().optional().or(z.literal('')),
@@ -34,6 +35,19 @@ export const termsSettingsSchema = z.object({
 
 export type TermsSettingsFormValues = z.infer<typeof termsSettingsSchema>;
 
+export const faqsSettingsSchema = z.object({
+  items: z
+    .array(
+      z.object({
+        question: z.string().min(1, 'Question is required'),
+        answer: z.string().min(1, 'Answer is required'),
+      })
+    )
+    .default([]),
+});
+
+export type FaqsSettingsFormValues = z.infer<typeof faqsSettingsSchema>;
+
 export const destinationSchema = z.object({
   name: z.string().min(2, 'Name is required').max(120),
   slug: z
@@ -43,7 +57,7 @@ export const destinationSchema = z.object({
     .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Lowercase letters, numbers and hyphens only'),
   country: z.string().max(100).optional().nullable(),
   description: z.string().optional().nullable(),
-  cover_image_url: z.string().url().optional().nullable().or(z.literal('')),
+  cover_image_url: imageUrlSchema.optional().nullable().or(z.literal('')),
   is_featured: z.boolean().default(false),
   meta_title: z.string().max(160).optional().nullable(),
   meta_description: z.string().max(320).optional().nullable(),

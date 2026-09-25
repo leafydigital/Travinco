@@ -3,8 +3,9 @@ import { requireProfile } from '@/lib/supabase/auth-helpers';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { formatDate } from '@/lib/utils/format';
 import Link from 'next/link';
-import { Search } from 'lucide-react';
+import { Search, ArrowLeft } from 'lucide-react';
 import { EnquiryRowActions } from './enquiry-row-actions';
+import { AutoRefresh } from '@/components/admin/auto-refresh';
 
 const PAGE_SIZE = 25;
 
@@ -66,7 +67,11 @@ export default async function AdminEnquiriesPage({
 
   return (
     <div className="space-y-5">
+      <AutoRefresh intervalMs={30000} />
       <div>
+        <Link href="/admin" className="mb-1 flex items-center gap-1 text-sm text-ink-500 hover:text-brand-700">
+          <ArrowLeft className="h-4 w-4" /> Back to dashboard
+        </Link>
         <h1 className="text-xl font-semibold text-ink-900">Enquiries</h1>
         <p className="text-sm text-ink-500">{count ?? 0} total enquiries</p>
       </div>

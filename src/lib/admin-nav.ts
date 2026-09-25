@@ -6,7 +6,7 @@ import type { UserRole } from '@/types/database';
 // boundary. See admin-sidebar.tsx for where the name is resolved back
 // into an actual icon component.
 export const iconNames = [
-  'LayoutDashboard', 'Package', 'MapPin', 'Inbox', 'ImageIcon', 'Settings', 'Tag', 'BookOpen', 'Users',
+  'LayoutDashboard', 'Package', 'MapPin', 'Inbox', 'CalendarCheck', 'ImageIcon', 'Settings', 'Tag', 'BookOpen', 'Users',
 ] as const;
 
 export type IconName = (typeof iconNames)[number];
@@ -35,6 +35,7 @@ export const adminNav: NavSection[] = [
       { label: 'Packages', href: '/admin/packages', icon: 'Package' },
       { label: 'Destinations', href: '/admin/destinations', icon: 'MapPin' },
       { label: 'Enquiries', href: '/admin/enquiries', icon: 'Inbox' },
+      { label: 'Bookings', href: '/admin/bookings', icon: 'CalendarCheck' },
       { label: 'Special offers', href: '/admin/offers', icon: 'Tag' },
       { label: 'Gallery', href: '/admin/gallery', icon: 'ImageIcon' },
       { label: 'Blog', href: '/admin/blog', icon: 'BookOpen' },

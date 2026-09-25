@@ -3,13 +3,12 @@
 import { createClient } from '@/lib/supabase/server';
 import { headers } from 'next/headers';
 import { z } from 'zod';
-import { wasEnquiryEmailRecentlyVerified } from '@/lib/enquiry-otp';
 
 const contactSchema = z.object({
   name: z.string().min(2, 'Please enter your name').max(120),
   phone: z.string().max(20).optional().or(z.literal('')),
   whatsapp_number: z.string().max(20).optional().or(z.literal('')),
-  email: z.string().email('Enter a valid email — we verify it before accepting your message'),
+  email: z.string().email('Enter a valid email'),
   subject: z.string().max(200).optional().or(z.literal('')),
   message: z.string().min(5, 'Message is too short').max(2000),
   website: z.string().max(0).optional().or(z.literal('')), // honeypot
@@ -52,11 +51,6 @@ export async function submitContactMessage(
 
   if (parsed.data.website) {
     return { success: true }; // honeypot tripped — pretend success, write nothing
-  }
-
-  const verified = await wasEnquiryEmailRecentlyVerified(parsed.data.email);
-  if (!verified) {
-    return { error: 'Please verify your email before submitting.' };
   }
 
   const supabase = await createClient();

@@ -28,7 +28,16 @@ export async function requireProfile(): Promise<CurrentProfile> {
     .single();
 
   if (error || !profile) {
-    redirect('/login');
+    // A real, logged-in session exists, but it belongs to a customer
+    // account (customer_accounts), not staff (profiles) — those are
+    // two separate tables layered on the same underlying auth.users
+    // session by design, so this is not a broken login: it's a
+    // customer correctly being unable to reach the admin panel. Signing
+    // them out here (rather than just redirecting) avoids a confusing
+    // loop where /login sees a valid session and bounces back to
+    // /admin, which then bounces back to /login again.
+    await supabase.auth.signOut();
+    redirect('/login?reason=not_staff');
   }
 
   if (!profile.is_active) {

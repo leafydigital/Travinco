@@ -26,7 +26,10 @@ async function logEnquiryActivity(
   });
 }
 
-export async function updateEnquiryStatus(enquiryId: string, status: EnquiryStatus) {
+export async function updateEnquiryStatus(
+  enquiryId: string,
+  status: EnquiryStatus
+): Promise<{ error?: string }> {
   await requireProfile();
   const supabase = await createClient();
 
@@ -52,6 +55,87 @@ export async function updateEnquiryStatus(enquiryId: string, status: EnquiryStat
 
   revalidatePath(`/admin/enquiries/${enquiryId}`);
   revalidatePath('/admin/enquiries');
+  return {};
+}
+
+/**
+ * Staff-facing accept/reject actions, on top of updateEnquiryStatus.
+ * Distinct from the general status dropdown so this specific decision
+ * — the one a customer actually cares about and sees reflected in
+ * their own account — is a clear, single action, and always emails
+ * the customer when it happens (best-effort; email failure never
+ * blocks the actual decision from being recorded).
+ */
+export async function acceptEnquiry(enquiryId: string): Promise<{ error?: string }> {
+  const result = await updateEnquiryStatus(enquiryId, 'confirmed');
+  if (result.error) return result;
+
+  const supabase = await createClient();
+  const { data: enquiry } = await supabase
+    .from('enquiries')
+    .select('email, customer_name')
+    .eq('id', enquiryId)
+    .single();
+
+  if (enquiry?.email) {
+    try {
+      const { sendGmail, isGmailConfigured } = await import('@/lib/email/gmail');
+      if (!isGmailConfigured()) {
+        console.error(
+          'acceptEnquiry: GMAIL_USER/GMAIL_APP_PASSWORD not set — confirmation email not sent.'
+        );
+      } else {
+        const trackUrl = `${process.env.NEXT_PUBLIC_SITE_URL ?? ''}/account/bookings`;
+        const sendResult = await sendGmail({
+          to: enquiry.email,
+          subject: 'Your request has been accepted',
+          html: `<p>Hi ${enquiry.customer_name},</p><p>Good news — your enquiry has been accepted. You can track its status any time by logging in to <a href="${trackUrl}">your account</a>.</p><p>We'll be in touch with next steps shortly.</p>`,
+        });
+        if (sendResult.error) {
+          console.error('acceptEnquiry: sendGmail failed:', sendResult.error);
+        }
+      }
+    } catch (err) {
+      console.error('acceptEnquiry: email step threw:', err instanceof Error ? err.message : err);
+    }
+  } else {
+    console.error('acceptEnquiry: enquiry has no email on file — nothing to send to.');
+  }
+
+  return {};
+}
+
+export async function rejectEnquiry(enquiryId: string, reason?: string): Promise<{ error?: string }> {
+  const result = await updateEnquiryStatus(enquiryId, 'lost');
+  if (result.error) return result;
+
+  const supabase = await createClient();
+  const { data: enquiry } = await supabase
+    .from('enquiries')
+    .select('email, customer_name')
+    .eq('id', enquiryId)
+    .single();
+
+  if (reason?.trim()) {
+    await logEnquiryActivity(enquiryId, 'rejected', `Rejected: ${reason.trim()}`);
+  }
+
+  if (enquiry?.email) {
+    try {
+      const { sendGmail, isGmailConfigured } = await import('@/lib/email/gmail');
+      if (isGmailConfigured()) {
+        const trackUrl = `${process.env.NEXT_PUBLIC_SITE_URL ?? ''}/account/bookings`;
+        await sendGmail({
+          to: enquiry.email,
+          subject: 'Update on your request',
+          html: `<p>Hi ${enquiry.customer_name},</p><p>We're sorry — we're unable to move forward with this request${reason?.trim() ? `: ${reason.trim()}` : '.'}</p><p>You can view its status any time by logging in to <a href="${trackUrl}">your account</a>. Feel free to reach out or submit a new request if your plans change.</p>`,
+        });
+      }
+    } catch {
+      // Best-effort only.
+    }
+  }
+
   return {};
 }
 
@@ -248,7 +332,10 @@ export async function completeFollowup(enquiryId: string, followupId: string) {
  * so the caller can redirect straight to it for the admin to fill in
  * pricing/dates.
  */
-export async function convertEnquiryToBooking(enquiryId: string) {
+export async function convertEnquiryToBooking(
+  enquiryId: string,
+  overrides?: { baseAmount?: number; discountAmount?: number }
+) {
   await requireProfile();
   const supabase = await createClient();
 
@@ -304,6 +391,13 @@ export async function convertEnquiryToBooking(enquiryId: string) {
   const travelEnd = enquiry.return_date ?? travelStart;
   const unitPrice = pkg?.discount_price ?? pkg?.base_price ?? 0;
   const paxCount = enquiry.number_of_adults + enquiry.number_of_children;
+  const computedAmount = unitPrice * Math.max(paxCount, 1);
+  // Staff can review/adjust the total and apply a discount on the
+  // "Convert to booking" screen before this runs — overrides.baseAmount
+  // replaces the auto-computed figure entirely when provided, rather
+  // than being added on top of it.
+  const finalBaseAmount = overrides?.baseAmount ?? computedAmount;
+  const discountAmount = Math.max(0, overrides?.discountAmount ?? 0);
 
   const { data: booking, error: bookingError } = await supabase
     .from('bookings')
@@ -321,7 +415,8 @@ export async function convertEnquiryToBooking(enquiryId: string) {
       number_of_adults: Math.max(enquiry.number_of_adults, 1),
       number_of_children: enquiry.number_of_children,
       number_of_infants: enquiry.number_of_infants,
-      base_amount: unitPrice * Math.max(paxCount, 1),
+      base_amount: finalBaseAmount,
+      discount_amount: discountAmount,
       booking_status: 'inquiry',
     })
     .select('id')

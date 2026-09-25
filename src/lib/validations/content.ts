@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { imageUrlSchema } from './image-url';
 
 export const eventSchema = z.object({
   title: z.string().min(3, 'Title is required').max(200),
@@ -10,7 +11,7 @@ export const eventSchema = z.object({
   description: z.string().optional().nullable(),
   location: z.string().max(200).optional().nullable(),
   event_date: z.string().optional().nullable(),
-  image_url: z.string().url().optional().nullable().or(z.literal('')),
+  image_url: imageUrlSchema.optional().nullable().or(z.literal('')),
   cta_label: z.string().max(60).optional().nullable(),
   cta_url: z.string().optional().nullable(),
 });
@@ -26,7 +27,7 @@ export const blogPostSchema = z.object({
     .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Lowercase letters, numbers and hyphens only'),
   excerpt: z.string().max(500).optional().nullable(),
   content: z.string().optional().nullable(),
-  cover_image_url: z.string().url().optional().nullable().or(z.literal('')),
+  cover_image_url: imageUrlSchema.optional().nullable().or(z.literal('')),
 });
 
 export type BlogPostFormValues = z.infer<typeof blogPostSchema>;
@@ -50,7 +51,7 @@ export const offerSchema = z
     // computes valid_to as "today + N days" client-side instead of
     // requiring the admin to pick a specific end date.
     days_from_now: z.coerce.number().int().min(1).optional().nullable(),
-    image_url: z.string().url().optional().nullable().or(z.literal('')),
+    image_url: imageUrlSchema.optional().nullable().or(z.literal('')),
     terms: z.string().optional().nullable(),
   })
   .refine((d) => d.valid_to >= d.valid_from, {

@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils/cn';
 import type { NavSection, IconName } from '@/lib/admin-nav';
 import {
-  LayoutDashboard, Package, MapPin, Inbox, Image as ImageIcon,
+  LayoutDashboard, Package, MapPin, Inbox, CalendarCheck, Image as ImageIcon,
   Settings, Tag, BookOpen, Users, LogOut,
   type LucideIcon,
 } from 'lucide-react';
@@ -16,7 +16,7 @@ import { signOut } from '@/app/admin/actions';
 // name string, since a live component reference can't cross the
 // Server -> Client boundary as plain data.
 const iconMap: Record<IconName, LucideIcon> = {
-  LayoutDashboard, Package, MapPin, Inbox, ImageIcon, Settings, Tag, BookOpen, Users,
+  LayoutDashboard, Package, MapPin, Inbox, CalendarCheck, ImageIcon, Settings, Tag, BookOpen, Users,
 };
 
 export function AdminSidebar({

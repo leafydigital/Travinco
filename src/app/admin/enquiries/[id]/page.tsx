@@ -6,6 +6,7 @@ import { formatCurrency, formatDate, formatDateTime } from '@/lib/utils/format';
 import { EnquiryControls } from './enquiry-controls';
 import { NotesPanel, FollowupsPanel } from './notes-followups';
 import { ConvertToBookingButton } from './convert-button';
+import { AcceptRejectButtons } from './accept-reject-buttons';
 import { EnquiryDetailsEditForm } from './enquiry-details-edit-form';
 import { Phone, Mail, MessageCircle } from 'lucide-react';
 import Link from 'next/link';
@@ -18,7 +19,7 @@ export default async function EnquiryDetailPage({ params }: { params: { id: stri
     await Promise.all([
       supabase
         .from('enquiries')
-        .select('*, travel_packages(title, slug)')
+        .select('*, travel_packages(title, slug, base_price, discount_price)')
         .eq('id', params.id)
         .single(),
       supabase.from('profiles').select('id, full_name').eq('is_active', true).order('full_name'),
@@ -37,10 +38,14 @@ export default async function EnquiryDetailPage({ params }: { params: { id: stri
   if (!enquiry) notFound();
 
   const pkgRaw = enquiry.travel_packages as
-    | { title: string; slug: string }
-    | { title: string; slug: string }[]
+    | { title: string; slug: string; base_price: number | null; discount_price: number | null }
+    | { title: string; slug: string; base_price: number | null; discount_price: number | null }[]
     | null;
   const pkg = Array.isArray(pkgRaw) ? pkgRaw[0] ?? null : pkgRaw;
+  const computedAmount = pkg
+    ? (pkg.discount_price ?? pkg.base_price ?? 0) *
+      Math.max(enquiry.number_of_adults + enquiry.number_of_children, 1)
+    : 0;
 
   return (
     <div className="space-y-6 pb-16">
@@ -53,7 +58,12 @@ export default async function EnquiryDetailPage({ params }: { params: { id: stri
           <p className="text-sm text-ink-500">{enquiry.customer_name}</p>
         </div>
         <div className="flex gap-2">
-          <ConvertToBookingButton enquiryId={enquiry.id} hasPackage={Boolean(enquiry.package_id)} />
+          <AcceptRejectButtons enquiryId={enquiry.id} currentStatus={enquiry.status} />
+          <ConvertToBookingButton
+            enquiryId={enquiry.id}
+            hasPackage={Boolean(enquiry.package_id)}
+            computedAmount={computedAmount}
+          />
           <Link href="/admin/enquiries" className="btn-outline">
             Back to enquiries
           </Link>

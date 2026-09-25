@@ -13,6 +13,10 @@ export type PackageStatus = 'draft' | 'published' | 'archived';
 export type PackageCategory =
   | 'honeymoon' | 'family' | 'adventure' | 'group' | 'luxury' | 'budget' | 'pilgrimage' | 'other';
 
+export type FoodPreference = 'veg' | 'non_veg' | 'pure_veg';
+
+export type RoomType = 'ac' | 'non_ac' | 'semi_ac';
+
 export type EnquiryStatus =
   | 'new' | 'contacted' | 'follow_up' | 'quotation_sent' | 'negotiation'
   | 'confirmed' | 'lost' | 'closed';

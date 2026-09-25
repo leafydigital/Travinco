@@ -113,7 +113,7 @@ export function SiteHeader({
                 overlayMode ? 'text-white/90 hover:text-white' : 'text-ink-600 hover:text-brand-700'
               )}
             >
-              Destinations
+              {t('nav_destinations')}
               <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', destinationsOpen && 'rotate-180')} />
             </button>
 
@@ -308,7 +308,7 @@ export function SiteHeader({
                 onClick={() => setMobileDestinationsOpen((o) => !o)}
                 className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium text-ink-700 hover:bg-brand-50 hover:text-brand-700"
               >
-                Destinations
+                {t('nav_destinations')}
                 <ChevronDown
                   className={cn('h-4 w-4 transition-transform', mobileDestinationsOpen && 'rotate-180')}
                 />

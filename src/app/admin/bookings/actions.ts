@@ -74,6 +74,22 @@ export async function addPassenger(bookingId: string, raw: unknown) {
   return {};
 }
 
+export async function updatePassenger(bookingId: string, passengerId: string, raw: unknown) {
+  await requireProfile();
+  const parsed = passengerSchema.safeParse(raw);
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid passenger details.' };
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from('booking_passengers')
+    .update(parsed.data)
+    .eq('id', passengerId);
+  if (error) return { error: 'Could not update passenger.' };
+
+  revalidatePath(`/admin/bookings/${bookingId}`);
+  return {};
+}
+
 export async function removePassenger(bookingId: string, passengerId: string) {
   await requireProfile();
   const supabase = await createClient();
@@ -153,5 +169,37 @@ export async function deletePayment(bookingId: string, paymentId: string) {
   if (error) return { error: 'Could not delete payment.' };
 
   revalidatePath(`/admin/bookings/${bookingId}`);
+  return {};
+}
+
+/**
+ * Deletes a booking outright — admin-only, since this is destructive
+ * and removes the booking record entirely (its own payments/passengers
+ * cascade with it, per the schema's foreign keys). The enquiry it was
+ * converted from, if any, is left untouched. Logged to audit_logs
+ * before deletion, since the row (and its before_data snapshot) won't
+ * exist to reference afterward.
+ */
+export async function deleteBooking(bookingId: string) {
+  const profile = await requireProfile();
+  if (!['admin', 'super_admin'].includes(profile.role)) {
+    return { error: 'Only admins can delete a booking.' };
+  }
+
+  const supabase = await createClient();
+  const { data: before } = await supabase
+    .from('bookings')
+    .select('*')
+    .eq('id', bookingId)
+    .maybeSingle();
+
+  const { error } = await supabase.from('bookings').delete().eq('id', bookingId);
+  if (error) return { error: 'Could not delete this booking.' };
+
+  await logAudit('booking.deleted', bookingId, before ?? undefined, undefined);
+
+  revalidatePath('/admin/bookings');
+  revalidatePath('/admin/income');
+  revalidatePath('/admin/reports');
   return {};
 }

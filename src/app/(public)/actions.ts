@@ -1,9 +1,9 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
+import { createServiceClient } from '@/lib/supabase/service';
 import { enquiryFormSchema } from '@/lib/validations/enquiry';
 import { headers } from 'next/headers';
-import { wasEnquiryEmailRecentlyVerified } from '@/lib/enquiry-otp';
 
 export type EnquirySubmitState = {
   error?: string;
@@ -67,17 +67,17 @@ export async function submitEnquiry(
     return { success: true, enquiryNumber: 'ENQ-0000-00000' };
   }
 
-  // If an email was given, it must have been verified via the OTP flow
-  // just before submitting — this is the actual enforcement point; the
-  // OTP UI alone is decorative without this check.
-  if (parsed.data.email) {
-    const verified = await wasEnquiryEmailRecentlyVerified(parsed.data.email);
-    if (!verified) {
-      return { error: 'Please verify your email before submitting.' };
-    }
-  }
-
-  const { data, error } = await supabase
+  // Uses the service-role client for this specific insert+read-back.
+  // The "anyone can submit an enquiry" INSERT policy is already
+  // unconditionally open, but the table's SELECT policy is
+  // staff-only (is_staff()) — so .insert().select() (which reads the
+  // new row back to return enquiry_number) was being blocked by RLS
+  // for any non-staff submitter, including a logged-in customer. The
+  // actual write access is unaffected: everything above this line
+  // (auth check, validation, honeypot) still gates who can even reach
+  // this insert.
+  const serviceClient = createServiceClient();
+  const { data, error } = await serviceClient
     .from('enquiries')
     .insert({
       customer_name: parsed.data.customer_name,
@@ -100,7 +100,11 @@ export async function submitEnquiry(
     .single();
 
   if (error || !data) {
-    // Never leak raw database errors to a public form.
+    // Logged server-side (visible in your hosting platform's function
+    // logs) so the real cause is diagnosable — the message shown to
+    // the visitor stays generic on purpose, never leaking raw database
+    // errors to a public form.
+    console.error('submitEnquiry insert failed:', error?.message, error?.code, error?.details);
     return { error: 'Something went wrong on our end. Please try again or WhatsApp us directly.' };
   }
 

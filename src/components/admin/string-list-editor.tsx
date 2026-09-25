@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { X, Plus } from 'lucide-react';
+import { X, Plus, Pencil, Check } from 'lucide-react';
 
 export function StringListEditor({
   label,
@@ -15,6 +15,8 @@ export function StringListEditor({
   placeholder?: string;
 }) {
   const [draft, setDraft] = useState('');
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editValue, setEditValue] = useState('');
 
   function add() {
     const value = draft.trim();
@@ -27,25 +29,79 @@ export function StringListEditor({
     onChange(items.filter((_, i) => i !== index));
   }
 
+  function startEdit(index: number) {
+    setEditingIndex(index);
+    setEditValue(items[index]);
+  }
+
+  function saveEdit(index: number) {
+    const value = editValue.trim();
+    if (!value) return;
+    onChange(items.map((item, i) => (i === index ? value : item)));
+    setEditingIndex(null);
+  }
+
   return (
     <div>
       <p className="label">{label}</p>
       <div className="space-y-2">
-        {items.map((item, i) => (
-          <div key={i} className="flex items-center gap-2">
-            <span className="flex-1 rounded-lg border border-ink-200 bg-ink-50 px-3 py-2 text-sm text-ink-700">
-              {item}
-            </span>
-            <button
-              type="button"
-              onClick={() => remove(i)}
-              className="rounded-lg p-2 text-ink-400 hover:bg-red-50 hover:text-red-600"
-              aria-label={`Remove ${item}`}
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        ))}
+        {items.map((item, i) =>
+          editingIndex === i ? (
+            <div key={i} className="flex items-center gap-2">
+              <input
+                type="text"
+                value={editValue}
+                onChange={(e) => setEditValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    saveEdit(i);
+                  }
+                }}
+                autoFocus
+                className="input flex-1"
+              />
+              <button
+                type="button"
+                onClick={() => setEditingIndex(null)}
+                className="rounded-lg p-2 text-ink-400 hover:bg-ink-100"
+                aria-label="Cancel"
+              >
+                <X className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => saveEdit(i)}
+                className="rounded-lg p-2 text-brand-600 hover:bg-brand-50"
+                aria-label="Save"
+              >
+                <Check className="h-4 w-4" />
+              </button>
+            </div>
+          ) : (
+            <div key={i} className="flex items-center gap-2">
+              <span className="flex-1 rounded-lg border border-ink-200 bg-ink-50 px-3 py-2 text-sm text-ink-700">
+                {item}
+              </span>
+              <button
+                type="button"
+                onClick={() => startEdit(i)}
+                className="rounded-lg p-2 text-ink-400 hover:bg-ink-100 hover:text-ink-700"
+                aria-label={`Edit ${item}`}
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => remove(i)}
+                className="rounded-lg p-2 text-ink-400 hover:bg-red-50 hover:text-red-600"
+                aria-label={`Remove ${item}`}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          )
+        )}
         <div className="flex items-center gap-2">
           <input
             type="text"

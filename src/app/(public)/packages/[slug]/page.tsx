@@ -47,7 +47,7 @@ async function getPackage(slug: string) {
     destinations: destinationRow ?? null,
   };
 
-  const [{ data: images }, { data: itinerary }, { data: inclusions }, { data: exclusions }, { data: videos }] =
+  const [{ data: images }, { data: itinerary }, { data: inclusions }, { data: exclusions }, { data: videos }, { data: faqs }] =
     await Promise.all([
       supabase.from('package_images').select('*').eq('package_id', packageId).order('sort_order'),
       supabase
@@ -58,6 +58,7 @@ async function getPackage(slug: string) {
       supabase.from('package_inclusions').select('*').eq('package_id', packageId).order('sort_order'),
       supabase.from('package_exclusions').select('*').eq('package_id', packageId).order('sort_order'),
       supabase.from('package_videos').select('*').eq('package_id', packageId).order('sort_order'),
+      supabase.from('package_faqs').select('*').eq('package_id', packageId).order('sort_order'),
     ]);
 
   // Same live date-window check as the packages listing page — an offer
@@ -80,6 +81,7 @@ async function getPackage(slug: string) {
     inclusions: inclusions ?? [],
     exclusions: exclusions ?? [],
     videos: videos ?? [],
+    faqs: faqs ?? [],
     activeOffer,
   };
 }
@@ -118,7 +120,7 @@ export default async function PackageDetailPage({ params }: { params: { slug: st
     data: { user },
   } = await supabaseForAuth.auth.getUser();
 
-  const { pkg, images, itinerary, inclusions, exclusions, videos, activeOffer } = result;
+  const { pkg, images, itinerary, inclusions, exclusions, videos, faqs, activeOffer } = result;
   const offerPrice = activeOffer
     ? activeOffer.discount_percent
       ? pkg.base_price * (1 - activeOffer.discount_percent / 100)
@@ -274,7 +276,10 @@ export default async function PackageDetailPage({ params }: { params: { slug: st
               <h2 className="font-display text-xl font-semibold text-ink-900">
                 {videoEmbedUrls.length > 1 ? 'Videos' : 'Video'}
               </h2>
-              <div className="mt-3 grid gap-4 sm:grid-cols-2">
+              {/* Full-width, one per row — genuinely larger than the old
+                  2-column grid, which shrank each video on anything but
+                  a wide screen. */}
+              <div className="mt-3 space-y-4">
                 {videoEmbedUrls.map((embedUrl, i) => (
                   <div key={embedUrl} className="aspect-video overflow-hidden rounded-xl2 bg-ink-100">
                     <iframe
@@ -284,6 +289,22 @@ export default async function PackageDetailPage({ params }: { params: { slug: st
                       allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                       allowFullScreen
                     />
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {faqs.length > 0 && (
+            <section>
+              <h2 className="font-display text-xl font-semibold text-ink-900">
+                Frequently asked questions
+              </h2>
+              <div className="mt-3 space-y-3">
+                {faqs.map((faq) => (
+                  <div key={faq.id} className="rounded-xl2 border border-ink-100 p-4">
+                    <p className="font-medium text-ink-900">{faq.question}</p>
+                    <p className="mt-1 text-sm text-ink-500">{faq.answer}</p>
                   </div>
                 ))}
               </div>

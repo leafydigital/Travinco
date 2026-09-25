@@ -6,6 +6,7 @@ import { formatCurrency, formatDate } from '@/lib/utils/format';
 import { BookingStatusControl } from './booking-status-control';
 import { PaymentsPanel } from './payments-panel';
 import { PassengersPanel } from './passengers-panel';
+import { BookingRowActions } from '../booking-row-actions';
 import Link from 'next/link';
 
 export default async function BookingDetailPage({ params }: { params: { id: string } }) {
@@ -55,6 +56,7 @@ export default async function BookingDetailPage({ params }: { params: { id: stri
         </div>
         <div className="flex items-center gap-2">
           <BookingStatusControl bookingId={booking.id} currentStatus={booking.booking_status} />
+          <BookingRowActions id={booking.id} redirectOnDelete />
           <Link href="/admin/bookings" className="btn-outline">
             Back
           </Link>

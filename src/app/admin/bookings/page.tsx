@@ -4,6 +4,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { formatCurrency, formatDate } from '@/lib/utils/format';
 import Link from 'next/link';
 import { Search } from 'lucide-react';
+import { BookingRowActions } from './booking-row-actions';
 
 const PAGE_SIZE = 25;
 
@@ -97,12 +98,13 @@ export default async function AdminBookingsPage({
                 <th className="px-5 py-3">Balance</th>
                 <th className="px-5 py-3">Payment</th>
                 <th className="px-5 py-3">Status</th>
+                <th className="px-5 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
               {(bookings ?? []).length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-5 py-10 text-center text-ink-400">
+                  <td colSpan={9} className="px-5 py-10 text-center text-ink-400">
                     No bookings yet.
                   </td>
                 </tr>
@@ -140,6 +142,9 @@ export default async function AdminBookingsPage({
                   </td>
                   <td className="px-5 py-3">
                     <StatusBadge status={b.booking_status} />
+                  </td>
+                  <td className="px-5 py-3 text-right">
+                    <BookingRowActions id={b.id} />
                   </td>
                 </tr>
               ))}

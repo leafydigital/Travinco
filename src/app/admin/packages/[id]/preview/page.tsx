@@ -20,7 +20,7 @@ async function getPreviewData(id: string) {
   const { data: packageRow } = await supabase.from('travel_packages').select('*').eq('id', id).maybeSingle();
   if (!packageRow) return null;
 
-  const [{ data: destinationRow }, { data: images }, { data: itinerary }, { data: inclusions }, { data: exclusions }, { data: videos }] =
+  const [{ data: destinationRow }, { data: images }, { data: itinerary }, { data: inclusions }, { data: exclusions }, { data: videos }, { data: faqs }] =
     await Promise.all([
       packageRow.destination_id
         ? supabase.from('destinations').select('name, country').eq('id', packageRow.destination_id).maybeSingle()
@@ -30,6 +30,7 @@ async function getPreviewData(id: string) {
       supabase.from('package_inclusions').select('*').eq('package_id', id).order('sort_order'),
       supabase.from('package_exclusions').select('*').eq('package_id', id).order('sort_order'),
       supabase.from('package_videos').select('*').eq('package_id', id).order('sort_order'),
+      supabase.from('package_faqs').select('*').eq('package_id', id).order('sort_order'),
     ]);
 
   const pkg: PackageWithDestination = { ...packageRow, destinations: destinationRow ?? null };
@@ -41,6 +42,7 @@ async function getPreviewData(id: string) {
     inclusions: inclusions ?? [],
     exclusions: exclusions ?? [],
     videos: videos ?? [],
+    faqs: faqs ?? [],
   };
 }
 
@@ -49,7 +51,7 @@ export default async function PackagePreviewPage({ params }: { params: { id: str
   const result = await getPreviewData(params.id);
   if (!result) notFound();
 
-  const { pkg, images, itinerary, inclusions, exclusions, videos } = result;
+  const { pkg, images, itinerary, inclusions, exclusions, videos, faqs } = result;
   const termsSettings = await getTermsSettings();
   const destination = pkg.destinations;
   const videoEmbedUrls = [
@@ -82,6 +84,15 @@ export default async function PackagePreviewPage({ params }: { params: { id: str
           </Link>
           {pkg.status !== 'published' && <PublishFromPreviewButton packageId={pkg.id} />}
         </div>
+      </div>
+
+      {/* The package's real, permanent public URL — shown here so the
+          slug is visible and confirmable before publishing, without
+          routing the preview page itself by slug (which would break if
+          the slug is edited later; the ID-based route never does). */}
+      <div className="border-b border-ink-100 bg-ink-50 px-4 py-2 text-center text-xs text-ink-500">
+        Public URL once published:{' '}
+        <span className="font-mono font-medium text-ink-700">/packages/{pkg.slug}</span>
       </div>
 
       <div className="relative h-[45vh] min-h-[320px] w-full bg-ink-200">
@@ -237,6 +248,22 @@ export default async function PackagePreviewPage({ params }: { params: { id: str
                       allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                       allowFullScreen
                     />
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {faqs.length > 0 && (
+            <section>
+              <h2 className="font-display text-lg font-semibold text-ink-900">
+                Frequently asked questions
+              </h2>
+              <div className="mt-3 space-y-3">
+                {faqs.map((faq) => (
+                  <div key={faq.id} className="rounded-xl2 border border-ink-100 p-4">
+                    <p className="font-medium text-ink-900">{faq.question}</p>
+                    <p className="mt-1 text-sm text-ink-500">{faq.answer}</p>
                   </div>
                 ))}
               </div>

@@ -5,12 +5,29 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Pencil, X } from 'lucide-react';
 import { updateEnquiryDetails } from '../actions';
+import { PhoneInput, COUNTRY_PHONE_CODES } from '@/components/public/phone-input';
 import type { Tables } from '@/types/database';
+
+function splitPhone(stored?: string | null): { dialCode: string; number: string } {
+  if (!stored) return { dialCode: '+91', number: '' };
+  const sorted = [...COUNTRY_PHONE_CODES].sort((a, b) => b.code.length - a.code.length);
+  for (const c of sorted) {
+    if (stored.startsWith(c.code)) {
+      return { dialCode: c.code, number: stored.slice(c.code.length) };
+    }
+  }
+  return { dialCode: '+91', number: stored.replace(/\D/g, '') };
+}
 
 export function EnquiryDetailsEditForm({ enquiry }: { enquiry: Tables<'enquiries'> }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [editing, setEditing] = useState(false);
+  const [phoneValue, setPhoneValue] = useState(() => splitPhone(enquiry.phone));
+  const [whatsappSameAsPhone, setWhatsappSameAsPhone] = useState(
+    !enquiry.whatsapp_number || enquiry.whatsapp_number === enquiry.phone
+  );
+  const [whatsappValue, setWhatsappValue] = useState(() => splitPhone(enquiry.whatsapp_number));
   const [values, setValues] = useState({
     customer_name: enquiry.customer_name,
     phone: enquiry.phone,
@@ -73,17 +90,48 @@ export function EnquiryDetailsEditForm({ enquiry }: { enquiry: Tables<'enquiries
             className="input"
           />
         </div>
-        <div>
+        <div className="sm:col-span-2">
           <label className="label">Phone</label>
-          <input value={values.phone} onChange={(e) => set('phone', e.target.value)} className="input" />
+          <PhoneInput
+            name="phone"
+            required
+            value={phoneValue}
+            onChange={(next) => {
+              setPhoneValue(next);
+              set('phone', `${next.dialCode}${next.number}`);
+              if (whatsappSameAsPhone) {
+                setWhatsappValue(next);
+                set('whatsapp_number', `${next.dialCode}${next.number}`);
+              }
+            }}
+          />
         </div>
         <div>
-          <label className="label">WhatsApp</label>
-          <input
-            value={values.whatsapp_number}
-            onChange={(e) => set('whatsapp_number', e.target.value)}
-            className="input"
-          />
+          <label className="mb-1.5 flex items-center gap-2 text-sm text-ink-600">
+            <input
+              type="checkbox"
+              checked={whatsappSameAsPhone}
+              onChange={(e) => {
+                setWhatsappSameAsPhone(e.target.checked);
+                if (e.target.checked) {
+                  setWhatsappValue(phoneValue);
+                  set('whatsapp_number', `${phoneValue.dialCode}${phoneValue.number}`);
+                }
+              }}
+              className="h-4 w-4 rounded border-ink-300 text-brand-600 focus:ring-brand-500"
+            />
+            Same number for WhatsApp
+          </label>
+          {!whatsappSameAsPhone && (
+            <PhoneInput
+              name="whatsapp_number"
+              value={whatsappValue}
+              onChange={(next) => {
+                setWhatsappValue(next);
+                set('whatsapp_number', `${next.dialCode}${next.number}`);
+              }}
+            />
+          )}
         </div>
         <div>
           <label className="label">Email</label>

@@ -47,7 +47,13 @@ async function logActivity(params: {
 
 export async function createPackage(
   raw: PackageFormValues,
-  imageUrls: string[] = []
+  imageUrls: string[] = [],
+  videoUrls: string[] = [],
+  itineraryDays: { day_number: number; title: string; description?: string }[] = [],
+  inclusions: string[] = [],
+  exclusions: string[] = [],
+  faqs: { question: string; answer: string }[] = [],
+  publishNow = false
 ): Promise<ActionState & { id?: string }> {
   await requireProfile(); // any logged-in staff can create a draft; publish gate is separate
 
@@ -63,6 +69,24 @@ export async function createPackage(
     return { error: 'Please fix the highlighted fields.', fieldErrors };
   }
 
+  const validImageUrls = imageUrls.map((u) => u.trim()).filter(Boolean);
+
+  // Draft creation stays lenient (staff can save an incomplete idea and
+  // come back to it), but publishing has two real, checked requirements:
+  // a price, and at least one photo. This is enforced here — the single
+  // source of truth — rather than only in the UI, so it can't be
+  // bypassed by calling the action directly.
+  if (publishNow) {
+    const missing: string[] = [];
+    if (!parsed.data.base_price || parsed.data.base_price <= 0) missing.push('a starting price');
+    if (validImageUrls.length === 0) missing.push('at least one photo');
+    if (missing.length > 0) {
+      return {
+        error: `Can't publish yet — this package needs ${missing.join(' and ')}. Saved as a draft instead.`,
+      };
+    }
+  }
+
   const supabase = await createClient();
   const {
     data: { user },
@@ -70,7 +94,11 @@ export async function createPackage(
 
   const { data, error } = await supabase
     .from('travel_packages')
-    .insert({ ...withAutoSeo(parsed.data), status: 'draft', created_by: user?.id ?? null })
+    .insert({
+      ...withAutoSeo(parsed.data),
+      status: publishNow ? 'published' : 'draft',
+      created_by: user?.id ?? null,
+    })
     .select('id')
     .single();
 
@@ -85,7 +113,6 @@ export async function createPackage(
   // how many, matching the multi-URL paste flow already used on the
   // edit page's image manager. The first image becomes the cover if
   // none is otherwise set.
-  const validImageUrls = imageUrls.map((u) => u.trim()).filter(Boolean);
   if (validImageUrls.length > 0) {
     const { error: imagesError } = await supabase.from('package_images').insert(
       validImageUrls.map((image_url, index) => ({
@@ -101,6 +128,52 @@ export async function createPackage(
         .update({ cover_image_url: validImageUrls[0] })
         .eq('id', data.id);
     }
+  }
+
+  const validVideoUrls = videoUrls.map((u) => u.trim()).filter(Boolean);
+  if (validVideoUrls.length > 0) {
+    await supabase.from('package_videos').insert(
+      validVideoUrls.map((video_url, index) => ({
+        package_id: data.id,
+        video_url,
+        sort_order: index,
+      }))
+    );
+  }
+
+  if (itineraryDays.length > 0) {
+    await supabase.from('package_itineraries').insert(
+      itineraryDays.map((day) => ({
+        package_id: data.id,
+        day_number: day.day_number,
+        title: day.title,
+        description: day.description || null,
+      }))
+    );
+  }
+
+  if (inclusions.length > 0) {
+    await supabase.from('package_inclusions').insert(
+      inclusions.map((item, index) => ({ package_id: data.id, item, sort_order: index }))
+    );
+  }
+
+  if (exclusions.length > 0) {
+    await supabase.from('package_exclusions').insert(
+      exclusions.map((item, index) => ({ package_id: data.id, item, sort_order: index }))
+    );
+  }
+
+  const validFaqs = faqs.filter((f) => f.question.trim() && f.answer.trim());
+  if (validFaqs.length > 0) {
+    await supabase.from('package_faqs').insert(
+      validFaqs.map((f, index) => ({
+        package_id: data.id,
+        question: f.question,
+        answer: f.answer,
+        sort_order: index,
+      }))
+    );
   }
 
   await logActivity({
@@ -170,11 +243,25 @@ async function setPackageStatus(id: string, status: 'draft' | 'published') {
 
   const { data: pkg } = await supabase
     .from('travel_packages')
-    .select('slug, status')
+    .select('slug, status, base_price')
     .eq('id', id)
     .single();
 
   if (!pkg) return { error: 'Package not found.' };
+
+  if (status === 'published') {
+    const { count: imageCount } = await supabase
+      .from('package_images')
+      .select('id', { count: 'exact', head: true })
+      .eq('package_id', id);
+
+    const missing: string[] = [];
+    if (!pkg.base_price || pkg.base_price <= 0) missing.push('a starting price');
+    if (!imageCount || imageCount === 0) missing.push('at least one photo');
+    if (missing.length > 0) {
+      return { error: `Can't publish yet — this package needs ${missing.join(' and ')}.` };
+    }
+  }
 
   const { error } = await supabase
     .from('travel_packages')
