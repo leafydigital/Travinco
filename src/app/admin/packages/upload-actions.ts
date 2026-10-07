@@ -1,7 +1,7 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
-import { requireProfile } from '@/lib/supabase/auth-helpers';
+import { requireProfile, checkModulePermission } from '@/lib/supabase/auth-helpers';
 
 const BUCKET = 'package-images';
 const MAX_SIZE_BYTES = 8 * 1024 * 1024; // 8 MB
@@ -10,7 +10,11 @@ const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 export async function uploadPackageImage(
   formData: FormData
 ): Promise<{ url?: string; error?: string }> {
-  await requireProfile();
+  const profile = await requireProfile();
+  const perm = await checkModulePermission(profile, 'packages', 'edit');
+  if (!perm.allowed) {
+    return { error: perm.error || 'You do not have permission to upload package images.' };
+  }
 
   const file = formData.get('file');
   if (!(file instanceof File)) {

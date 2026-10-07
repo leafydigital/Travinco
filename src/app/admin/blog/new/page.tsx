@@ -1,8 +1,9 @@
-import { requireProfile } from '@/lib/supabase/auth-helpers';
+import { requireProfile, assertModulePermission } from '@/lib/supabase/auth-helpers';
 import { BlogPostForm } from '../blog-post-form';
 
 export default async function NewBlogPostPage() {
-  await requireProfile();
+  const profile = await requireProfile();
+  await assertModulePermission(profile, 'blog', 'edit');
 
   return (
     <div className="max-w-2xl space-y-5">

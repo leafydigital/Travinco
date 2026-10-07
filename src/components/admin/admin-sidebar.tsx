@@ -6,7 +6,8 @@ import { cn } from '@/lib/utils/cn';
 import type { NavSection, IconName } from '@/lib/admin-nav';
 import {
   LayoutDashboard, Package, MapPin, Inbox, CalendarCheck, Image as ImageIcon,
-  Settings, Tag, BookOpen, Users, LogOut,
+  Settings, Tag, BookOpen, Users, LogOut, TrendingUp, Receipt, BarChart3,
+  MessageSquare, UsersRound, Database,
   type LucideIcon,
 } from 'lucide-react';
 import { signOut } from '@/app/admin/actions';
@@ -17,6 +18,7 @@ import { signOut } from '@/app/admin/actions';
 // Server -> Client boundary as plain data.
 const iconMap: Record<IconName, LucideIcon> = {
   LayoutDashboard, Package, MapPin, Inbox, CalendarCheck, ImageIcon, Settings, Tag, BookOpen, Users,
+  TrendingUp, Receipt, BarChart3, MessageSquare, UsersRound, Database,
 };
 
 export function AdminSidebar({

@@ -1,19 +1,23 @@
 import { requireProfile } from '@/lib/supabase/auth-helpers';
-import { navForRole } from '@/lib/admin-nav';
+import { navForProfile } from '@/lib/admin-nav';
 import { AdminSidebar } from '@/components/admin/admin-sidebar';
+import { createClient } from '@/lib/supabase/server';
 
 export default async function AdminRootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  // Redirects to /login if not authenticated or the account is deactivated.
-  // Middleware already blocks unauthenticated requests to /admin/**, so
-  // this call mainly fetches the profile row we need for role-based nav —
-  // but keeping the check here too means this layout is safe even if it's
-  // ever reached by a path middleware doesn't cover.
   const profile = await requireProfile();
-  const sections = navForRole(profile.role);
+  const supabase = await createClient();
+
+  // Load granular module permission overrides for this profile
+  const { data: permissions } = await supabase
+    .from('staff_permissions')
+    .select('*')
+    .eq('profile_id', profile.id);
+
+  const sections = navForProfile(profile, permissions ?? []);
 
   return (
     <div className="flex min-h-screen bg-ink-50">

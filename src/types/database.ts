@@ -685,8 +685,317 @@ export interface Database {
         };
         Update: Partial<Database['public']['Tables']['audit_logs']['Row']>;
       };
+      locations: {
+        Row: {
+          id: number;
+          name: string;
+        };
+        Insert: { id?: number; name: string };
+        Update: { id?: number; name?: string };
+      };
+      hotel_categories: {
+        Row: {
+          id: number;
+          name: string;
+          sort_order: number;
+        };
+        Insert: { id?: number; name: string; sort_order?: number };
+        Update: { id?: number; name?: string; sort_order?: number };
+      };
+      seasons: {
+        Row: {
+          id: number;
+          code: string;
+          name: string;
+          priority: number;
+        };
+        Insert: { id?: number; code: string; name: string; priority: number };
+        Update: { id?: number; code?: string; name?: string; priority?: number };
+      };
+      import_batches: {
+        Row: {
+          id: number;
+          file_name: string;
+          file_hash: string | null;
+          tariff_year: string;
+          uploaded_by: string | null;
+          uploaded_at: string;
+          status: 'STAGED' | 'VALIDATED' | 'PUBLISHED' | 'FAILED' | 'ROLLED_BACK';
+          rows_total: number | null;
+          rows_ok: number | null;
+          rows_failed: number | null;
+        };
+        Insert: {
+          id?: number;
+          file_name: string;
+          file_hash?: string | null;
+          tariff_year: string;
+          uploaded_by?: string | null;
+          uploaded_at?: string;
+          status?: 'STAGED' | 'VALIDATED' | 'PUBLISHED' | 'FAILED' | 'ROLLED_BACK';
+          rows_total?: number | null;
+          rows_ok?: number | null;
+          rows_failed?: number | null;
+        };
+        Update: Partial<Database['public']['Tables']['import_batches']['Row']>;
+      };
+      rate_master_staging: {
+        Row: {
+          id: number;
+          batch_id: number;
+          excel_row_no: number;
+          location: string | null;
+          hotel_name: string | null;
+          hotel_category: string | null;
+          season: string | null;
+          date_range: string | null;
+          room_category: string | null;
+          cp_cost: number | null;
+          map_cost: number | null;
+          extra_adult_cp: number | null;
+          extra_adult_map: number | null;
+          child_bed_cost: number | null;
+          child_no_bed_cost: number | null;
+          infant_policy: string | null;
+          mandatory_surcharges: string | null;
+          notes: string | null;
+          row_status: 'PENDING' | 'OK' | 'WARNING' | 'ERROR';
+          row_message: string | null;
+        };
+        Insert: {
+          id?: number;
+          batch_id: number;
+          excel_row_no: number;
+          location?: string | null;
+          hotel_name?: string | null;
+          hotel_category?: string | null;
+          season?: string | null;
+          date_range?: string | null;
+          room_category?: string | null;
+          cp_cost?: number | null;
+          map_cost?: number | null;
+          extra_adult_cp?: number | null;
+          extra_adult_map?: number | null;
+          child_bed_cost?: number | null;
+          child_no_bed_cost?: number | null;
+          infant_policy?: string | null;
+          mandatory_surcharges?: string | null;
+          notes?: string | null;
+          row_status?: 'PENDING' | 'OK' | 'WARNING' | 'ERROR';
+          row_message?: string | null;
+        };
+        Update: Partial<Database['public']['Tables']['rate_master_staging']['Row']>;
+      };
+      hotels: {
+        Row: {
+          id: number;
+          name: string;
+          location_id: number;
+          default_category_id: number | null;
+          area: string | null;
+          gst_basis: string | null;
+          is_active: boolean;
+          created_at: string;
+        };
+        Insert: {
+          id?: number;
+          name: string;
+          location_id: number;
+          default_category_id?: number | null;
+          area?: string | null;
+          gst_basis?: string | null;
+          is_active?: boolean;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['hotels']['Row']>;
+      };
+      room_types: {
+        Row: {
+          id: number;
+          hotel_id: number;
+          name: string;
+          category_id: number | null;
+        };
+        Insert: {
+          id?: number;
+          hotel_id: number;
+          name: string;
+          category_id?: number | null;
+        };
+        Update: Partial<Database['public']['Tables']['room_types']['Row']>;
+      };
+      rate_periods: {
+        Row: {
+          id: number;
+          hotel_id: number;
+          season_id: number;
+          date_range_label: string;
+          infant_policy: string | null;
+          infant_free_below_age: number | null;
+          mandatory_surcharges: string | null;
+          import_batch_id: number;
+          is_active: boolean;
+          created_at: string;
+        };
+        Insert: {
+          id?: number;
+          hotel_id: number;
+          season_id: number;
+          date_range_label: string;
+          infant_policy?: string | null;
+          infant_free_below_age?: number | null;
+          mandatory_surcharges?: string | null;
+          import_batch_id: number;
+          is_active?: boolean;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['rate_periods']['Row']>;
+      };
+      rate_period_dates: {
+        Row: {
+          id: number;
+          rate_period_id: number;
+          valid_from: string;
+          valid_to: string;
+          is_exclusion: boolean;
+        };
+        Insert: {
+          id?: number;
+          rate_period_id: number;
+          valid_from: string;
+          valid_to: string;
+          is_exclusion?: boolean;
+        };
+        Update: Partial<Database['public']['Tables']['rate_period_dates']['Row']>;
+      };
+      room_rates: {
+        Row: {
+          id: number;
+          rate_period_id: number;
+          room_type_id: number;
+          cp_cost: number | null;
+          map_cost: number | null;
+          extra_adult_cp: number | null;
+          extra_adult_map: number | null;
+          child_bed_cost: number | null;
+          child_no_bed_cost: number | null;
+          notes: string | null;
+        };
+        Insert: {
+          id?: number;
+          rate_period_id: number;
+          room_type_id: number;
+          cp_cost?: number | null;
+          map_cost?: number | null;
+          extra_adult_cp?: number | null;
+          extra_adult_map?: number | null;
+          child_bed_cost?: number | null;
+          child_no_bed_cost?: number | null;
+          notes?: string | null;
+        };
+        Update: Partial<Database['public']['Tables']['room_rates']['Row']>;
+      };
+      period_surcharges: {
+        Row: {
+          id: number;
+          rate_period_id: number;
+          surcharge_type: string;
+          applies_on: string | null;
+          amount_adult: number | null;
+          amount_child: number | null;
+          per_unit: string | null;
+          is_mandatory: boolean;
+          is_included: boolean;
+          raw_text: string | null;
+        };
+        Insert: {
+          id?: number;
+          rate_period_id: number;
+          surcharge_type: string;
+          applies_on?: string | null;
+          amount_adult?: number | null;
+          amount_child?: number | null;
+          per_unit?: string | null;
+          is_mandatory?: boolean;
+          is_included?: boolean;
+          raw_text?: string | null;
+        };
+        Update: Partial<Database['public']['Tables']['period_surcharges']['Row']>;
+      };
+      hotel_followups: {
+        Row: {
+          id: number;
+          hotel_id: number;
+          issue: string;
+          action: string | null;
+          status: 'OPEN' | 'DONE';
+          created_at: string;
+        };
+        Insert: {
+          id?: number;
+          hotel_id: number;
+          issue: string;
+          action?: string | null;
+          status?: 'OPEN' | 'DONE';
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['hotel_followups']['Row']>;
+      };
+      vehicle_tariffs: {
+        Row: {
+          id: number;
+          category: string;
+          display_name: string | null;
+          ac_type: string | null;
+          max_pax: number | null;
+          rate_per_km: number | null;
+          min_km_per_day: number | null;
+          driver_bata_day: number | null;
+          other_per_day: number | null;
+          notes: string | null;
+        };
+        Insert: {
+          id?: number;
+          category: string;
+          display_name?: string | null;
+          ac_type?: string | null;
+          max_pax?: number | null;
+          rate_per_km?: number | null;
+          min_km_per_day?: number | null;
+          driver_bata_day?: number | null;
+          other_per_day?: number | null;
+          notes?: string | null;
+        };
+        Update: Partial<Database['public']['Tables']['vehicle_tariffs']['Row']>;
+      };
     };
-    Views: Record<string, never>;
+    Views: {
+      v_rate_master: {
+        Row: {
+          rate_id: number;
+          location: string;
+          hotel_name: string;
+          hotel_category: string;
+          season: string;
+          date_range: string;
+          room_category: string;
+          cp_cost: number | null;
+          map_cost: number | null;
+          extra_adult_cp: number | null;
+          extra_adult_map: number | null;
+          child_bed_cost: number | null;
+          child_no_bed_cost: number | null;
+          infant_policy: string | null;
+          mandatory_surcharges: string | null;
+          notes: string | null;
+          hotel_id: number;
+          rate_period_id: number;
+          room_type_id: number;
+          import_batch_id: number;
+          is_active: boolean;
+        };
+      };
+    };
     Functions: Record<string, never>;
     Enums: {
       user_role: UserRole;

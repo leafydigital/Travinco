@@ -6,12 +6,24 @@ import { z } from 'zod';
 
 const loginSchema = z.object({
   email: z.string().email('Enter a valid email address'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
+  password: z.string().min(1, 'Password is required'),
 });
 
 export type LoginState = {
   error?: string;
 };
+
+function getSafeRedirectPath(rawPath: unknown, fallback: string): string {
+  if (
+    typeof rawPath !== 'string' ||
+    !rawPath.startsWith('/') ||
+    rawPath.startsWith('//') ||
+    rawPath.includes('\\')
+  ) {
+    return fallback;
+  }
+  return rawPath;
+}
 
 export async function login(
   _prevState: LoginState,
@@ -27,11 +39,40 @@ export async function login(
   }
 
   const supabase = await createClient();
-  const { error } = await supabase.auth.signInWithPassword(parsed.data);
+  const { data: authData, error } = await supabase.auth.signInWithPassword(parsed.data);
 
-  if (error) {
+  if (error || !authData?.user) {
+    if (error) {
+      console.error('Staff login error:', error.message, error.status);
+    }
     return { error: 'Incorrect email or password.' };
   }
 
-  redirect('/admin');
+  // Verify that the user has a corresponding profiles record (staff/admin)
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('id, role, is_active')
+    .eq('id', authData.user.id)
+    .maybeSingle();
+
+  if (profileError || !profile) {
+    // Session belongs to customer account or non-staff user
+    await supabase.auth.signOut();
+    return {
+      error:
+        'That account is a customer account, not a staff account — please sign in with your staff email.',
+    };
+  }
+
+  if (!profile.is_active) {
+    await supabase.auth.signOut();
+    return {
+      error: 'This staff account has been deactivated. Contact your administrator.',
+    };
+  }
+
+  const rawRedirect = formData.get('redirectTo');
+  const safeRedirect = getSafeRedirectPath(rawRedirect, '/admin');
+
+  redirect(safeRedirect);
 }

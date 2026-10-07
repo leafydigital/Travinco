@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
-import { requireProfile } from '@/lib/supabase/auth-helpers';
+import { requireProfile, assertModulePermission } from '@/lib/supabase/auth-helpers';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { formatDate } from '@/lib/utils/format';
 import Link from 'next/link';
@@ -7,7 +7,8 @@ import { Plus } from 'lucide-react';
 import { OfferRowActions } from './offer-row-actions';
 
 export default async function AdminOffersPage() {
-  await requireProfile();
+  const profile = await requireProfile();
+  await assertModulePermission(profile, 'offers', 'view');
   const supabase = await createClient();
   const { data: offers } = await supabase
     .from('offers')

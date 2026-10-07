@@ -14,6 +14,7 @@ import { resolve } from 'path';
 // it has to be loaded explicitly here. Resolved relative to this file so
 // it works regardless of which directory you run the script from.
 config({ path: resolve(__dirname, '../../.env.local') });
+config({ path: resolve(__dirname, '../../.env') });
 
 import { createClient } from '@supabase/supabase-js';
 

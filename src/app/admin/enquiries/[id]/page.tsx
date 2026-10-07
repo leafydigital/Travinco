@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
-import { requireProfile } from '@/lib/supabase/auth-helpers';
+import { requireProfile, assertModulePermission } from '@/lib/supabase/auth-helpers';
 import { notFound } from 'next/navigation';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { formatCurrency, formatDate, formatDateTime } from '@/lib/utils/format';
@@ -12,7 +12,8 @@ import { Phone, Mail, MessageCircle } from 'lucide-react';
 import Link from 'next/link';
 
 export default async function EnquiryDetailPage({ params }: { params: { id: string } }) {
-  await requireProfile();
+  const profile = await requireProfile();
+  await assertModulePermission(profile, 'enquiries', 'view');
   const supabase = await createClient();
 
   const [{ data: enquiry }, { data: staff }, { data: followups }, { data: activities }] =

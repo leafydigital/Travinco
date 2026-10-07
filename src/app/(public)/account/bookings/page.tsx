@@ -1,4 +1,4 @@
-import { createServiceClient } from '@/lib/supabase/service';
+import { createClient } from '@/lib/supabase/server';
 import { requireCustomer } from '@/lib/supabase/customer-auth-helpers';
 import { formatCurrency, formatDate } from '@/lib/utils/format';
 import Link from 'next/link';
@@ -38,15 +38,9 @@ function getEnquiryStatusDisplay(status: string) {
 
 export default async function BookingsPage() {
   const account = await requireCustomer();
-  // Uses the service-role client for these reads: the customers/
-  // bookings/enquiries SELECT policies are staff-only (is_staff()), so
-  // a logged-in customer reading their own data would otherwise be
-  // silently blocked by RLS and see an empty list, even though rows
-  // genuinely exist. Safe here specifically because every query below
-  // is filtered by account.email/account's own row, which came from
-  // requireCustomer()'s verified session above — never from user input
-  // — so this can't be used to read anyone else's data.
-  const supabase = createServiceClient();
+  // Standard Supabase SSR client governed by RLS (migration 027 allows
+  // customers to view only their own bookings/enquiries matching their account).
+  const supabase = await createClient();
 
   // Matched by email — see migration 021's comment for why this join
   // works even for bookings staff logged before the customer signed up.

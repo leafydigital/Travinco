@@ -1,11 +1,12 @@
 import { createClient } from '@/lib/supabase/server';
-import { requireProfile } from '@/lib/supabase/auth-helpers';
+import { requireProfile, assertModulePermission } from '@/lib/supabase/auth-helpers';
 import Link from 'next/link';
 import { TemplateAddForm } from './template-add-form';
 import { TemplateRowActions } from './template-row-actions';
 
 export default async function WhatsappTemplatesPage() {
-  await requireProfile();
+  const profile = await requireProfile();
+  await assertModulePermission(profile, 'whatsapp', 'view');
   const supabase = await createClient();
   const { data: templates } = await supabase
     .from('whatsapp_templates')

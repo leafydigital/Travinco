@@ -1,10 +1,19 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
-import { requireProfile } from '@/lib/supabase/auth-helpers';
+import { requireProfile, checkModulePermission } from '@/lib/supabase/auth-helpers';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import type { EnquiryStatus, FollowupType } from '@/types/database';
+
+async function checkEnquiryEditPermission() {
+  const profile = await requireProfile();
+  const perm = await checkModulePermission(profile, 'enquiries', 'edit');
+  if (!perm.allowed) {
+    return { error: perm.error || 'You do not have permission to edit enquiries.' };
+  }
+  return { profile };
+}
 
 async function logEnquiryActivity(
   enquiryId: string,
@@ -30,7 +39,8 @@ export async function updateEnquiryStatus(
   enquiryId: string,
   status: EnquiryStatus
 ): Promise<{ error?: string }> {
-  await requireProfile();
+  const permCheck = await checkEnquiryEditPermission();
+  if (permCheck.error) return { error: permCheck.error };
   const supabase = await createClient();
 
   const { data: before } = await supabase
@@ -140,7 +150,8 @@ export async function rejectEnquiry(enquiryId: string, reason?: string): Promise
 }
 
 export async function assignEnquiry(enquiryId: string, staffId: string | null) {
-  await requireProfile();
+  const permCheck = await checkEnquiryEditPermission();
+  if (permCheck.error) return { error: permCheck.error };
   const supabase = await createClient();
 
   const { error } = await supabase
@@ -185,7 +196,8 @@ const editEnquirySchema = z.object({
  * workflow fields, not what the customer actually asked for.
  */
 export async function updateEnquiryDetails(enquiryId: string, raw: unknown) {
-  await requireProfile();
+  const permCheck = await checkEnquiryEditPermission();
+  if (permCheck.error) return { error: permCheck.error };
   const parsed = editEnquirySchema.safeParse(raw);
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
@@ -225,7 +237,8 @@ export async function updateEnquiryPriority(
   enquiryId: string,
   priority: 'low' | 'medium' | 'high' | 'urgent'
 ) {
-  await requireProfile();
+  const permCheck = await checkEnquiryEditPermission();
+  if (permCheck.error) return { error: permCheck.error };
   const supabase = await createClient();
   const { error } = await supabase.from('enquiries').update({ priority }).eq('id', enquiryId);
   if (error) return { error: 'Could not update priority.' };
@@ -236,7 +249,8 @@ export async function updateEnquiryPriority(
 const noteSchema = z.object({ note: z.string().min(1).max(2000) });
 
 export async function addEnquiryNote(enquiryId: string, raw: unknown) {
-  await requireProfile();
+  const permCheck = await checkEnquiryEditPermission();
+  if (permCheck.error) return { error: permCheck.error };
   const parsed = noteSchema.safeParse(raw);
   if (!parsed.success) return { error: 'Note cannot be empty.' };
 
@@ -273,7 +287,8 @@ const followupSchema = z.object({
 });
 
 export async function scheduleFollowup(enquiryId: string, raw: unknown) {
-  await requireProfile();
+  const permCheck = await checkEnquiryEditPermission();
+  if (permCheck.error) return { error: permCheck.error };
   const parsed = followupSchema.safeParse(raw);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid follow-up.' };
 
@@ -310,7 +325,8 @@ export async function scheduleFollowup(enquiryId: string, raw: unknown) {
 }
 
 export async function completeFollowup(enquiryId: string, followupId: string) {
-  await requireProfile();
+  const permCheck = await checkEnquiryEditPermission();
+  if (permCheck.error) return { error: permCheck.error };
   const supabase = await createClient();
 
   const { error } = await supabase
@@ -336,7 +352,8 @@ export async function convertEnquiryToBooking(
   enquiryId: string,
   overrides?: { baseAmount?: number; discountAmount?: number }
 ) {
-  await requireProfile();
+  const permCheck = await checkEnquiryEditPermission();
+  if (permCheck.error) return { error: permCheck.error };
   const supabase = await createClient();
 
   const { data: enquiry, error: fetchError } = await supabase
@@ -460,8 +477,9 @@ export async function convertEnquiryToBooking(
 
 export async function deleteEnquiry(enquiryId: string) {
   const profile = await requireProfile();
-  if (!['admin', 'super_admin'].includes(profile.role)) {
-    return { error: 'Only admins can delete enquiries.' };
+  const perm = await checkModulePermission(profile, 'enquiries', 'edit');
+  if (!perm.allowed || !['admin', 'super_admin'].includes(profile.role)) {
+    return { error: perm.error || 'Only admins can delete enquiries.' };
   }
 
   const supabase = await createClient();

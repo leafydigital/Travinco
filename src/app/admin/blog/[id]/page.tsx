@@ -1,12 +1,13 @@
 import { createClient } from '@/lib/supabase/server';
-import { requireProfile } from '@/lib/supabase/auth-helpers';
+import { requireProfile, assertModulePermission } from '@/lib/supabase/auth-helpers';
 import { notFound } from 'next/navigation';
 import { BlogPostForm } from '../blog-post-form';
 import { StatusBadge } from '@/components/ui/status-badge';
 import Link from 'next/link';
 
 export default async function EditBlogPostPage({ params }: { params: { id: string } }) {
-  await requireProfile();
+  const profile = await requireProfile();
+  await assertModulePermission(profile, 'blog', 'view');
   const supabase = await createClient();
   const { data: post } = await supabase.from('blog_posts').select('*').eq('id', params.id).single();
 

@@ -27,8 +27,26 @@ export async function requireCustomer(): Promise<CurrentCustomer> {
     .single();
 
   if (error || !account) {
-    redirect('/account/login');
+    redirect('/account/login?reason=not_customer');
   }
 
   return account;
+}
+
+/** Non-throwing customer session retriever. */
+export async function getCustomer(): Promise<CurrentCustomer | null> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return null;
+
+  const { data: account } = await supabase
+    .from('customer_accounts')
+    .select('*')
+    .eq('id', user.id)
+    .maybeSingle();
+
+  return account ?? null;
 }

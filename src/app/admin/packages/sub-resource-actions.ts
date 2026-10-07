@@ -1,17 +1,27 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
-import { requireProfile } from '@/lib/supabase/auth-helpers';
+import { requireProfile, checkModulePermission } from '@/lib/supabase/auth-helpers';
 import { itineraryDaySchema } from '@/lib/validations/package';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
+
+async function checkEditPermission(): Promise<{ error?: string }> {
+  const profile = await requireProfile();
+  const perm = await checkModulePermission(profile, 'packages', 'edit');
+  if (!perm.allowed) {
+    return { error: perm.error || 'You do not have permission to edit packages.' };
+  }
+  return {};
+}
 
 export async function replaceItineraryDay(
   packageId: string,
   dayId: string | null,
   raw: unknown
 ) {
-  await requireProfile();
+  const permCheck = await checkEditPermission();
+  if (permCheck.error) return { error: permCheck.error };
   const parsed = itineraryDaySchema.safeParse(raw);
   if (!parsed.success) return { error: 'Please check the itinerary day fields.' };
 
@@ -34,7 +44,8 @@ export async function replaceItineraryDay(
 }
 
 export async function deleteItineraryDay(packageId: string, dayId: string) {
-  await requireProfile();
+  const permCheck = await checkEditPermission();
+  if (permCheck.error) return { error: permCheck.error };
   const supabase = await createClient();
   const { error } = await supabase.from('package_itineraries').delete().eq('id', dayId);
   if (error) return { error: 'Could not delete the itinerary day.' };
@@ -45,7 +56,8 @@ export async function deleteItineraryDay(packageId: string, dayId: string) {
 const itemSchema = z.object({ item: z.string().min(1).max(255) });
 
 export async function addInclusion(packageId: string, raw: unknown) {
-  await requireProfile();
+  const permCheck = await checkEditPermission();
+  if (permCheck.error) return { error: permCheck.error };
   const parsed = itemSchema.safeParse(raw);
   if (!parsed.success) return { error: 'Item cannot be empty.' };
 
@@ -64,7 +76,8 @@ export async function addInclusion(packageId: string, raw: unknown) {
  * instead of one Enter-press per item.
  */
 export async function addInclusionsBulk(packageId: string, items: string[]) {
-  await requireProfile();
+  const permCheck = await checkEditPermission();
+  if (permCheck.error) return { error: permCheck.error };
   const cleaned = items.map((i) => i.trim()).filter(Boolean);
   if (cleaned.length === 0) return { error: 'No items to add.' };
 
@@ -78,7 +91,8 @@ export async function addInclusionsBulk(packageId: string, items: string[]) {
 }
 
 export async function updateInclusion(packageId: string, id: string, raw: unknown) {
-  await requireProfile();
+  const permCheck = await checkEditPermission();
+  if (permCheck.error) return { error: permCheck.error };
   const parsed = itemSchema.safeParse(raw);
   if (!parsed.success) return { error: 'Item cannot be empty.' };
 
@@ -93,7 +107,8 @@ export async function updateInclusion(packageId: string, id: string, raw: unknow
 }
 
 export async function removeInclusion(packageId: string, id: string) {
-  await requireProfile();
+  const permCheck = await checkEditPermission();
+  if (permCheck.error) return { error: permCheck.error };
   const supabase = await createClient();
   const { error } = await supabase.from('package_inclusions').delete().eq('id', id);
   if (error) return { error: 'Could not remove inclusion.' };
@@ -102,7 +117,8 @@ export async function removeInclusion(packageId: string, id: string) {
 }
 
 export async function addExclusion(packageId: string, raw: unknown) {
-  await requireProfile();
+  const permCheck = await checkEditPermission();
+  if (permCheck.error) return { error: permCheck.error };
   const parsed = itemSchema.safeParse(raw);
   if (!parsed.success) return { error: 'Item cannot be empty.' };
 
@@ -116,7 +132,8 @@ export async function addExclusion(packageId: string, raw: unknown) {
 }
 
 export async function addExclusionsBulk(packageId: string, items: string[]) {
-  await requireProfile();
+  const permCheck = await checkEditPermission();
+  if (permCheck.error) return { error: permCheck.error };
   const cleaned = items.map((i) => i.trim()).filter(Boolean);
   if (cleaned.length === 0) return { error: 'No items to add.' };
 
@@ -130,7 +147,8 @@ export async function addExclusionsBulk(packageId: string, items: string[]) {
 }
 
 export async function updateExclusion(packageId: string, id: string, raw: unknown) {
-  await requireProfile();
+  const permCheck = await checkEditPermission();
+  if (permCheck.error) return { error: permCheck.error };
   const parsed = itemSchema.safeParse(raw);
   if (!parsed.success) return { error: 'Item cannot be empty.' };
 
@@ -145,7 +163,8 @@ export async function updateExclusion(packageId: string, id: string, raw: unknow
 }
 
 export async function removeExclusion(packageId: string, id: string) {
-  await requireProfile();
+  const permCheck = await checkEditPermission();
+  if (permCheck.error) return { error: permCheck.error };
   const supabase = await createClient();
   const { error } = await supabase.from('package_exclusions').delete().eq('id', id);
   if (error) return { error: 'Could not remove exclusion.' };
@@ -154,7 +173,8 @@ export async function removeExclusion(packageId: string, id: string) {
 }
 
 export async function addPackageImage(packageId: string, imageUrl: string, isCover: boolean) {
-  await requireProfile();
+  const permCheck = await checkEditPermission();
+  if (permCheck.error) return { error: permCheck.error };
   const supabase = await createClient();
 
   if (isCover) {
@@ -194,7 +214,8 @@ export async function addPackageImage(packageId: string, imageUrl: string, isCov
 }
 
 export async function setCoverImage(packageId: string, imageId: string, imageUrl: string) {
-  await requireProfile();
+  const permCheck = await checkEditPermission();
+  if (permCheck.error) return { error: permCheck.error };
   const supabase = await createClient();
 
   await supabase.from('package_images').update({ is_cover: false }).eq('package_id', packageId);
@@ -221,7 +242,8 @@ export async function reorderPackageImage(
   imageId: string,
   direction: 'up' | 'down'
 ) {
-  await requireProfile();
+  const permCheck = await checkEditPermission();
+  if (permCheck.error) return { error: permCheck.error };
   const supabase = await createClient();
 
   const { data: imagesData } = await supabase
@@ -253,7 +275,8 @@ export async function reorderPackageImage(
 }
 
 export async function removePackageImage(packageId: string, id: string) {
-  await requireProfile();
+  const permCheck = await checkEditPermission();
+  if (permCheck.error) return { error: permCheck.error };
   const supabase = await createClient();
   const { error } = await supabase.from('package_images').delete().eq('id', id);
   if (error) return { error: 'Could not remove image.' };
@@ -262,7 +285,8 @@ export async function removePackageImage(packageId: string, id: string) {
 }
 
 export async function addPackageVideo(packageId: string, videoUrl: string) {
-  await requireProfile();
+  const permCheck = await checkEditPermission();
+  if (permCheck.error) return { error: permCheck.error };
   const supabase = await createClient();
 
   const { count } = await supabase
@@ -282,7 +306,8 @@ export async function addPackageVideo(packageId: string, videoUrl: string) {
 }
 
 export async function removePackageVideo(packageId: string, id: string) {
-  await requireProfile();
+  const permCheck = await checkEditPermission();
+  if (permCheck.error) return { error: permCheck.error };
   const supabase = await createClient();
   const { error } = await supabase.from('package_videos').delete().eq('id', id);
   if (error) return { error: 'Could not remove video.' };
@@ -300,7 +325,8 @@ export async function reorderPackageVideo(
   videoId: string,
   direction: 'up' | 'down'
 ) {
-  await requireProfile();
+  const permCheck = await checkEditPermission();
+  if (permCheck.error) return { error: permCheck.error };
   const supabase = await createClient();
 
   const { data: videosData } = await supabase

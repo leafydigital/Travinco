@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
-import { requireProfile } from '@/lib/supabase/auth-helpers';
+import { requireProfile, assertModulePermission } from '@/lib/supabase/auth-helpers';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { formatDate } from '@/lib/utils/format';
 import Link from 'next/link';
@@ -8,7 +8,8 @@ import { Plus } from 'lucide-react';
 import { BlogPostRowActions } from './blog-post-row-actions';
 
 export default async function AdminBlogPage() {
-  await requireProfile();
+  const profile = await requireProfile();
+  await assertModulePermission(profile, 'blog', 'view');
   const supabase = await createClient();
   const { data: posts } = await supabase
     .from('blog_posts')

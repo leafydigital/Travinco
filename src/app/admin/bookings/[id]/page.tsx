@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
-import { requireProfile } from '@/lib/supabase/auth-helpers';
+import { requireProfile, assertModulePermission } from '@/lib/supabase/auth-helpers';
 import { notFound } from 'next/navigation';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { formatCurrency, formatDate } from '@/lib/utils/format';
@@ -11,6 +11,7 @@ import Link from 'next/link';
 
 export default async function BookingDetailPage({ params }: { params: { id: string } }) {
   const profile = await requireProfile();
+  await assertModulePermission(profile, 'bookings', 'view');
   const supabase = await createClient();
 
   const [{ data: booking }, { data: payments }, { data: passengers }] = await Promise.all([

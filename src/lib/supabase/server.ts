@@ -1,5 +1,6 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { cookies } from 'next/headers';
+import { sanitizeCookies } from './cookie-sanitizer';
 
 /**
  * Server client for use in Server Components, Server Actions and Route
@@ -41,7 +42,8 @@ export async function createClient() {
         },
         setAll(cookiesToSet: { name: string; value: string; options?: CookieOptions }[]) {
           try {
-            cookiesToSet.forEach(({ name, value, options }) =>
+            const sanitized = sanitizeCookies(cookiesToSet);
+            sanitized.forEach(({ name, value, options }) =>
               cookieStore.set(name, value, options)
             );
           } catch {

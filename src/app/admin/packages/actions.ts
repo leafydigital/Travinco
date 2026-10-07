@@ -1,7 +1,7 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
-import { requireProfile } from '@/lib/supabase/auth-helpers';
+import { requireProfile, checkModulePermission } from '@/lib/supabase/auth-helpers';
 import { packageSchema, slugify, type PackageFormValues } from '@/lib/validations/package';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
@@ -55,7 +55,11 @@ export async function createPackage(
   faqs: { question: string; answer: string }[] = [],
   publishNow = false
 ): Promise<ActionState & { id?: string }> {
-  await requireProfile(); // any logged-in staff can create a draft; publish gate is separate
+  const profile = await requireProfile();
+  const perm = await checkModulePermission(profile, 'packages', 'edit');
+  if (!perm.allowed) {
+    return { error: perm.error || 'You do not have permission to create packages.' };
+  }
 
   const parsed = packageSchema.safeParse(raw);
   if (!parsed.success) {
@@ -191,7 +195,12 @@ export async function updatePackage(
   id: string,
   raw: PackageFormValues
 ): Promise<ActionState> {
-  await requireProfile();
+  const profile = await requireProfile();
+  const perm = await checkModulePermission(profile, 'packages', 'edit');
+  if (!perm.allowed) {
+    return { error: perm.error || 'You do not have permission to edit packages.' };
+  }
+
   const parsed = packageSchema.safeParse(raw);
   if (!parsed.success) {
     const fieldErrors: Record<string, string> = {};
@@ -239,6 +248,10 @@ export async function updatePackage(
 
 async function setPackageStatus(id: string, status: 'draft' | 'published') {
   const profile = await requireProfile();
+  const perm = await checkModulePermission(profile, 'packages', 'edit');
+  if (!perm.allowed) {
+    return { error: perm.error || 'You do not have permission to change package status.' };
+  }
   const supabase = await createClient();
 
   const { data: pkg } = await supabase
@@ -292,6 +305,10 @@ export async function unpublishPackage(id: string) {
 
 export async function toggleFeatured(id: string, isFeatured: boolean) {
   const profile = await requireProfile();
+  const perm = await checkModulePermission(profile, 'packages', 'edit');
+  if (!perm.allowed) {
+    return { error: perm.error || 'You do not have permission to feature packages.' };
+  }
   const supabase = await createClient();
 
   const { error } = await supabase
@@ -314,7 +331,11 @@ export async function toggleFeatured(id: string, isFeatured: boolean) {
 }
 
 export async function duplicatePackage(id: string): Promise<ActionState & { id?: string }> {
-  await requireProfile();
+  const profile = await requireProfile();
+  const perm = await checkModulePermission(profile, 'packages', 'edit');
+  if (!perm.allowed) {
+    return { error: perm.error || 'You do not have permission to duplicate packages.' };
+  }
   const supabase = await createClient();
 
   const { data: original, error: fetchError } = await supabase

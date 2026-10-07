@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
-import { requireProfile } from '@/lib/supabase/auth-helpers';
+import { requireProfile, assertModulePermission } from '@/lib/supabase/auth-helpers';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { formatCurrency } from '@/lib/utils/format';
 import Link from 'next/link';
@@ -25,7 +25,8 @@ export default async function AdminPackagesPage({
 }: {
   searchParams: { q?: string; status?: string; page?: string };
 }) {
-  await requireProfile();
+  const profile = await requireProfile();
+  await assertModulePermission(profile, 'packages', 'view');
   const supabase = await createClient();
 
   const page = Math.max(1, Number(searchParams.page ?? 1));

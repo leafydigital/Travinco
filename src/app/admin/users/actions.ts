@@ -79,6 +79,9 @@ export async function updateStaffRole(profileId: string, role: string) {
   if (requester.role !== 'super_admin') {
     return { error: 'Only the main admin can change roles.' };
   }
+  if (requester.id === profileId) {
+    return { error: 'You cannot change your own role.' };
+  }
 
   const supabase = await createClient();
   const { error } = await supabase.from('profiles').update({ role }).eq('id', profileId);
@@ -92,7 +95,10 @@ export async function updateStaffRole(profileId: string, role: string) {
 export async function setStaffActive(profileId: string, isActive: boolean) {
   const requester = await requireProfile();
   if (requester.role !== 'super_admin') {
-    return { error: 'Only the main admin can deactivate users.' };
+    return { error: 'Only the main admin can activate or deactivate users.' };
+  }
+  if (requester.id === profileId && !isActive) {
+    return { error: 'You cannot deactivate your own account.' };
   }
 
   const supabase = await createClient();

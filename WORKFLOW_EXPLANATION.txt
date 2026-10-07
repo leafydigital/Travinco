@@ -1,0 +1,544 @@
+================================================================================
+TRAVINCO (WAYFARER TRAILS) - COMPREHENSIVE PROJECT & WORKFLOW ANALYSIS
+================================================================================
+Generated Date: October 2026
+System Name: Travinco / Wayfarer Trails Travel Agency Management System
+Architecture: Next.js 14 (App Router) + TypeScript + Tailwind CSS + Supabase (PostgreSQL, Auth, Storage, RLS)
+
+--------------------------------------------------------------------------------
+TABLE OF CONTENTS
+--------------------------------------------------------------------------------
+1. EXECUTIVE OVERVIEW & ARCHITECTURE PRINCIPLES
+2. COMPLETE REPOSITORY STRUCTURE & FILE DIRECTORY BREAKDOWN
+3. DATABASE SCHEMA & DATA RELATIONSHIPS (MIGRATIONS 001 - 026)
+4. AUTHENTICATION & ACCESS CONTROL DUAL-TIER MODEL
+5. DETAILED END-TO-END SYSTEM WORKFLOWS
+   - 5.1 Public Visitor Discovery & Browsing Flow
+   - 5.2 Customer Account Registration & Booking Tracking Flow
+   - 5.3 Public Enquiry & Lead Submission Flow (Anti-Abuse & Rate-Limiting)
+   - 5.4 Lead/Enquiry CRM Management & Follow-up Flow
+   - 5.5 Lead-to-Booking Conversion Flow
+   - 5.6 Booking Lifecycle, Passenger Manifest & Payment Processing
+   - 5.7 Financial Accounting, Expense Tracking & Analytics Flow
+   - 5.8 WhatsApp Broadcast Campaign & Consent Management Flow
+   - 5.9 Content, Destination, Package & Media Management Flow
+   - 5.10 System Configuration & Staff Permissions Engine
+6. INTEGRATIONS & EXTERNAL SERVICES
+7. SUMMARY OF AUDIT LOGS, TRIGGERS & INTEGRITY CONSTRAINTS
+
+================================================================================
+1. EXECUTIVE OVERVIEW & ARCHITECTURE PRINCIPLES
+================================================================================
+Travinco is a production-grade, full-stack travel agency platform consisting of:
+1. A Public-Facing Web Application:
+   Showcases destinations, travel packages, offers, events, photo gallery, travel blogs, and multilingual content (English, Hindi, Malayalam), with an integrated trip planning / enquiry portal and a customer self-service account dashboard.
+2. An Internal Admin / CRM / ERP System:
+   A protected back-office operational suite for managing packages, destinations, customer leads (enquiries), converted bookings, passenger manifests, payment processing, accounting (income/expenses), WhatsApp broadcast campaigns, staff user accounts, and granular permissions.
+
+Core Architecture Principles:
+- Single Database, Strict Separation of Concerns: Customer accounts and Staff profiles are isolated into two separate tables (customer_accounts vs profiles) connected to the same Supabase Auth instance, preventing privilege escalation.
+- Database Triggers as Single Source of Truth: Critical business logic such as booking balance calculation, payment totals, WhatsApp opt-in verification, and staff profile creation are handled via PostgreSQL database triggers rather than relying solely on client or server code.
+- Zero-Client Secret Leakage: All privileged mutations utilize Next.js Server Actions and Supabase SSR Server Clients. Elevated operations (seed scripts, OTP verification, service functions) use SUPABASE_SERVICE_ROLE_KEY exclusively on the server side with 'server-only' protections.
+- Resilient Fallbacks: Email sending (Gmail SMTP / Resend) and WhatsApp API operations (Meta Cloud API vs Mock Provider) fail gracefully without breaking core database transactions.
+
+================================================================================
+2. COMPLETE REPOSITORY STRUCTURE & FILE DIRECTORY BREAKDOWN
+================================================================================
+
+Root Directory:
+--------------
+- package.json                : Defines dependencies (Next.js 14.2.15, React 18, @supabase/ssr, @supabase/supabase-js, Zod, React Hook Form, Recharts, Lucide Icons, Nodemailer, TailwindCSS).
+- tsconfig.json               : TypeScript compiler configuration with '@/*' path alias pointing to './src/*'.
+- next.config.mjs             : Next.js configuration enabling remote image optimization from Supabase storage and external domains.
+- tailwind.config.ts          : Custom color palette ('ink', 'sand', 'brand', 'coral', 'ocean'), custom font families, typography & forms plugins.
+- postcss.config.mjs          : PostCSS configuration for Tailwind CSS and Autoprefixer.
+- netlify.toml                : Deployment config for Netlify hosting with Next.js plugin (@netlify/plugin-nextjs).
+- .env / .env.example         : Environment variables specifications for Supabase, Gmail, WhatsApp, and site URLs.
+- .eslintrc.json              : ESLint rules extending next/core-web-vitals.
+- README.md                   : High-level system overview, setup guides, and architectural notes.
+
+Source Directory (`src/`):
+-------------------------
+`src/middleware.ts`:
+- Intercepts incoming requests.
+- Refreshes Supabase authentication session cookies across server-rendered routes.
+- Gates all '/admin/**' paths: Unauthenticated visitors are redirected to '/login' with return URL parameters.
+- Redirects authenticated staff on '/login' directly to '/admin'.
+
+`src/app/` (Next.js 14 App Router):
+- layout.tsx                  : Root HTML layout configuring fonts (Outfit, Plus Jakarta Sans), metadata, and Sonner toast provider.
+- globals.css                 : Global styles, custom utilities (.btn-primary, .card, .input, .badge), and design tokens.
+- robots.ts                   : SEO robots.txt generator.
+- sitemap.ts                  : Dynamic XML sitemap generator indexing public packages and destinations.
+
+`src/app/(auth)/` (Staff Authentication):
+- login/page.tsx              : Admin & staff login interface.
+- login/login-form.tsx         : Client component handling credential submission.
+- login/actions.ts            : Server action authenticating staff via supabase.auth.signInWithPassword.
+
+`src/app/(public)/` (Public Customer & Visitor Portal):
+- layout.tsx                  : Shared public layout embedding SiteHeader, SiteFooter, active destinations, and customer auth status.
+- page.tsx                    : Homepage featuring hero image collage, destination slider, featured packages, why-us highlights, testimonials, gallery preview, and recent blogs.
+- actions.ts                  : Server actions for public enquiry submission (`submitEnquiry`) with honeypot & rate-limiting.
+- loading.tsx                 : Animated suspense loader for public pages.
+- about/page.tsx              : Agency story, mission, and travel values.
+- blog/page.tsx               : Public blog catalog.
+- blog/[slug]/page.tsx        : Full-length blog post view.
+- booking/page.tsx            : Standalone trip planning enquiry page with dynamic package references.
+- contact/page.tsx            : Contact information, working hours, interactive Google map embed, and contact form.
+- contact/contact-form.tsx    : Client contact form with validation and honeypot protection.
+- contact/actions.ts          : Server action (`submitContactMessage`) persisting contact messages directly to the enquiries table.
+- destinations/page.tsx       : Directory of all published destinations.
+- destinations/[slug]/page.tsx: Destination detail page listing all related travel packages.
+- events/page.tsx             : Public travel events and seasonal promotions.
+- gallery/page.tsx            : Photo gallery grouped hierarchically by Country and Place/Category with carousel viewers.
+- offers/page.tsx             : Special offers and discounted package highlights.
+- packages/page.tsx           : Filterable and searchable package catalog (filters by destination, category, duration, budget).
+- packages/[slug]/page.tsx    : Comprehensive package detail page: overview, day-by-day itinerary, inclusions/exclusions, photo lightbox, video embeds, FAQs, pricing tiers, and embedded enquiry form.
+- packages/[slug]/loading.tsx : Skeleton loader for package detail page.
+- verify-email/page.tsx       : Landing page for verifying email OTP links for trip enquiries.
+- account/page.tsx            : Customer account overview dashboard.
+- account/actions.ts          : Customer auth actions: signUpCustomer, logInCustomer, logOutCustomer, changeCustomerPassword, requestPasswordReset.
+- account/login/page.tsx      : Customer login screen.
+- account/signup/page.tsx     : Customer registration screen (strictly validates Gmail addresses and password complexity).
+- account/bookings/page.tsx   : Customer trip tracking page displaying live enquiry and booking statuses.
+- account/change-password/page.tsx : Customer password change form.
+- account/reset-password/page.tsx  : Password reset completion handler.
+- account/logout-button.tsx   : Client sign-out button.
+
+`src/app/admin/` (Administrative Back-Office CRM):
+- layout.tsx                  : Protected admin layout rendering AdminSidebar, mobile header, and verifying staff permissions.
+- page.tsx                    : Admin Dashboard showing high-level KPI cards (Total Packages, Published Packages, Total Enquiries, New Enquiries) and recent enquiries table.
+- actions.ts                  : Admin sign-out action.
+- content-actions.ts          : Server actions for managing Events, Offers, and Gallery photos/folders.
+- finance-actions.ts          : Server actions for recording and deleting Income, Expenses, and Expense Categories.
+- delete-finance-row-button.tsx : Reusable UI deletion button with confirmation.
+- loading.tsx                 : Back-office route suspense skeleton.
+- packages/                   : Package management (listing, creation, edit, preview, status toggling, deletion, duplicating).
+  - [id]/faq-manager.tsx      : Interactive manager for package FAQs.
+  - [id]/itinerary-manager.tsx: Day-by-day itinerary builder (hotels, meals, transport, descriptions).
+  - [id]/inclusion-exclusion-manager.tsx : Single and bulk entry editor for inclusions and exclusions.
+  - [id]/package-images-manager.tsx : Photo uploader, cover photo selector, reordering controls.
+  - [id]/package-videos-manager.tsx : YouTube / Vimeo / MP4 embed URL manager.
+  - [id]/preview/page.tsx     : Live draft package preview matching public design.
+- destinations/               : Destination CRUD, cover photo upload, slug generation, package linkage.
+- enquiries/                  : Lead management CRM:
+  - [id]/accept-reject-buttons.tsx : Staff acceptance and rejection triggers with automated customer email updates.
+  - [id]/convert-button.tsx   : Converts enquiry into a formal booking and customer record.
+  - [id]/enquiry-controls.tsx : Status and priority update controls.
+  - [id]/enquiry-details-edit-form.tsx : Edit trip specifications (travel dates, passenger counts, budget).
+  - [id]/notes-followups.tsx  : Internal team notes and scheduled follow-up reminders.
+- bookings/                   : Booking management:
+  - [id]/passengers-panel.tsx : Passenger manifest CRUD (full name, age, gender, type, ID proofs).
+  - [id]/payments-panel.tsx   : Payment logging against booking with real-time balance calculations.
+  - [id]/booking-status-control.tsx : Booking status transitions (inquiry -> pending -> confirmed -> completed).
+- customers/                  : Customer master list, contact records, tags, and booking histories.
+- income/ & expenses/         : Financial transaction ledgers with quick-add forms and category filtering.
+- reports/                    : Financial reporting dashboard with date presets (today, week, month, year), P&L calculation, and Recharts charts.
+- whatsapp/                   : WhatsApp CRM module:
+  - contacts/                 : Contact repository with opt-in status auditing.
+  - templates/                : Template definitions.
+  - campaigns/                : Broadcast campaign creator, audience segmenter, and execution controller.
+- blog/                       : Blog post CMS (creation, editing, cover uploads, publishing).
+- events/ & offers/           : Promotional event and seasonal discount management.
+- gallery/                    : Country and Place media organizer with direct bucket uploads.
+- settings/                   : General agency settings, working hours, social links, booking rules, terms & conditions, and expense categories.
+- users/                      : Staff user management (Super Admin only): account creation, role assignment, activation, and granular per-module permission checkboxes.
+
+`src/components/`:
+-----------------
+- `admin/`:
+  - admin-sidebar.tsx         : Dynamic navigation sidebar filtered by user role and module permissions.
+  - auto-refresh.tsx          : Polling utility for auto-refreshing admin lists.
+  - stat-card.tsx             : KPI summary widget.
+  - string-list-editor.tsx    : Tag and bullet point editor.
+- `public/`:
+  - site-header.tsx           : Fixed navigation bar with mobile drawer, language switcher, destinations menu, and customer auth badge.
+  - site-footer.tsx           : Footer with agency details, quick links, contact info, and social channels.
+  - hero-search.tsx           : Search input for quick destination filtering.
+  - package-card.tsx          : Standardized card presenting package duration, destination, pricing, and tile photo.
+  - package-tabs.tsx          : Tabbed switching component for package views.
+  - enquiry-form.tsx          : Public enquiry submission form with client validation and auth checks.
+  - phone-input.tsx           : Country code selector (+91, +1, +44, etc.) with input masking.
+  - image-carousel.tsx        : Responsive horizontal image slider.
+  - image-lightbox.tsx        : Fullscreen gallery modal viewer.
+  - language-picker.tsx       : Language switcher dropdown (EN, HI, ML).
+  - translated-cta.tsx        : Localized Call-To-Action component.
+  - translated-section-heading.tsx : Localized section headers.
+  - faq-accordion.tsx         : Interactive accordion for package and site FAQs.
+- `ui/`:
+  - form-fields.tsx           : Form input primitives with error rendering.
+  - status-badge.tsx          : Standardized status badge styles for bookings, enquiries, and content.
+  - travel-loader.tsx         : Animated flight/travel loading indicator.
+
+`src/lib/`:
+----------
+- `supabase/`:
+  - client.ts                 : Browser Supabase client (anon key, RLS enforced).
+  - server.ts                 : Server Supabase client using cookie storage for Server Components and Server Actions.
+  - service.ts                : Privileged service-role Supabase client (bypasses RLS; restricted to server-side tasks).
+  - auth-helpers.ts           : `requireProfile()` and `assertRole()` for staff/admin authorization.
+  - customer-auth-helpers.ts  : `requireCustomer()` strictly for public customer account authorization.
+- `validations/`:
+  - package.ts, enquiry.ts, booking.ts, customer.ts, finance.ts, content.ts, settings.ts, whatsapp.ts, image-url.ts : Strict Zod validation schemas.
+- `email/`:
+  - notify.ts                 : Resend integration for sending admin notifications.
+  - gmail.ts                  : Nodemailer Gmail SMTP transport for customer email alerts and verification links.
+- `whatsapp/`:
+  - provider.ts               : Abstract WhatsApp provider interface supporting Mock provider and Meta Cloud API.
+- `i18n/`:
+  - translations.ts           : Translation dictionaries for English, Hindi, and Malayalam.
+  - use-translation.ts        : React hook for accessing active locale strings.
+- `utils/`:
+  - cn.ts                     : Class name merger utility (clsx + tailwind-merge).
+  - format.ts                 : Currency formatting, date formatting, and video embed URL parsers.
+- admin-nav.ts                : Navigation items definition and role-based filtering logic.
+- enquiry-otp.ts              : Generation, hashing (SHA-256), delivery, and verification of anti-abuse email tokens.
+- settings.ts                 : Helpers for fetching site-wide settings ('general', 'terms', 'faqs').
+- storage-upload.ts           : File upload helper to Supabase storage buckets with type and size checks.
+- testimonials-data.ts        : Curated customer reviews and testimonials.
+
+`src/types/`:
+------------
+- database.ts                 : TypeScript type definitions mirroring database tables.
+- enums.ts                    : Plain TypeScript enum types matching PostgreSQL enums.
+- index.ts                    : Re-export of all application data models and enum types.
+
+`supabase/`:
+-----------
+- `migrations/`               : 26 incremental SQL migration files (001 to 026) creating tables, enums, triggers, and RLS policies.
+- `seed/create-admin.ts`      : Bootstrap script for creating the initial super_admin account.
+- `seed/run-seed.ts`          : Demo data seeder for destinations, packages, enquiries, bookings, and finance.
+
+================================================================================
+3. DATABASE SCHEMA & DATA RELATIONSHIPS (MIGRATIONS 001 - 026)
+================================================================================
+
+The database consists of 26 core tables, 17 custom enum types, automated triggers, and Row Level Security (RLS) policies:
+
+Core Tables & Schema Outline:
+1. `profiles`:
+   Staff accounts (id, full_name, email, phone, role, is_active, avatar_url, last_login_at, created_at, updated_at). Roles: super_admin, admin, sales_staff, accounts_staff.
+2. `customer_accounts`:
+   Customer login accounts linked to auth.users (id, full_name, email, created_at). Completely decoupled from staff profiles.
+3. `staff_permissions`:
+   Granular module permissions per staff member (profile_id, module, can_view, can_edit). Modules: packages, destinations, enquiries, offers, gallery, blog, settings, users.
+4. `customers`:
+   CRM master contact record (id, full_name, phone, whatsapp_number, email, address, city, state, country, source, tags, notes, whatsapp_opt_in).
+5. `destinations`:
+   Travel destinations (id, name, slug, country, description, cover_image_url, status, is_featured, sort_order, meta_title, meta_description).
+6. `travel_packages`:
+   Tour packages (id, destination_id, title, slug, category, status, is_featured, duration_days, duration_nights, base_price, discount_price, child_price, infant_price, child_age_range, infant_age_range, currency, short_description, full_description, highlights, terms_and_conditions, available_from, available_to, total_seats, seats_booked, pickup_info, cover_image_url, tile_image_url, video_url, meta_title, meta_description, created_by).
+7. `package_images`:
+   Photo gallery for packages (package_id, image_url, alt_text, is_cover, sort_order).
+8. `package_videos`:
+   Video URLs for packages (package_id, video_url, sort_order).
+9. `package_itineraries`:
+   Day-by-day itinerary schedule (package_id, day_number, title, description, hotel, meals, transport, activities, image_url).
+10. `package_inclusions`:
+    Included features in a package (package_id, item, sort_order).
+11. `package_exclusions`:
+    Excluded features in a package (package_id, item, sort_order).
+12. `package_faqs`:
+    Frequently asked questions specific to a package (package_id, question, answer, sort_order).
+13. `enquiries`:
+    Inbound travel requests & leads (id, enquiry_number, customer_id, customer_name, phone, whatsapp_number, email, package_id, destination, travel_date, return_date, number_of_adults, number_of_children, number_of_infants, budget, message, source, assigned_staff, status, priority, food_preference, room_type, last_contacted_at, next_followup_date, notes).
+14. `enquiry_followups`:
+    Scheduled follow-ups for staff (enquiry_id, followup_date, followup_time, followup_type, note, is_completed, completed_at, created_by).
+15. `enquiry_activities`:
+    Complete audit timeline for enquiries (enquiry_id, activity_type, description, metadata, performed_by).
+16. `enquiry_email_otps`:
+    One-time email verification codes for anti-spam lead verification (email, code_hash, expires_at, attempts, verified_at).
+17. `bookings`:
+    Confirmed customer bookings (id, booking_number, enquiry_id, customer_id, package_id, travel_start_date, travel_end_date, number_of_adults, number_of_children, number_of_infants, food_preference, room_type, base_amount, discount_amount, tax_amount, total_amount, amount_received, balance_amount, payment_status, booking_status, notes, created_by).
+18. `booking_passengers`:
+    Passenger manifests for bookings (booking_id, full_name, age, gender, passenger_type, id_proof_type, id_proof_number).
+19. `payments`:
+    Payments received against bookings (booking_id, amount, payment_method, payment_date, reference_number, notes, recorded_by).
+20. `income`:
+    General income entries (income_number, income_date, category, description, customer_id, booking_id, amount, currency, payment_method, reference_number, notes, created_by).
+21. `expense_categories`:
+    Categories for operational costs (name, is_active, sort_order).
+22. `expenses`:
+    Operating expenses (expense_number, expense_date, category_id, supplier, description, booking_id, package_id, amount, currency, payment_method, reference_number, notes, created_by).
+23. `whatsapp_contacts`:
+    Marketing audience contacts (customer_id, phone, display_name, tags, opt_in, opted_in_at, opted_out_at).
+24. `whatsapp_templates`:
+    Approved message templates (name, category, body, provider_template_id, is_approved).
+25. `whatsapp_campaigns`:
+    Broadcast campaigns (name, template_id, message_override, media_url, audience_filter, scheduled_at, status, sent_count, failed_count, created_by).
+26. `whatsapp_campaign_recipients`:
+    Recipient delivery tracking (campaign_id, contact_id, delivery_status, sent_at, delivered_at, read_at, failure_reason, provider_message_id).
+27. `gallery`:
+    Media assets organized by country and category/place.
+28. `blog_posts`:
+    Travel stories and articles (title, slug, excerpt, content, cover_image_url, status).
+29. `website_settings`:
+    JSON key-value storage for global website configuration.
+30. `audit_logs`:
+    System-wide audit trail of entity modifications.
+
+Automated Database Triggers:
+- `handle_new_user()` (migration 009 & 021): Fired on auth.users insert. If metadata indicates `is_customer_signup = 'true'`, it skips creating a staff profile. Otherwise, automatically creates a staff profile with default role `sales_staff`.
+- `handle_new_customer()` (migration 021): Fired on auth.users insert. If `is_customer_signup = 'true'`, creates a record in `customer_accounts`.
+- `recalc_booking_balance` (migration 004 & 024): Automatically recalculates `total_amount = (base_amount - discount_amount) + tax_amount`, updates `balance_amount = total_amount - amount_received`, and sets `payment_status` ('paid', 'partial', 'pending').
+- `sync_booking_amount_received` (migration 004): Fired whenever a payment is inserted, updated, or deleted. Automatically updates `amount_received` on the associated booking.
+- `trg_campaign_recipient_requires_optin` (migration 006): Enforces at the database layer that no contact can be added to a WhatsApp campaign recipient list unless `opt_in` is true.
+
+Storage Buckets:
+- `package-images`: For tour package photo uploads.
+- `destination-images`: For destination banners and thumbnails.
+- `gallery-images`: For destination and trip photo galleries.
+- `blog-images`: For travel article cover photos.
+- `site-images`: For general website media assets.
+
+================================================================================
+4. AUTHENTICATION & ACCESS CONTROL DUAL-TIER MODEL
+================================================================================
+
+The system enforces a dual-tier authentication architecture over Supabase Auth:
+
+1. Staff / Admin Tier (`profiles` table):
+   - Roles:
+     * `super_admin`: Unlimited access to all modules, financial data, and staff user management/permissions.
+     * `admin`: Full operational and financial access; cannot manage super_admin settings or users.
+     * `sales_staff`: Access to packages, destinations, enquiries, bookings, customers, and marketing.
+     * `accounts_staff`: Restricted access focused on income, expenses, payments, and financial reports.
+   - Enforcement:
+     * App Level: `requireProfile()` in `src/lib/supabase/auth-helpers.ts` checks active status and profile existence. If an active session belongs to a customer account rather than a staff profile, it signs them out immediately and redirects to `/login?reason=not_staff`.
+     * Database Level: Migration 010 establishes PostgreSQL RLS policies where `is_staff()` and `is_admin()` functions check `public.profiles`.
+
+2. Customer Tier (`customer_accounts` table):
+   - Access:
+     * Access to public pages, trip booking requests, and `/account/**` routes.
+     * Views only their own booking history and payment receipts (matched via email linkage).
+   - Enforcement:
+     * App Level: `requireCustomer()` in `src/lib/supabase/customer-auth-helpers.ts` checks the session against `customer_accounts`.
+     * Database Level: Explicit RLS policies in migration 021 allow customers to select their own account, bookings, and payments based on `auth.uid() = id` and email matching.
+
+================================================================================
+5. DETAILED END-TO-END SYSTEM WORKFLOWS
+================================================================================
+
+--------------------------------------------------------------------------------
+5.1 Public Visitor Discovery & Browsing Flow
+--------------------------------------------------------------------------------
+1. Landing Page (`/`):
+   - Visitor arrives at the homepage. The page statically renders with a 120-second revalidation period.
+   - The hero section renders a 4-panel split collage of published destinations.
+   - Visitor can search destinations via `HeroSearch`, view "Snapshot of Our Packages", read travel guides, and view customer reviews.
+   - Visitor can toggle the site language between English, Hindi, and Malayalam via the `LanguagePicker`.
+2. Exploring Destinations (`/destinations` & `/destinations/[slug]`):
+   - Visitor browses all active destinations.
+   - Clicking a destination displays destination information and all associated tour packages.
+3. Exploring Packages (`/packages` & `/packages/[slug]`):
+   - Visitor filters packages by category (Family, Honeymoon, Adventure, Luxury, Budget), duration, or budget.
+   - On the package page, the visitor sees:
+     * Overview and key highlights.
+     * Day-by-day itinerary with accommodation, meals, and transport details.
+     * Inclusions and Exclusions checklists.
+     * Photo lightbox gallery and YouTube/Vimeo video embeds.
+     * Frequently Asked Questions accordion.
+     * Dynamic price breakdown (Base price vs Discounted/Special Offer rate).
+     * Terms & conditions.
+
+--------------------------------------------------------------------------------
+5.2 Customer Account Registration & Booking Tracking Flow
+--------------------------------------------------------------------------------
+1. Registration (`/account/signup`):
+   - Customer submits Full Name, Email, and Password.
+   - Server action `signUpCustomer` enforces:
+     * Email must strictly be a `@gmail.com` address.
+     * Password must contain at least 7 characters, an uppercase letter, a lowercase letter, a number, and a symbol.
+   - User is created in Supabase Auth with metadata `{ is_customer_signup: 'true' }`.
+   - The database trigger `handle_new_customer` automatically writes a row into `customer_accounts` and ignores `profiles`.
+2. Login (`/account/login`):
+   - Customer logs in with credentials via `logInCustomer`.
+   - Middleware refreshes session cookies.
+3. Customer Dashboard & Trip Tracking (`/account/bookings`):
+   - Customer navigates to "My Bookings".
+   - `requireCustomer()` validates the customer session.
+   - System queries `bookings` and `enquiries` linked to the customer's email address.
+   - Converted bookings and ongoing enquiries are presented with simplified, friendly statuses:
+     * Confirmed / Partially Paid / Fully Paid -> "Confirmed" (Green badge)
+     * Lost / Cancelled -> "Rejected" (Red badge)
+     * New / Contacted / Follow-up / Pending -> "Processing" (Amber badge)
+
+--------------------------------------------------------------------------------
+5.3 Public Enquiry & Lead Submission Flow (Anti-Abuse & Rate-Limiting)
+--------------------------------------------------------------------------------
+1. Submitting an Enquiry (`EnquiryForm` on Package or Booking page):
+   - Visitor fills in Name, Email, Phone number (with country code), Travel Date, Headcount (Adults, Children, Infants), Budget, and Message.
+2. Authentication Gate:
+   - If the visitor is not logged in, the form prompts them to Log in or Sign up first so they can track their enquiry.
+3. Server-Side Protection (`submitEnquiry` in `src/app/(public)/actions.ts`):
+   - Rate Limiting: An in-memory IP rate limiter limits submissions to 3 requests per 10 minutes per IP.
+   - Honeypot Field: A hidden `website` field traps automated bots; if filled, the action returns simulated success without writing to the database.
+   - Validation: Validated using `enquiryFormSchema` in Zod.
+4. Database Insertion:
+   - Written to the `enquiries` table using the service-role client.
+   - Status defaults to `new`, priority defaults to `medium`, source set to `website`.
+   - A unique reference number (e.g., `ENQ-XXXX-XXXXX`) is generated.
+5. Email Notifications:
+   - Asynchronous call to `notifyAdminOfEnquiry` alerts agency administrators via Resend / SMTP.
+   - Failure of the email notification does not block the customer enquiry confirmation.
+
+--------------------------------------------------------------------------------
+5.4 Lead/Enquiry CRM Management & Follow-up Flow
+--------------------------------------------------------------------------------
+1. Lead Reception (`/admin/enquiries`):
+   - Staff views newly arrived enquiries with color-coded status badges and urgency indicators.
+2. Lead Inspection (`/admin/enquiries/[id]`):
+   - Staff inspects customer contact information, requested destination, travel dates, passenger breakdown, and messages.
+3. Lead Assignment & Workflow Status:
+   - Staff can assign the enquiry to a specific team member (`assignEnquiry`).
+   - Staff updates workflow status (`new` -> `contacted` -> `follow_up` -> `quotation_sent` -> `negotiation` -> `confirmed` / `lost`).
+4. Scheduling Follow-ups:
+   - Staff schedules follow-up calls, WhatsApp messages, emails, or meetings (`scheduleFollowup`).
+   - The enquiry's `next_followup_date` is updated, and activities are logged in `enquiry_activities`.
+5. Customer Decision (Accept / Reject):
+   - Staff can click "Accept Enquiry" (`acceptEnquiry`): Status updates to `confirmed`, and an automated notification email is sent to the customer via Gmail SMTP.
+   - Staff can click "Reject Enquiry" (`rejectEnquiry`): Status updates to `lost`, an internal rejection reason is logged, and a respectful rejection email is sent to the customer.
+
+--------------------------------------------------------------------------------
+5.5 Lead-to-Booking Conversion Flow
+--------------------------------------------------------------------------------
+1. Conversion Initiation:
+   - On an enquiry with a linked package, staff clicks "Convert to Booking" (`convertEnquiryToBooking`).
+2. Customer Record Resolution:
+   - System checks if a customer record with the enquiry's phone number already exists in `customers`.
+   - If not found, a new customer record is automatically generated with source `website`.
+3. Pricing & Booking Creation:
+   - Base package pricing is fetched.
+   - The total price is computed based on adult/child passenger headcount. Staff can specify manual overrides and flat discounts.
+   - A new booking row is created in `bookings` with initial status `inquiry`.
+   - The enquiry's status is set to `confirmed` and linked to the new booking ID.
+   - An activity record `converted_to_booking` is written to `enquiry_activities`.
+   - Staff is immediately redirected to the new booking page (`/admin/bookings/[id]`).
+
+--------------------------------------------------------------------------------
+5.6 Booking Lifecycle, Passenger Manifest & Payment Processing
+--------------------------------------------------------------------------------
+1. Booking Details (`/admin/bookings/[id]`):
+   - Displays trip travel dates, package name, customer details, financial summary, and passenger list.
+2. Passenger Manifest Management (`PassengersPanel`):
+   - Staff adds passengers with Full Name, Age, Gender, Passenger Type (Adult, Child, Infant), ID Proof Type (Passport, Aadhaar, National ID), and ID Number (`addPassenger`, `updatePassenger`, `removePassenger`).
+3. Payment Logging (`PaymentsPanel`):
+   - Staff records a received payment (`recordPayment`) with Amount, Payment Method (UPI, Bank Transfer, Credit Card, Cash, etc.), Payment Date, and Reference Number.
+4. Automatic Trigger Sync:
+   - Database trigger `sync_booking_amount_received` recalculates `amount_received`.
+   - Database trigger `recalc_booking_balance` recalculates `balance_amount = total_amount - amount_received`.
+   - `payment_status` automatically transitions (`pending` -> `partial` -> `paid`).
+5. Accounting Linkage:
+   - When a booking payment is recorded, an identical record is automatically posted into the `income` table under category `package_booking`, maintaining synchronized finance records.
+6. Trip Fulfillment:
+   - Staff moves booking status from `confirmed` to `completed` once the tour finishes, or `cancelled` if aborted.
+
+--------------------------------------------------------------------------------
+5.7 Financial Accounting, Expense Tracking & Analytics Flow
+--------------------------------------------------------------------------------
+1. Income Ledger (`/admin/income`):
+   - Shows all package booking revenues and ad-hoc income (flight bookings, hotel commissions, visa fees, service charges).
+   - Staff can add offline income entries using `createIncome`.
+2. Expense Ledger (`/admin/expenses`):
+   - Operational costs are categorized (Hotels, Transport, Guides, Flights, Office Operations).
+   - Staff records vendor bills and tour expenses linked to specific packages or bookings using `createExpense`.
+3. Financial Analytics & Reports (`/admin/reports`):
+   - Accounts staff and admins view real-time Profit & Loss reports.
+   - Filters by Preset Timeframes (Today, This Week, This Month, Last Month, This Year) or custom date ranges.
+   - Interactive Recharts bar and line charts break down:
+     * Total Revenue vs Total Expenses = Net Profit.
+     * Outstanding Booking Receivables.
+     * Income breakdown by category.
+     * Expense distribution across operational categories.
+
+--------------------------------------------------------------------------------
+5.8 WhatsApp Broadcast Campaign & Consent Management Flow
+--------------------------------------------------------------------------------
+1. Contact Directory & Opt-in Verification (`/admin/whatsapp`):
+   - Contacts are stored with phone numbers, display names, tags, and explicit opt-in flags.
+   - Legal consent auditing: `opted_in_at` and `opted_out_at` timestamps record consent history.
+2. Template Management (`/admin/whatsapp/templates`):
+   - Staff creates structured templates with category definitions and message bodies.
+3. Campaign Creation (`/admin/whatsapp/campaigns`):
+   - Staff creates a campaign, selects a template, attaches optional promotional media URLs, and targets contacts by audience tag.
+   - Contacts matching the criteria are added to `whatsapp_campaign_recipients`.
+   - The database trigger `trg_campaign_recipient_requires_optin` blocks non-opted-in contacts.
+4. Dispatching Campaigns (`sendWhatsappCampaign`):
+   - The system calls `getWhatsappProvider()`.
+   - In Development/Demo: Uses `MockWhatsappProvider` (simulates realistic latencies, deliveries, and delivery failures without external network costs).
+   - In Production: When configured with `WHATSAPP_PROVIDER=meta_cloud_api`, connects to Meta's WhatsApp Cloud API over HTTPS.
+   - Recipient statuses update in real time (`pending` -> `sent` / `failed` / `opted_out`).
+
+--------------------------------------------------------------------------------
+5.9 Content, Destination, Package & Media Management Flow
+--------------------------------------------------------------------------------
+1. Package CMS (`/admin/packages`):
+   - Draft Creation: Staff creates new packages with title, slug, duration, description, starting rates, and age-banded pricing (Adult, Child, Infant rates).
+   - Sub-Resource Editors:
+     * Itinerary: Drag-and-drop / day-by-day builder for day title, description, meals, stays, transport.
+     * Inclusions & Exclusions: Single or bulk line-by-line entry.
+     * Media: Upload package cover photos and tile images directly to Supabase Storage; insert YouTube/Vimeo video embed links.
+     * FAQs: Add frequently asked questions per package.
+   - Publish Safeguard: The system enforces that a package cannot be published unless it has both a base price and at least one image.
+   - Live Preview: Staff previews draft packages on `/admin/packages/[id]/preview` prior to publishing.
+2. Destination CMS (`/admin/destinations`):
+   - Create, edit, and organize destinations with cover imagery and SEO meta tags.
+3. Photo Gallery CMS (`/admin/gallery`):
+   - Multi-image file uploads saved to the `gallery-images` bucket.
+   - Organized in a two-level hierarchy: Country -> Place/Category.
+   - Staff can rename or delete entire gallery folders in a single action.
+4. Travel Blog CMS (`/admin/blog`):
+   - Articles created with titles, slugs, excerpt snippets, rich content, and cover photos.
+5. Special Offers & Events (`/admin/offers`, `/admin/events`):
+   - Define promotional discounts (flat amount or percentage) with validity date ranges (`valid_from` to `valid_to`).
+   - Active offers dynamically calculate and display discounted prices across package cards and package detail pages.
+
+--------------------------------------------------------------------------------
+5.10 System Configuration & Staff Permissions Engine
+--------------------------------------------------------------------------------
+1. Global Settings (`/admin/settings`):
+   - General Settings: Agency brand name, phone, WhatsApp number, email, address, working hours, social links, Google Maps iframe embed URL.
+   - Booking Settings: Minimum advance deposit rules, cancellation terms.
+   - Terms & Conditions: Site-wide standardized terms and conditions rendered across all package pages.
+   - Expense Categories: Manage custom operational expense heads.
+2. Staff & Permission Control (`/admin/users` - Super Admin Exclusive):
+   - Account Provisioning: Super admins create staff logins with temporary passwords.
+   - Role Management: Assign baseline roles (`admin`, `sales_staff`, `accounts_staff`).
+   - Granular Module Overrides (`staff_permissions` table):
+     Super admins configure specific View and Edit checkboxes across modules:
+     * Packages
+     * Destinations
+     * Enquiries
+     * Special Offers
+     * Gallery
+     * Blog
+     * Settings
+     * Users
+
+================================================================================
+6. INTEGRATIONS & EXTERNAL SERVICES
+================================================================================
+1. Supabase (Database, Auth, SSR, Storage):
+   - PostgreSQL database with 26 tables, triggers, and Row Level Security.
+   - Supabase Auth handling customer and staff sessions.
+   - Supabase Storage hosting media across 5 dedicated buckets (`package-images`, `destination-images`, `gallery-images`, `blog-images`, `site-images`).
+2. Email Services:
+   - Gmail SMTP via Nodemailer: Low-volume transactional sending for customer enquiry acceptance/rejection notices and one-time verification links.
+   - Resend API: Administrative alerts notifying agency staff upon new enquiry submissions or contact messages.
+3. WhatsApp Business API:
+   - Meta Cloud API integration for official broadcast messaging.
+   - Built-in Mock Provider for local testing and demonstration.
+4. Hosting & Deployment:
+   - Fully optimized for Netlify (via `netlify.toml` and `@netlify/plugin-nextjs`) and Vercel.
+
+================================================================================
+7. SUMMARY OF AUDIT LOGS, TRIGGERS & INTEGRITY CONSTRAINTS
+================================================================================
+- Audit Trail: Critical mutations on packages, bookings, and enquiries are logged into `audit_logs` and `enquiry_activities` with actor IDs, timestamps, and before/after payloads.
+- Foreign Key Integrity: Child records like itinerary days, inclusions, and package images cascade on deletion (`ON DELETE CASCADE`), while primary destinations and customer associations are protected (`ON DELETE RESTRICT` / `ON DELETE SET NULL`) to prevent orphaned records.
+- Financial Accuracy: Booking balances, payments received, and payment statuses are calculated exclusively through database triggers, preventing financial desynchronization.
+
+================================================================================
+END OF ANALYSIS DOCUMENT
+================================================================================

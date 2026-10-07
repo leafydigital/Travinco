@@ -1,7 +1,7 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
-import { requireProfile } from '@/lib/supabase/auth-helpers';
+import { requireProfile, checkModulePermission } from '@/lib/supabase/auth-helpers';
 import { eventSchema, offerSchema } from '@/lib/validations/content';
 import { revalidatePath } from 'next/cache';
 import type { ContentStatus } from '@/types/database';
@@ -9,7 +9,10 @@ import type { ContentStatus } from '@/types/database';
 // ---------- EVENTS ----------
 
 export async function createEvent(raw: unknown) {
-  await requireProfile();
+  const profile = await requireProfile();
+  const perm = await checkModulePermission(profile, 'offers', 'edit');
+  if (!perm.allowed) return { error: perm.error || 'You do not have permission to manage events.' };
+
   const parsed = eventSchema.safeParse(raw);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Please check the form.' };
 
@@ -30,7 +33,10 @@ export async function createEvent(raw: unknown) {
 }
 
 export async function updateEvent(id: string, raw: unknown) {
-  await requireProfile();
+  const profile = await requireProfile();
+  const perm = await checkModulePermission(profile, 'offers', 'edit');
+  if (!perm.allowed) return { error: perm.error || 'You do not have permission to manage events.' };
+
   const parsed = eventSchema.safeParse(raw);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Please check the form.' };
 
@@ -48,7 +54,10 @@ export async function updateEvent(id: string, raw: unknown) {
 }
 
 export async function setEventStatus(id: string, status: ContentStatus) {
-  await requireProfile();
+  const profile = await requireProfile();
+  const perm = await checkModulePermission(profile, 'offers', 'edit');
+  if (!perm.allowed) return { error: perm.error || 'You do not have permission to manage events.' };
+
   const supabase = await createClient();
   const { error } = await supabase.from('events').update({ status }).eq('id', id);
   if (error) return { error: 'Could not update status.' };
@@ -59,7 +68,8 @@ export async function setEventStatus(id: string, status: ContentStatus) {
 
 export async function deleteEvent(id: string) {
   const profile = await requireProfile();
-  if (!['admin', 'super_admin'].includes(profile.role)) return { error: 'Only admins can delete events.' };
+  const perm = await checkModulePermission(profile, 'offers', 'edit');
+  if (!perm.allowed || !['admin', 'super_admin'].includes(profile.role)) return { error: 'Only admins can delete events.' };
 
   const supabase = await createClient();
   const { error } = await supabase.from('events').delete().eq('id', id);
@@ -71,7 +81,10 @@ export async function deleteEvent(id: string) {
 // ---------- OFFERS ----------
 
 export async function createOffer(raw: unknown) {
-  await requireProfile();
+  const profile = await requireProfile();
+  const perm = await checkModulePermission(profile, 'offers', 'edit');
+  if (!perm.allowed) return { error: perm.error || 'You do not have permission to manage offers.' };
+
   const parsed = offerSchema.safeParse(raw);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Please check the form.' };
 
@@ -100,7 +113,10 @@ export async function createOffer(raw: unknown) {
 }
 
 export async function updateOffer(id: string, raw: unknown) {
-  await requireProfile();
+  const profile = await requireProfile();
+  const perm = await checkModulePermission(profile, 'offers', 'edit');
+  if (!perm.allowed) return { error: perm.error || 'You do not have permission to manage offers.' };
+
   const parsed = offerSchema.safeParse(raw);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Please check the form.' };
 
@@ -125,7 +141,10 @@ export async function updateOffer(id: string, raw: unknown) {
 }
 
 export async function setOfferStatus(id: string, status: ContentStatus) {
-  await requireProfile();
+  const profile = await requireProfile();
+  const perm = await checkModulePermission(profile, 'offers', 'edit');
+  if (!perm.allowed) return { error: perm.error || 'You do not have permission to manage offers.' };
+
   const supabase = await createClient();
   const { error } = await supabase.from('offers').update({ status }).eq('id', id);
   if (error) return { error: 'Could not update status.' };
@@ -136,7 +155,8 @@ export async function setOfferStatus(id: string, status: ContentStatus) {
 
 export async function deleteOffer(id: string) {
   const profile = await requireProfile();
-  if (!['admin', 'super_admin'].includes(profile.role)) return { error: 'Only admins can delete offers.' };
+  const perm = await checkModulePermission(profile, 'offers', 'edit');
+  if (!perm.allowed || !['admin', 'super_admin'].includes(profile.role)) return { error: 'Only admins can delete offers.' };
 
   const supabase = await createClient();
   const { error } = await supabase.from('offers').delete().eq('id', id);
@@ -148,7 +168,10 @@ export async function deleteOffer(id: string) {
 // ---------- GALLERY ----------
 
 export async function addGalleryImage(imageUrl: string, title: string, country: string, category: string) {
-  await requireProfile();
+  const profile = await requireProfile();
+  const perm = await checkModulePermission(profile, 'gallery', 'edit');
+  if (!perm.allowed) return { error: perm.error || 'You do not have permission to manage gallery images.' };
+
   if (!imageUrl.trim()) return { error: 'Image URL is required.' };
 
   const supabase = await createClient();
@@ -174,7 +197,10 @@ export async function addGalleryImage(imageUrl: string, title: string, country: 
 }
 
 export async function setGalleryImageStatus(id: string, status: ContentStatus) {
-  await requireProfile();
+  const profile = await requireProfile();
+  const perm = await checkModulePermission(profile, 'gallery', 'edit');
+  if (!perm.allowed) return { error: perm.error || 'You do not have permission to manage gallery images.' };
+
   const supabase = await createClient();
   const { error } = await supabase.from('gallery').update({ status }).eq('id', id);
   if (error) return { error: 'Could not update image status.' };
@@ -184,7 +210,10 @@ export async function setGalleryImageStatus(id: string, status: ContentStatus) {
 }
 
 export async function deleteGalleryImage(id: string) {
-  await requireProfile();
+  const profile = await requireProfile();
+  const perm = await checkModulePermission(profile, 'gallery', 'edit');
+  if (!perm.allowed) return { error: perm.error || 'You do not have permission to manage gallery images.' };
+
   const supabase = await createClient();
   const { error } = await supabase.from('gallery').delete().eq('id', id);
   if (error) return { error: 'Could not delete image.' };
@@ -203,7 +232,10 @@ export async function renameGalleryFolder(
   newCountry: string,
   newCategory: string
 ) {
-  await requireProfile();
+  const profile = await requireProfile();
+  const perm = await checkModulePermission(profile, 'gallery', 'edit');
+  if (!perm.allowed) return { error: perm.error || 'You do not have permission to manage gallery images.' };
+
   if (!newCountry.trim() || !newCategory.trim()) {
     return { error: 'Country and place cannot be empty.' };
   }
@@ -223,7 +255,10 @@ export async function renameGalleryFolder(
 
 /** Deletes every image inside a country/place group at once. */
 export async function deleteGalleryFolder(country: string, category: string) {
-  await requireProfile();
+  const profile = await requireProfile();
+  const perm = await checkModulePermission(profile, 'gallery', 'edit');
+  if (!perm.allowed) return { error: perm.error || 'You do not have permission to manage gallery images.' };
+
   const supabase = await createClient();
   const { error } = await supabase
     .from('gallery')

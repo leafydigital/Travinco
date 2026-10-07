@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
-import { requireProfile } from '@/lib/supabase/auth-helpers';
+import { requireProfile, assertModulePermission } from '@/lib/supabase/auth-helpers';
 import { notFound } from 'next/navigation';
 import { PackageForm } from '../package-form';
 import { ItineraryManager } from './itinerary-manager';
@@ -14,7 +14,8 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import Link from 'next/link';
 
 export default async function EditPackagePage({ params }: { params: { id: string } }) {
-  await requireProfile();
+  const profile = await requireProfile();
+  await assertModulePermission(profile, 'packages', 'view');
   const supabase = await createClient();
 
   const [

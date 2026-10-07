@@ -1,5 +1,5 @@
-import { TravelLoader } from '@/components/ui/travel-loader';
+import { AdminDetailSkeleton } from '@/components/admin/admin-skeletons';
 
 export default function Loading() {
-  return <TravelLoader label="Loading…" />;
+  return <AdminDetailSkeleton titleWidth="w-48" />;
 }

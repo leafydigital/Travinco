@@ -1,11 +1,12 @@
 import { createClient } from '@/lib/supabase/server';
-import { requireProfile } from '@/lib/supabase/auth-helpers';
+import { requireProfile, assertModulePermission } from '@/lib/supabase/auth-helpers';
 import { PackageForm } from '../package-form';
 
 export const metadata = { title: 'New package' };
 
 export default async function NewPackagePage() {
-  await requireProfile();
+  const profile = await requireProfile();
+  await assertModulePermission(profile, 'packages', 'edit');
   const supabase = await createClient();
   const { data: destinations } = await supabase
     .from('destinations')

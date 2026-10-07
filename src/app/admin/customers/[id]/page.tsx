@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
-import { requireProfile } from '@/lib/supabase/auth-helpers';
+import { requireProfile, assertModulePermission } from '@/lib/supabase/auth-helpers';
 import { notFound } from 'next/navigation';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { formatCurrency, formatDate } from '@/lib/utils/format';
@@ -8,7 +8,8 @@ import Link from 'next/link';
 import { Phone, Mail, MessageCircle } from 'lucide-react';
 
 export default async function CustomerDetailPage({ params }: { params: { id: string } }) {
-  await requireProfile();
+  const profile = await requireProfile();
+  await assertModulePermission(profile, 'customers', 'view');
   const supabase = await createClient();
 
   const [{ data: customer }, { data: enquiries }, { data: bookings }] = await Promise.all([

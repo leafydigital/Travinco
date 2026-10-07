@@ -1,12 +1,13 @@
 import { createClient } from '@/lib/supabase/server';
-import { requireProfile } from '@/lib/supabase/auth-helpers';
+import { requireProfile, assertModulePermission } from '@/lib/supabase/auth-helpers';
 import Link from 'next/link';
 import { formatDate } from '@/lib/utils/format';
 import { ContactAddForm } from './contact-add-form';
 import { ContactRowActions } from './contact-row-actions';
 
 export default async function WhatsappContactsPage() {
-  await requireProfile();
+  const profile = await requireProfile();
+  await assertModulePermission(profile, 'whatsapp', 'view');
   const supabase = await createClient();
 
   const [{ data: contacts }, { data: customers }] = await Promise.all([

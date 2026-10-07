@@ -1,12 +1,13 @@
 import { createClient } from '@/lib/supabase/server';
-import { requireProfile } from '@/lib/supabase/auth-helpers';
+import { requireProfile, assertModulePermission } from '@/lib/supabase/auth-helpers';
 import { notFound } from 'next/navigation';
 import { EventForm } from '../event-form';
 import { StatusBadge } from '@/components/ui/status-badge';
 import Link from 'next/link';
 
 export default async function EditEventPage({ params }: { params: { id: string } }) {
-  await requireProfile();
+  const profile = await requireProfile();
+  await assertModulePermission(profile, 'offers', 'view');
   const supabase = await createClient();
   const { data: event } = await supabase.from('events').select('*').eq('id', params.id).single();
 

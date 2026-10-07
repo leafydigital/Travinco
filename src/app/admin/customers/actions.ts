@@ -1,12 +1,15 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
-import { requireProfile } from '@/lib/supabase/auth-helpers';
+import { requireProfile, checkModulePermission } from '@/lib/supabase/auth-helpers';
 import { customerSchema } from '@/lib/validations/customer';
 import { revalidatePath } from 'next/cache';
 
 export async function createCustomer(raw: unknown) {
   const profile = await requireProfile();
+  const perm = await checkModulePermission(profile, 'customers', 'edit');
+  if (!perm.allowed) return { error: perm.error || 'You do not have permission to create customers.' };
+
   const parsed = customerSchema.safeParse(raw);
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? 'Please check the form.' };
@@ -26,7 +29,10 @@ export async function createCustomer(raw: unknown) {
 }
 
 export async function updateCustomer(id: string, raw: unknown) {
-  await requireProfile();
+  const profile = await requireProfile();
+  const perm = await checkModulePermission(profile, 'customers', 'edit');
+  if (!perm.allowed) return { error: perm.error || 'You do not have permission to edit customers.' };
+
   const parsed = customerSchema.safeParse(raw);
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? 'Please check the form.' };
@@ -47,8 +53,9 @@ export async function updateCustomer(id: string, raw: unknown) {
 
 export async function deleteCustomer(id: string) {
   const profile = await requireProfile();
-  if (!['admin', 'super_admin'].includes(profile.role)) {
-    return { error: 'Only admins can delete customers.' };
+  const perm = await checkModulePermission(profile, 'customers', 'edit');
+  if (!perm.allowed || !['admin', 'super_admin'].includes(profile.role)) {
+    return { error: perm.error || 'Only admins can delete customers.' };
   }
 
   const supabase = await createClient();

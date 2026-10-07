@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
-import { requireProfile } from '@/lib/supabase/auth-helpers';
+import { requireProfile, assertModulePermission } from '@/lib/supabase/auth-helpers';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { formatDate } from '@/lib/utils/format';
 import Link from 'next/link';
@@ -7,7 +7,8 @@ import { CampaignCreateForm } from './campaign-create-form';
 import { isUsingMockProvider } from '@/lib/whatsapp/provider';
 
 export default async function WhatsappCampaignsPage() {
-  await requireProfile();
+  const profile = await requireProfile();
+  await assertModulePermission(profile, 'whatsapp', 'view');
   const supabase = await createClient();
 
   const [{ data: campaigns }, { data: templates }] = await Promise.all([

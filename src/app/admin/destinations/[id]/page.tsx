@@ -1,12 +1,13 @@
 import { createClient } from '@/lib/supabase/server';
-import { requireProfile } from '@/lib/supabase/auth-helpers';
+import { requireProfile, assertModulePermission } from '@/lib/supabase/auth-helpers';
 import { notFound } from 'next/navigation';
 import { DestinationForm } from '../destination-form';
 import { StatusBadge } from '@/components/ui/status-badge';
 import Link from 'next/link';
 
 export default async function EditDestinationPage({ params }: { params: { id: string } }) {
-  await requireProfile();
+  const profile = await requireProfile();
+  await assertModulePermission(profile, 'destinations', 'view');
   const supabase = await createClient();
   const { data: destination } = await supabase.from('destinations').select('*').eq('id', params.id).single();
 

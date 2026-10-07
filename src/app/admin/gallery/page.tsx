@@ -1,10 +1,11 @@
 import { createClient } from '@/lib/supabase/server';
-import { requireProfile } from '@/lib/supabase/auth-helpers';
+import { requireProfile, assertModulePermission } from '@/lib/supabase/auth-helpers';
 import { GalleryGrid } from './gallery-grid';
 import { GalleryAddForm } from './gallery-add-form';
 
 export default async function AdminGalleryPage() {
-  await requireProfile();
+  const profile = await requireProfile();
+  await assertModulePermission(profile, 'gallery', 'view');
   const supabase = await createClient();
   const { data: images } = await supabase
     .from('gallery')

@@ -1,12 +1,13 @@
 import { createClient } from '@/lib/supabase/server';
-import { requireProfile } from '@/lib/supabase/auth-helpers';
+import { requireProfile, assertModulePermission } from '@/lib/supabase/auth-helpers';
 import { StatusBadge } from '@/components/ui/status-badge';
 import Link from 'next/link';
 import { Plus, ArrowLeft } from 'lucide-react';
 import { DestinationRowActions } from './destination-row-actions';
 
 export default async function AdminDestinationsPage() {
-  await requireProfile();
+  const profile = await requireProfile();
+  await assertModulePermission(profile, 'destinations', 'view');
   const supabase = await createClient();
   const { data: destinations } = await supabase.from('destinations').select('*').order('sort_order');
 

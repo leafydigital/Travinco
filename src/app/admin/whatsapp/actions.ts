@@ -1,7 +1,7 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
-import { requireProfile } from '@/lib/supabase/auth-helpers';
+import { requireProfile, checkModulePermission } from '@/lib/supabase/auth-helpers';
 import {
   whatsappContactSchema,
   whatsappTemplateSchema,
@@ -10,10 +10,20 @@ import {
 import { getWhatsappProvider } from '@/lib/whatsapp/provider';
 import { revalidatePath } from 'next/cache';
 
+async function checkWhatsappEditPermission() {
+  const profile = await requireProfile();
+  const perm = await checkModulePermission(profile, 'whatsapp', 'edit');
+  if (!perm.allowed) {
+    return { error: perm.error || 'You do not have permission to use WhatsApp marketing.' };
+  }
+  return { profile };
+}
+
 // ---------- CONTACTS ----------
 
 export async function createWhatsappContact(raw: unknown) {
-  await requireProfile();
+  const permCheck = await checkWhatsappEditPermission();
+  if (permCheck.error) return { error: permCheck.error };
   const parsed = whatsappContactSchema.safeParse(raw);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Please check the form.' };
 
@@ -41,7 +51,8 @@ export async function createWhatsappContact(raw: unknown) {
  * what this action does, so consent is enforced at two layers.
  */
 export async function setWhatsappOptIn(id: string, optIn: boolean) {
-  await requireProfile();
+  const permCheck = await checkWhatsappEditPermission();
+  if (permCheck.error) return { error: permCheck.error };
   const supabase = await createClient();
 
   const { error } = await supabase
@@ -59,7 +70,8 @@ export async function setWhatsappOptIn(id: string, optIn: boolean) {
 }
 
 export async function deleteWhatsappContact(id: string) {
-  await requireProfile();
+  const permCheck = await checkWhatsappEditPermission();
+  if (permCheck.error) return { error: permCheck.error };
   const supabase = await createClient();
   const { error } = await supabase.from('whatsapp_contacts').delete().eq('id', id);
   if (error) return { error: 'Could not delete contact.' };
@@ -70,7 +82,8 @@ export async function deleteWhatsappContact(id: string) {
 // ---------- TEMPLATES ----------
 
 export async function createWhatsappTemplate(raw: unknown) {
-  await requireProfile();
+  const permCheck = await checkWhatsappEditPermission();
+  if (permCheck.error) return { error: permCheck.error };
   const parsed = whatsappTemplateSchema.safeParse(raw);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Please check the form.' };
 
@@ -87,7 +100,8 @@ export async function createWhatsappTemplate(raw: unknown) {
 }
 
 export async function deleteWhatsappTemplate(id: string) {
-  await requireProfile();
+  const permCheck = await checkWhatsappEditPermission();
+  if (permCheck.error) return { error: permCheck.error };
   const supabase = await createClient();
   const { error } = await supabase.from('whatsapp_templates').delete().eq('id', id);
   if (error) return { error: 'Could not delete template — it may be used by an existing campaign.' };
@@ -98,7 +112,8 @@ export async function deleteWhatsappTemplate(id: string) {
 // ---------- CAMPAIGNS ----------
 
 export async function createWhatsappCampaign(raw: unknown) {
-  const profile = await requireProfile();
+  const { profile, error: permErr } = await checkWhatsappEditPermission();
+  if (permErr || !profile) return { error: permErr || 'Not authorized.' };
   const parsed = whatsappCampaignSchema.safeParse(raw);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Please check the form.' };
 
@@ -140,9 +155,9 @@ export async function createWhatsappCampaign(raw: unknown) {
 }
 
 export async function deleteWhatsappCampaign(id: string) {
-  const profile = await requireProfile();
-  if (!['admin', 'super_admin'].includes(profile.role)) {
-    return { error: 'Only admins can delete campaigns.' };
+  const { profile, error: permErr } = await checkWhatsappEditPermission();
+  if (permErr || !profile || !['admin', 'super_admin'].includes(profile.role)) {
+    return { error: permErr || 'Only admins can delete campaigns.' };
   }
   const supabase = await createClient();
   const { error } = await supabase.from('whatsapp_campaigns').delete().eq('id', id);
@@ -161,7 +176,8 @@ export async function deleteWhatsappCampaign(id: string) {
  * a single request/response cycle.
  */
 export async function sendWhatsappCampaign(campaignId: string) {
-  await requireProfile();
+  const permCheck = await checkWhatsappEditPermission();
+  if (permCheck.error) return { error: permCheck.error };
   const supabase = await createClient();
 
   const { data: campaign } = await supabase

@@ -1,10 +1,19 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
-import { requireProfile } from '@/lib/supabase/auth-helpers';
+import { requireProfile, checkModulePermission } from '@/lib/supabase/auth-helpers';
 import { bookingSchema, passengerSchema, paymentSchema } from '@/lib/validations/booking';
 import { revalidatePath } from 'next/cache';
 import type { BookingStatus } from '@/types/database';
+
+async function checkBookingEditPermission() {
+  const profile = await requireProfile();
+  const perm = await checkModulePermission(profile, 'bookings', 'edit');
+  if (!perm.allowed) {
+    return { error: perm.error || 'You do not have permission to manage bookings.' };
+  }
+  return { profile };
+}
 
 async function logAudit(action: string, entityId: string, before?: unknown, after?: unknown) {
   const supabase = await createClient();
@@ -23,7 +32,9 @@ async function logAudit(action: string, entityId: string, before?: unknown, afte
 }
 
 export async function updateBooking(id: string, raw: unknown) {
-  await requireProfile();
+  const permCheck = await checkBookingEditPermission();
+  if (permCheck.error) return { error: permCheck.error };
+
   const parsed = bookingSchema.safeParse(raw);
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? 'Please check the booking fields.' };
@@ -44,7 +55,8 @@ const bookingStatuses: BookingStatus[] = [
 ];
 
 export async function updateBookingStatus(id: string, status: BookingStatus) {
-  await requireProfile();
+  const permCheck = await checkBookingEditPermission();
+  if (permCheck.error) return { error: permCheck.error };
   if (!bookingStatuses.includes(status)) return { error: 'Invalid status.' };
 
   const supabase = await createClient();
@@ -60,7 +72,9 @@ export async function updateBookingStatus(id: string, status: BookingStatus) {
 }
 
 export async function addPassenger(bookingId: string, raw: unknown) {
-  await requireProfile();
+  const permCheck = await checkBookingEditPermission();
+  if (permCheck.error) return { error: permCheck.error };
+
   const parsed = passengerSchema.safeParse(raw);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid passenger details.' };
 
@@ -75,7 +89,9 @@ export async function addPassenger(bookingId: string, raw: unknown) {
 }
 
 export async function updatePassenger(bookingId: string, passengerId: string, raw: unknown) {
-  await requireProfile();
+  const permCheck = await checkBookingEditPermission();
+  if (permCheck.error) return { error: permCheck.error };
+
   const parsed = passengerSchema.safeParse(raw);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid passenger details.' };
 
@@ -91,7 +107,9 @@ export async function updatePassenger(bookingId: string, passengerId: string, ra
 }
 
 export async function removePassenger(bookingId: string, passengerId: string) {
-  await requireProfile();
+  const permCheck = await checkBookingEditPermission();
+  if (permCheck.error) return { error: permCheck.error };
+
   const supabase = await createClient();
   const { error } = await supabase.from('booking_passengers').delete().eq('id', passengerId);
   if (error) return { error: 'Could not remove passenger.' };
@@ -111,7 +129,8 @@ export async function removePassenger(bookingId: string, passengerId: string) {
  * booking's payment history from diverging into two sources of truth.
  */
 export async function recordPayment(bookingId: string, raw: unknown) {
-  const profile = await requireProfile();
+  const { profile, error: permErr } = await checkBookingEditPermission();
+  if (permErr || !profile) return { error: permErr || 'Not authorized.' };
   const parsed = paymentSchema.safeParse(raw);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid payment.' };
 

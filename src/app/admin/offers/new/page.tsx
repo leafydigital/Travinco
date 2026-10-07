@@ -1,9 +1,10 @@
 import { createClient } from '@/lib/supabase/server';
-import { requireProfile } from '@/lib/supabase/auth-helpers';
+import { requireProfile, assertModulePermission } from '@/lib/supabase/auth-helpers';
 import { OfferForm } from '../offer-form';
 
 export default async function NewOfferPage() {
-  await requireProfile();
+  const profile = await requireProfile();
+  await assertModulePermission(profile, 'offers', 'edit');
   const supabase = await createClient();
   const { data: packages } = await supabase
     .from('travel_packages')

@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
-import { requireProfile } from '@/lib/supabase/auth-helpers';
+import { requireProfile, assertModulePermission } from '@/lib/supabase/auth-helpers';
 import Link from 'next/link';
 import { Search, Plus } from 'lucide-react';
 
@@ -17,7 +17,8 @@ export default async function AdminCustomersPage({
 }: {
   searchParams: { q?: string; page?: string };
 }) {
-  await requireProfile();
+  const profile = await requireProfile();
+  await assertModulePermission(profile, 'customers', 'view');
   const supabase = await createClient();
 
   const page = Math.max(1, Number(searchParams.page ?? 1));
