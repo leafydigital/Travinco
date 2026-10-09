@@ -93,6 +93,9 @@ export async function middleware(request: NextRequest) {
   // 1. Unauthenticated Visitor Handling
   if (!user) {
     if (isAdminRoute) {
+      if (pathname === '/admin/login') {
+        return createRedirect(new URL('/login', request.url));
+      }
       const redirectUrl = new URL('/login', request.url);
       if (pathname !== '/admin') {
         redirectUrl.searchParams.set('redirectTo', pathname);
@@ -132,6 +135,10 @@ export async function middleware(request: NextRequest) {
   }
 
   // 3. Authenticated Staff Handling
+  if (pathname === '/admin/login') {
+    return createRedirect(new URL('/admin', request.url));
+  }
+
   // Staff visiting staff login should go to admin or redirectTo
   if (isStaffLoginRoute) {
     const redirectTo = request.nextUrl.searchParams.get('redirectTo');

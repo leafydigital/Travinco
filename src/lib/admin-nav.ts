@@ -14,10 +14,15 @@ export const iconNames = [
   'Users',
   'TrendingUp',
   'Receipt',
-  'BarChart3',
-  'MessageSquare',
+
   'UsersRound',
   'Database',
+  'FileText',
+  'ReceiptText',
+  'Hotel',
+  'Car',
+  'MapPinned',
+  'Landmark',
 ] as const;
 
 export type IconName = (typeof iconNames)[number];
@@ -61,20 +66,7 @@ export const adminNav: NavSection[] = [
         module: 'finance',
         roles: ['accounts_staff', 'admin', 'super_admin'],
       },
-      {
-        label: 'Reports',
-        href: '/admin/reports',
-        icon: 'BarChart3',
-        module: 'finance',
-        roles: ['accounts_staff', 'admin', 'super_admin'],
-      },
-      {
-        label: 'WhatsApp',
-        href: '/admin/whatsapp',
-        icon: 'MessageSquare',
-        module: 'whatsapp',
-        roles: ['sales_staff', 'admin', 'super_admin'],
-      },
+
       {
         label: 'Master',
         href: '/admin/master',
@@ -94,6 +86,47 @@ export const adminNav: NavSection[] = [
         icon: 'Users',
         module: 'users',
         roles: ['super_admin'],
+      },
+    ],
+  },
+  {
+    title: 'Tour operations',
+    items: [
+      {
+        label: 'Quotations',
+        href: '/admin/quotations',
+        icon: 'FileText',
+        roles: ['sales_staff', 'accounts_staff', 'admin', 'super_admin'],
+      },
+      {
+        label: 'Invoices',
+        href: '/admin/invoices',
+        icon: 'ReceiptText',
+        roles: ['sales_staff', 'accounts_staff', 'admin', 'super_admin'],
+      },
+      {
+        label: 'Hotels',
+        href: '/admin/hotels',
+        icon: 'Hotel',
+        roles: ['sales_staff', 'admin', 'super_admin'],
+      },
+      {
+        label: 'Transportation',
+        href: '/admin/transport',
+        icon: 'Car',
+        roles: ['sales_staff', 'admin', 'super_admin'],
+      },
+      {
+        label: 'Pickup & Drop Points',
+        href: '/admin/pickup-points',
+        icon: 'MapPinned',
+        roles: ['sales_staff', 'admin', 'super_admin'],
+      },
+      {
+        label: 'Locations & Activities',
+        href: '/admin/locations',
+        icon: 'Landmark',
+        roles: ['sales_staff', 'admin', 'super_admin'],
       },
     ],
   },

@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
+import { cache } from 'react';
 import type { Tables } from '@/types/database';
 
 export type CurrentProfile = Tables<'profiles'>;
@@ -16,8 +17,7 @@ export type AdminModule =
   | 'blog'
   | 'settings'
   | 'users'
-  | 'finance'
-  | 'whatsapp';
+  | 'finance';
 
 export type PermissionAction = 'view' | 'edit';
 
@@ -26,8 +26,11 @@ export type PermissionAction = 'view' | 'edit';
  * Redirects to /login if there's no session. If the authenticated session
  * belongs to a customer account (no profiles row), signs them out and
  * redirects to /login?reason=not_staff.
+ *
+ * Wrapped in React cache() so multiple Server Components and layouts in the
+ * same render pass share a single database round-trip.
  */
-export async function requireProfile(): Promise<CurrentProfile> {
+export const requireProfile = cache(async (): Promise<CurrentProfile> => {
   const supabase = await createClient();
   const {
     data: { user },
@@ -54,10 +57,25 @@ export async function requireProfile(): Promise<CurrentProfile> {
   }
 
   return profile;
-}
+});
 
-/** Non-throwing helper returning current profile or null */
-export async function getProfile(): Promise<CurrentProfile | null> {
+/**
+ * Fetches granular module permission overrides for the given profile.
+ * Wrapped in React cache() so the layout and pages share one DB round-trip
+ * per render pass — prevents the admin layout from querying this table on
+ * every sidebar navigation.
+ */
+export const getStaffPermissions = cache(async (profileId: string) => {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from('staff_permissions')
+    .select('*')
+    .eq('profile_id', profileId);
+  return data ?? [];
+});
+
+/** Non-throwing helper returning current profile or null (cached per request) */
+export const getProfile = cache(async (): Promise<CurrentProfile | null> => {
   const supabase = await createClient();
   const {
     data: { user },
@@ -73,7 +91,7 @@ export async function getProfile(): Promise<CurrentProfile | null> {
 
   if (!profile || !profile.is_active) return null;
   return profile;
-}
+});
 
 /** Throws redirect for pages requiring a specific role tier. */
 export function assertRole(
@@ -97,11 +115,11 @@ export function assertRole(
  *    - sales_staff: packages, destinations, enquiries, bookings, customers, offers, gallery, blog, whatsapp.
  *    - accounts_staff: finance, bookings, customers (view).
  */
-export async function hasModulePermission(
+export const hasModulePermission = cache(async (
   profile: CurrentProfile,
   module: AdminModule,
   action: PermissionAction = 'view'
-): Promise<boolean> {
+): Promise<boolean> => {
   if (!profile || !profile.is_active) return false;
 
   // 1. super_admin always has unrestricted access
@@ -144,7 +162,7 @@ export async function hasModulePermission(
     case 'sales_staff':
       const salesAllowedModules: AdminModule[] = [
         'packages', 'destinations', 'enquiries', 'bookings',
-        'customers', 'offers', 'gallery', 'blog', 'whatsapp',
+        'customers', 'offers', 'gallery', 'blog',
       ];
       return salesAllowedModules.includes(module);
 
@@ -157,7 +175,7 @@ export async function hasModulePermission(
     default:
       return false;
   }
-}
+});
 
 /** Throws redirect if staff member lacks module permission (for Server Components/Pages). */
 export async function assertModulePermission(

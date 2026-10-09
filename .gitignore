@@ -40,3 +40,4 @@ next-env.d.ts
 /supabase/.temp
 .env.local
 .env.local
+*.sql

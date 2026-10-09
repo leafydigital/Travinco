@@ -25,7 +25,6 @@ export async function createIncome(raw: unknown) {
   if (error) return { error: 'Could not record income.' };
 
   revalidatePath('/admin/income');
-  revalidatePath('/admin/reports');
   return {};
 }
 
@@ -38,7 +37,6 @@ export async function deleteIncome(id: string) {
   if (error) return { error: 'Could not delete income entry.' };
 
   revalidatePath('/admin/income');
-  revalidatePath('/admin/reports');
   return {};
 }
 
@@ -60,7 +58,6 @@ export async function createExpense(raw: unknown) {
   if (error) return { error: 'Could not record expense.' };
 
   revalidatePath('/admin/expenses');
-  revalidatePath('/admin/reports');
   return {};
 }
 
@@ -73,7 +70,6 @@ export async function deleteExpense(id: string) {
   if (error) return { error: 'Could not delete expense entry.' };
 
   revalidatePath('/admin/expenses');
-  revalidatePath('/admin/reports');
   return {};
 }
 

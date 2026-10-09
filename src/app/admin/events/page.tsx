@@ -5,8 +5,27 @@ import { formatDate } from '@/lib/utils/format';
 import Link from 'next/link';
 import { Plus } from 'lucide-react';
 import { EventRowActions } from './event-row-actions';
+import { Suspense } from 'react';
 
-export default async function AdminEventsPage() {
+/* ── table skeleton ───────────────────────────────────────── */
+function EventsTableSkeleton() {
+  return (
+    <>
+      {Array.from({ length: 5 }).map((_, i) => (
+        <tr key={i} className="border-b border-ink-50 last:border-0">
+          {Array.from({ length: 5 }).map((_, j) => (
+            <td key={j} className="px-5 py-3">
+              <div className="h-4 w-full animate-pulse rounded bg-ink-100" />
+            </td>
+          ))}
+        </tr>
+      ))}
+    </>
+  );
+}
+
+/* ── data rows (streamed) ─────────────────────────────────── */
+async function EventsRows() {
   const profile = await requireProfile();
   await assertModulePermission(profile, 'offers', 'view');
   const supabase = await createClient();
@@ -15,6 +34,41 @@ export default async function AdminEventsPage() {
     .select('*')
     .order('created_at', { ascending: false });
 
+  if ((events ?? []).length === 0) {
+    return (
+      <tr>
+        <td colSpan={5} className="px-5 py-10 text-center text-ink-400">
+          No events yet.
+        </td>
+      </tr>
+    );
+  }
+
+  return (
+    <>
+      {(events ?? []).map((e) => (
+        <tr key={e.id} className="border-b border-ink-50 last:border-0 hover:bg-ink-50/50">
+          <td className="px-5 py-3">
+            <Link href={`/admin/events/${e.id}`} className="font-medium text-ink-800 hover:text-brand-700">
+              {e.title}
+            </Link>
+          </td>
+          <td className="px-5 py-3 text-ink-500">{formatDate(e.event_date)}</td>
+          <td className="px-5 py-3 text-ink-500">{e.location ?? '—'}</td>
+          <td className="px-5 py-3">
+            <StatusBadge status={e.status} />
+          </td>
+          <td className="px-5 py-3 text-right">
+            <EventRowActions id={e.id} status={e.status} />
+          </td>
+        </tr>
+      ))}
+    </>
+  );
+}
+
+/* ── page shell (instant) ─────────────────────────────────── */
+export default function AdminEventsPage() {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -37,30 +91,9 @@ export default async function AdminEventsPage() {
               </tr>
             </thead>
             <tbody>
-              {(events ?? []).length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-5 py-10 text-center text-ink-400">
-                    No events yet.
-                  </td>
-                </tr>
-              )}
-              {(events ?? []).map((e) => (
-                <tr key={e.id} className="border-b border-ink-50 last:border-0 hover:bg-ink-50/50">
-                  <td className="px-5 py-3">
-                    <Link href={`/admin/events/${e.id}`} className="font-medium text-ink-800 hover:text-brand-700">
-                      {e.title}
-                    </Link>
-                  </td>
-                  <td className="px-5 py-3 text-ink-500">{formatDate(e.event_date)}</td>
-                  <td className="px-5 py-3 text-ink-500">{e.location ?? '—'}</td>
-                  <td className="px-5 py-3">
-                    <StatusBadge status={e.status} />
-                  </td>
-                  <td className="px-5 py-3 text-right">
-                    <EventRowActions id={e.id} status={e.status} />
-                  </td>
-                </tr>
-              ))}
+              <Suspense fallback={<EventsTableSkeleton />}>
+                <EventsRows />
+              </Suspense>
             </tbody>
           </table>
         </div>

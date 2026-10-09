@@ -60,6 +60,9 @@ export default async function EnquiryDetailPage({ params }: { params: { id: stri
         </div>
         <div className="flex gap-2">
           <AcceptRejectButtons enquiryId={enquiry.id} currentStatus={enquiry.status} />
+          <Link href={`/admin/quotations/new?enquiry=${enquiry.id}`} className="btn-outline">
+            Create quotation
+          </Link>
           <ConvertToBookingButton
             enquiryId={enquiry.id}
             hasPackage={Boolean(enquiry.package_id)}

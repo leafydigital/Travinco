@@ -6,8 +6,30 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { Plus } from 'lucide-react';
 import { BlogPostRowActions } from './blog-post-row-actions';
+import { Suspense } from 'react';
 
-export default async function AdminBlogPage() {
+/* ── skeleton ─────────────────────────────────────────────── */
+function BlogTableSkeleton() {
+  return (
+    <>
+      {Array.from({ length: 5 }).map((_, i) => (
+        <tr key={i} className="border-b border-ink-50 last:border-0">
+          <td className="px-5 py-3">
+            <div className="h-12 w-16 animate-pulse rounded-lg bg-ink-100" />
+          </td>
+          {Array.from({ length: 4 }).map((_, j) => (
+            <td key={j} className="px-5 py-3">
+              <div className="h-4 w-full animate-pulse rounded bg-ink-100" />
+            </td>
+          ))}
+        </tr>
+      ))}
+    </>
+  );
+}
+
+/* ── data rows (streamed) ─────────────────────────────────── */
+async function BlogRows() {
   const profile = await requireProfile();
   await assertModulePermission(profile, 'blog', 'view');
   const supabase = await createClient();
@@ -16,6 +38,60 @@ export default async function AdminBlogPage() {
     .select('*')
     .order('created_at', { ascending: false });
 
+  if ((posts ?? []).length === 0) {
+    return (
+      <tr>
+        <td colSpan={5} className="px-5 py-10 text-center text-ink-400">
+          No blog posts yet.
+        </td>
+      </tr>
+    );
+  }
+
+  return (
+    <>
+      {(posts ?? []).map((post) => (
+        <tr key={post.id} className="border-b border-ink-50 last:border-0 hover:bg-ink-50/50">
+          <td className="px-5 py-3">
+            <div className="relative h-12 w-16 overflow-hidden rounded-lg bg-ink-100">
+              {post.cover_image_url ? (
+                <Image
+                  src={post.cover_image_url}
+                  alt={post.title}
+                  fill
+                  className="object-cover"
+                  sizes="64px"
+                />
+              ) : (
+                <div className="flex h-full items-center justify-center text-[10px] text-ink-300">
+                  No image
+                </div>
+              )}
+            </div>
+          </td>
+          <td className="px-5 py-3">
+            <Link
+              href={`/admin/blog/${post.id}`}
+              className="font-medium text-ink-800 hover:text-brand-700"
+            >
+              {post.title}
+            </Link>
+          </td>
+          <td className="px-5 py-3 text-ink-500">{formatDate(post.created_at)}</td>
+          <td className="px-5 py-3">
+            <StatusBadge status={post.status} />
+          </td>
+          <td className="px-5 py-3 text-right">
+            <BlogPostRowActions id={post.id} status={post.status} />
+          </td>
+        </tr>
+      ))}
+    </>
+  );
+}
+
+/* ── page shell (instant) ─────────────────────────────────── */
+export default function AdminBlogPage() {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -38,49 +114,9 @@ export default async function AdminBlogPage() {
               </tr>
             </thead>
             <tbody>
-              {(posts ?? []).length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-5 py-10 text-center text-ink-400">
-                    No blog posts yet.
-                  </td>
-                </tr>
-              )}
-              {(posts ?? []).map((post) => (
-                <tr key={post.id} className="border-b border-ink-50 last:border-0 hover:bg-ink-50/50">
-                  <td className="px-5 py-3">
-                    <div className="relative h-12 w-16 overflow-hidden rounded-lg bg-ink-100">
-                      {post.cover_image_url ? (
-                        <Image
-                          src={post.cover_image_url}
-                          alt={post.title}
-                          fill
-                          className="object-cover"
-                          sizes="64px"
-                        />
-                      ) : (
-                        <div className="flex h-full items-center justify-center text-[10px] text-ink-300">
-                          No image
-                        </div>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-5 py-3">
-                    <Link
-                      href={`/admin/blog/${post.id}`}
-                      className="font-medium text-ink-800 hover:text-brand-700"
-                    >
-                      {post.title}
-                    </Link>
-                  </td>
-                  <td className="px-5 py-3 text-ink-500">{formatDate(post.created_at)}</td>
-                  <td className="px-5 py-3">
-                    <StatusBadge status={post.status} />
-                  </td>
-                  <td className="px-5 py-3 text-right">
-                    <BlogPostRowActions id={post.id} status={post.status} />
-                  </td>
-                </tr>
-              ))}
+              <Suspense fallback={<BlogTableSkeleton />}>
+                <BlogRows />
+              </Suspense>
             </tbody>
           </table>
         </div>

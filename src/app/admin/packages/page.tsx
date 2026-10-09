@@ -1,3 +1,4 @@
+import { Suspense } from 'react';
 import { createClient } from '@/lib/supabase/server';
 import { requireProfile, assertModulePermission } from '@/lib/supabase/auth-helpers';
 import { StatusBadge } from '@/components/ui/status-badge';
@@ -20,7 +21,42 @@ function buildPageHref(
   return `?${params.toString()}`;
 }
 
-export default async function AdminPackagesPage({
+function PackagesTableSkeleton() {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-ink-100 text-left text-xs uppercase tracking-wide text-ink-400">
+            <th className="px-5 py-3">Image</th>
+            <th className="px-5 py-3">Package</th>
+            <th className="px-5 py-3">Destination</th>
+            <th className="px-5 py-3">Duration</th>
+            <th className="px-5 py-3">Price</th>
+            <th className="px-5 py-3">Status</th>
+            <th className="px-5 py-3">Featured</th>
+            <th className="px-5 py-3 text-right">Actions</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-ink-50">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <tr key={i} className="animate-pulse">
+              <td className="px-5 py-3.5"><div className="h-12 w-16 rounded-lg bg-ink-100" /></td>
+              <td className="px-5 py-3.5"><div className="h-4 w-36 rounded bg-ink-200/70" /></td>
+              <td className="px-5 py-3.5"><div className="h-4 w-24 rounded bg-ink-100" /></td>
+              <td className="px-5 py-3.5"><div className="h-4 w-16 rounded bg-ink-100" /></td>
+              <td className="px-5 py-3.5"><div className="h-4 w-20 rounded bg-ink-200/70" /></td>
+              <td className="px-5 py-3.5"><div className="h-6 w-16 rounded-full bg-ink-100" /></td>
+              <td className="px-5 py-3.5"><div className="h-4 w-10 rounded bg-ink-100" /></td>
+              <td className="px-5 py-3.5 text-right"><div className="h-8 w-8 rounded-lg bg-ink-100 ml-auto" /></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+async function PackagesTableContent({
   searchParams,
 }: {
   searchParams: { q?: string; status?: string; page?: string };
@@ -52,20 +88,151 @@ export default async function AdminPackagesPage({
   const totalPages = Math.max(1, Math.ceil((count ?? 0) / PAGE_SIZE));
 
   return (
+    <>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-ink-100 text-left text-xs uppercase tracking-wide text-ink-400">
+              <th className="px-5 py-3">Image</th>
+              <th className="px-5 py-3">Package</th>
+              <th className="px-5 py-3">Destination</th>
+              <th className="px-5 py-3">Duration</th>
+              <th className="px-5 py-3">Price</th>
+              <th className="px-5 py-3">Status</th>
+              <th className="px-5 py-3">Featured</th>
+              <th className="px-5 py-3 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(packages ?? []).length === 0 && (
+              <tr>
+                <td colSpan={8} className="px-5 py-10 text-center text-ink-400">
+                  No packages found. Try adjusting your search or create a new one.
+                </td>
+              </tr>
+            )}
+            {(packages ?? []).map((pkg) => (
+              <tr key={pkg.id} className="border-b border-ink-50 last:border-0 hover:bg-ink-50/50">
+                <td className="px-5 py-3">
+                  <div className="relative h-12 w-16 overflow-hidden rounded-lg bg-ink-100">
+                    {pkg.cover_image_url ? (
+                      <Image
+                        src={pkg.cover_image_url}
+                        alt={pkg.title}
+                        fill
+                        className="object-cover"
+                        sizes="64px"
+                      />
+                    ) : (
+                      <div className="flex h-full items-center justify-center text-[10px] text-ink-300">
+                        No image
+                      </div>
+                    )}
+                  </div>
+                </td>
+                <td className="px-5 py-3">
+                  <Link
+                    href={`/admin/packages/${pkg.id}`}
+                    className="font-medium text-ink-800 hover:text-brand-700"
+                  >
+                    {pkg.title}
+                  </Link>
+                </td>
+                <td className="px-5 py-3 text-ink-600">
+                  {(() => {
+                    const dest = pkg.destinations as { name: string } | { name: string }[] | null;
+                    return (Array.isArray(dest) ? dest[0]?.name : dest?.name) ?? '—';
+                  })()}
+                </td>
+                <td className="px-5 py-3 text-ink-600">
+                  {pkg.duration_days}D / {pkg.duration_nights}N
+                </td>
+                <td className="px-5 py-3 text-ink-700">
+                  {pkg.discount_price ? (
+                    <div>
+                      <span className="font-semibold text-brand-700">
+                        {formatCurrency(pkg.discount_price, pkg.currency)}
+                      </span>
+                      <span className="ml-1 text-xs text-ink-400 line-through">
+                        {formatCurrency(pkg.base_price, pkg.currency)}
+                      </span>
+                    </div>
+                  ) : (
+                    <span className="font-semibold">
+                      {formatCurrency(pkg.base_price, pkg.currency)}
+                    </span>
+                  )}
+                </td>
+                <td className="px-5 py-3">
+                  <StatusBadge status={pkg.status} />
+                </td>
+                <td className="px-5 py-3">
+                  {pkg.is_featured ? (
+                    <span className="badge badge-accent">Featured</span>
+                  ) : (
+                    <span className="text-xs text-ink-300">—</span>
+                  )}
+                </td>
+                <td className="px-5 py-3 text-right">
+                  <PackageRowActions id={pkg.id} status={pkg.status} isFeatured={Boolean(pkg.is_featured)} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between border-t border-ink-100 px-5 py-3 text-sm text-ink-500">
+          <span>Page {page} of {totalPages} ({count ?? 0} total)</span>
+          <div className="flex gap-2">
+            {page > 1 && (
+              <Link
+                href={buildPageHref(searchParams, page - 1)}
+                className="btn-outline px-3 py-1.5"
+              >
+                Previous
+              </Link>
+            )}
+            {page < totalPages && (
+              <Link
+                href={buildPageHref(searchParams, page + 1)}
+                className="btn-outline px-3 py-1.5"
+              >
+                Next
+              </Link>
+            )}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+export default function AdminPackagesPage({
+  searchParams,
+}: {
+  searchParams: { q?: string; status?: string; page?: string };
+}) {
+  const suspKey = `${searchParams.q ?? ''}-${searchParams.status ?? ''}-${searchParams.page ?? '1'}`;
+
+  return (
     <div className="space-y-5">
+      {/* 1. Header Structure (Renders Instantly) */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <Link href="/admin" className="mb-1 flex items-center gap-1 text-sm text-ink-500 hover:text-brand-700">
             <ArrowLeft className="h-4 w-4" /> Back to dashboard
           </Link>
           <h1 className="text-xl font-semibold text-ink-900">Travel packages</h1>
-          <p className="text-sm text-ink-500">{count ?? 0} total packages</p>
+          <p className="text-sm text-ink-500">Curate and manage tour package listings</p>
         </div>
-        <Link href="/admin/packages/new" className="btn-primary">
+        <Link href="/admin/packages/new" prefetch={true} className="btn-primary">
           <Plus className="h-4 w-4" /> New package
         </Link>
       </div>
 
+      {/* 2. Filter Form Structure (Renders Instantly) */}
       <form className="flex flex-wrap items-center gap-3" method="get">
         <div className="relative flex-1 min-w-[220px]">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" />
@@ -88,121 +255,11 @@ export default async function AdminPackagesPage({
         </button>
       </form>
 
+      {/* 3. Table Card (Header loads immediately, rows show skeleton only while fetching) */}
       <div className="card overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-ink-100 text-left text-xs uppercase tracking-wide text-ink-400">
-                <th className="px-5 py-3">Image</th>
-                <th className="px-5 py-3">Package</th>
-                <th className="px-5 py-3">Destination</th>
-                <th className="px-5 py-3">Duration</th>
-                <th className="px-5 py-3">Price</th>
-                <th className="px-5 py-3">Status</th>
-                <th className="px-5 py-3">Featured</th>
-                <th className="px-5 py-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(packages ?? []).length === 0 && (
-                <tr>
-                  <td colSpan={8} className="px-5 py-10 text-center text-ink-400">
-                    No packages found. Try adjusting your search or create a new one.
-                  </td>
-                </tr>
-              )}
-              {(packages ?? []).map((pkg) => (
-                <tr key={pkg.id} className="border-b border-ink-50 last:border-0 hover:bg-ink-50/50">
-                  <td className="px-5 py-3">
-                    <div className="relative h-12 w-16 overflow-hidden rounded-lg bg-ink-100">
-                      {pkg.cover_image_url ? (
-                        <Image
-                          src={pkg.cover_image_url}
-                          alt={pkg.title}
-                          fill
-                          className="object-cover"
-                          sizes="64px"
-                        />
-                      ) : (
-                        <div className="flex h-full items-center justify-center text-[10px] text-ink-300">
-                          No image
-                        </div>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-5 py-3">
-                    <Link
-                      href={`/admin/packages/${pkg.id}`}
-                      className="font-medium text-ink-800 hover:text-brand-700"
-                    >
-                      {pkg.title}
-                    </Link>
-                  </td>
-                  <td className="px-5 py-3 text-ink-600">
-                    {(() => {
-                      const dest = pkg.destinations as { name: string } | { name: string }[] | null;
-                      return (Array.isArray(dest) ? dest[0]?.name : dest?.name) ?? '—';
-                    })()}
-                  </td>
-                  <td className="px-5 py-3 text-ink-600">
-                    {pkg.duration_days}D / {pkg.duration_nights}N
-                  </td>
-                  <td className="px-5 py-3 text-ink-700">
-                    {pkg.discount_price ? (
-                      <span>
-                        <span className="text-ink-400 line-through mr-1.5">
-                          {formatCurrency(pkg.base_price, pkg.currency)}
-                        </span>
-                        {formatCurrency(pkg.discount_price, pkg.currency)}
-                      </span>
-                    ) : (
-                      formatCurrency(pkg.base_price, pkg.currency)
-                    )}
-                  </td>
-                  <td className="px-5 py-3">
-                    <StatusBadge status={pkg.status} />
-                  </td>
-                  <td className="px-5 py-3">
-                    {pkg.is_featured ? (
-                      <span className="badge bg-sand-100 text-sand-800">Featured</span>
-                    ) : (
-                      <span className="text-ink-300">—</span>
-                    )}
-                  </td>
-                  <td className="px-5 py-3 text-right">
-                    <PackageRowActions id={pkg.id} status={pkg.status} isFeatured={pkg.is_featured} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between border-t border-ink-100 px-5 py-3 text-sm text-ink-500">
-            <span>
-              Page {page} of {totalPages}
-            </span>
-            <div className="flex gap-2">
-              {page > 1 && (
-                <Link
-                  href={buildPageHref(searchParams, page - 1)}
-                  className="btn-outline px-3 py-1.5"
-                >
-                  Previous
-                </Link>
-              )}
-              {page < totalPages && (
-                <Link
-                  href={buildPageHref(searchParams, page + 1)}
-                  className="btn-outline px-3 py-1.5"
-                >
-                  Next
-                </Link>
-              )}
-            </div>
-          </div>
-        )}
+        <Suspense key={suspKey} fallback={<PackagesTableSkeleton />}>
+          <PackagesTableContent searchParams={searchParams} />
+        </Suspense>
       </div>
     </div>
   );

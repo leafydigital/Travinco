@@ -173,7 +173,6 @@ export async function recordPayment(bookingId: string, raw: unknown) {
 
   revalidatePath(`/admin/bookings/${bookingId}`);
   revalidatePath('/admin/income');
-  revalidatePath('/admin/reports');
   return {};
 }
 
@@ -219,6 +218,5 @@ export async function deleteBooking(bookingId: string) {
 
   revalidatePath('/admin/bookings');
   revalidatePath('/admin/income');
-  revalidatePath('/admin/reports');
   return {};
 }

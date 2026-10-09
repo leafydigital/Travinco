@@ -11,6 +11,8 @@
  * 8. Various delimiters: en-dash (–), em-dash (—), hyphen (-), 'to'
  */
 
+import { parseSeasonDates } from './season-dates';
+
 export interface ParsedDateRange {
   startDate: string; // YYYY-MM-DD
   endDate: string;   // YYYY-MM-DD
@@ -207,76 +209,22 @@ export function parseDateRange(input: string | null | undefined, defaultYear: nu
   const raw = input.trim();
   let notes: string | undefined;
 
-  // Handle generic text validity phrases like "Round the year", "All Year", "Year Round", "Standard"
-  const lower = raw.toLowerCase();
-  if (
-    lower.includes('round the year') ||
-    lower.includes('all year') ||
-    lower.includes('year round') ||
-    lower.includes('standard') ||
-    lower.includes('on request') ||
-    lower.includes('throughout the year')
-  ) {
-    const yearMatch = raw.match(/\b(20\d{2})\b/);
-    const baseYear = yearMatch && yearMatch[1] ? parseInt(yearMatch[1], 10) : defaultYear;
-    return {
-      raw,
-      ranges: [{ startDate: `${baseYear}-04-01`, endDate: `${baseYear + 1}-03-31` }],
-      exclusions: [],
-      notes: raw,
-      isValid: true,
-    };
+  // Delegates to the season parser (src/lib/excel/season-dates.ts). The
+  // previous implementation fell back to the whole tariff year whenever it
+  // could not read a label (e.g. "Oct 2026 – Jan 2027", "Mar & Jun – Sep
+  // 2026"), which made those rates look valid on every date and priced
+  // quotations from the wrong season. Unreadable labels are now reported
+  // as warnings with no date windows instead.
+  const parsed = parseSeasonDates(raw, defaultYear);
+  const exclMatch = raw.match(/\((?:excl\.?|excluding)[^)]*\)/i);
+  if (exclMatch) notes = exclMatch[0];
+  if (!parsed.ok) {
+    return { raw, ranges: [], exclusions: [], notes: raw, isValid: false, error: parsed.error };
   }
-
-  // Detect any year mentioned anywhere in the string to serve as default fallback
-  const yearMatch = raw.match(/\b(20\d{2})\b/);
-  const yearHint = yearMatch && yearMatch[1] ? parseInt(yearMatch[1], 10) : defaultYear;
-
-  // Check for exclusion notes in parentheses like "(excl. peak dates 20 Dec - 05 Jan)"
-  let cleanInput = raw;
-  const exclMatch = raw.match(/\((?:excl\.?|excluding)\s*([^)]+)\)/i);
-  const exclusions: ParsedDateRange[] = [];
-
-  if (exclMatch && exclMatch[0] && exclMatch[1]) {
-    notes = exclMatch[0];
-    cleanInput = raw.replace(exclMatch[0], '').trim();
-    
-    // Try to parse exclusion date range if present inside parentheses
-    const exclText = exclMatch[1].replace(/^(?:peak\s+dates|dates|mandatory\s+surcharges|period)?\s*:?/i, '').trim();
-    const parsedExcl = parseSingleRange(exclText, yearHint);
-    if (parsedExcl) {
-      exclusions.push({ ...parsedExcl, isExclusion: true });
-    }
-  }
-
-  // Split multiple ranges joined by '&' or 'and' or ';' or ','
-  const subRangeStrings = cleanInput.split(/\s+(?:&|and)\s+|;/gi);
-  const ranges: ParsedDateRange[] = [];
-
-  for (const sub of subRangeStrings) {
-    const trimmed = sub.trim();
-    if (!trimmed) continue;
-    const parsed = parseSingleRange(trimmed, yearHint);
-    if (parsed) {
-      ranges.push(parsed);
-    }
-  }
-
-  if (ranges.length === 0) {
-    // Fallback gracefully to default year span instead of rejecting the entire hotel rate row
-    return {
-      raw,
-      ranges: [{ startDate: `${yearHint}-04-01`, endDate: `${yearHint + 1}-03-31` }],
-      exclusions,
-      notes: raw,
-      isValid: true,
-    };
-  }
-
   return {
     raw,
-    ranges,
-    exclusions,
+    ranges: parsed.ranges.map((r) => ({ startDate: r.from, endDate: r.to })),
+    exclusions: parsed.exclusions.map((r) => ({ startDate: r.from, endDate: r.to, isExclusion: true })),
     notes,
     isValid: true,
   };

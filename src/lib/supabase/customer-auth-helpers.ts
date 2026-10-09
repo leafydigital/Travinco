@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
+import { cache } from 'react';
 import type { Tables } from '@/types/database';
 
 export type CurrentCustomer = Tables<'customer_accounts'>;
@@ -10,7 +11,7 @@ export type CurrentCustomer = Tables<'customer_accounts'>;
  * reading a separate table, so a customer session can never be treated
  * as staff/admin access anywhere in the app.
  */
-export async function requireCustomer(): Promise<CurrentCustomer> {
+export const requireCustomer = cache(async (): Promise<CurrentCustomer> => {
   const supabase = await createClient();
   const {
     data: { user },
@@ -31,10 +32,10 @@ export async function requireCustomer(): Promise<CurrentCustomer> {
   }
 
   return account;
-}
+});
 
 /** Non-throwing customer session retriever. */
-export async function getCustomer(): Promise<CurrentCustomer | null> {
+export const getCustomer = cache(async (): Promise<CurrentCustomer | null> => {
   const supabase = await createClient();
   const {
     data: { user },
@@ -49,4 +50,4 @@ export async function getCustomer(): Promise<CurrentCustomer | null> {
     .maybeSingle();
 
   return account ?? null;
-}
+});

@@ -18,7 +18,9 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 
-export const dynamic = 'force-dynamic';
+// Revalidate dashboard stats every 60 s — a cached response is served in <50 ms
+// instead of re-running 9 DB queries on every single request.
+export const revalidate = 60;
 
 interface PackagePerformance {
   id: string;

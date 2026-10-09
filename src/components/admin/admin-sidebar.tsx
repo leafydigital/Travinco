@@ -6,8 +6,8 @@ import { cn } from '@/lib/utils/cn';
 import type { NavSection, IconName } from '@/lib/admin-nav';
 import {
   LayoutDashboard, Package, MapPin, Inbox, CalendarCheck, Image as ImageIcon,
-  Settings, Tag, BookOpen, Users, LogOut, TrendingUp, Receipt, BarChart3,
-  MessageSquare, UsersRound, Database,
+  Settings, Tag, BookOpen, Users, LogOut, TrendingUp, Receipt,
+  UsersRound, Database, FileText, ReceiptText, Hotel, Car, MapPinned, Landmark,
   type LucideIcon,
 } from 'lucide-react';
 import { signOut } from '@/app/admin/actions';
@@ -18,8 +18,11 @@ import { signOut } from '@/app/admin/actions';
 // Server -> Client boundary as plain data.
 const iconMap: Record<IconName, LucideIcon> = {
   LayoutDashboard, Package, MapPin, Inbox, CalendarCheck, ImageIcon, Settings, Tag, BookOpen, Users,
-  TrendingUp, Receipt, BarChart3, MessageSquare, UsersRound, Database,
+  TrendingUp, Receipt, UsersRound, Database, FileText, ReceiptText, Hotel, Car,
+  MapPinned, Landmark,
 };
+
+import { useEffect, useState } from 'react';
 
 export function AdminSidebar({
   sections,
@@ -31,9 +34,14 @@ export function AdminSidebar({
   userRole: string;
 }) {
   const pathname = usePathname();
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
+
+  useEffect(() => {
+    setPendingHref(null);
+  }, [pathname]);
 
   return (
-    <aside className="sticky top-0 flex h-screen w-64 shrink-0 flex-col border-r border-ink-100 bg-white shadow-sm">
+    <aside className="sticky top-0 flex h-screen w-64 shrink-0 print:hidden flex-col border-r border-ink-100 bg-white shadow-sm">
       <div className="flex h-16 items-center border-b border-ink-100 bg-navy-900 px-5">
         <span className="font-display text-lg font-semibold text-white">
           Travinco Admin
@@ -50,23 +58,39 @@ export function AdminSidebar({
             )}
             <ul className="space-y-0.5">
               {section.items.map((item) => {
-                const active =
+                const isCurrent =
                   pathname === item.href ||
                   (item.href !== '/admin' && pathname.startsWith(item.href));
+                const isPending = pendingHref === item.href;
+                const active = isPending || (isCurrent && !pendingHref);
                 const Icon = iconMap[item.icon];
                 return (
                   <li key={item.href}>
                     <Link
                       href={item.href}
+                      prefetch={true}
+                      onClick={() => {
+                        if (pathname !== item.href) {
+                          setPendingHref(item.href);
+                        }
+                      }}
                       className={cn(
-                        'flex items-center gap-2.5 rounded-lg border-l-2 px-3 py-2 text-sm font-medium transition-colors',
+                        'flex items-center justify-between rounded-lg border-l-2 px-3 py-2 text-sm font-medium transition-all duration-150',
                         active
-                          ? 'border-l-coral-500 bg-brand-50 text-brand-700'
-                          : 'border-l-transparent text-ink-600 hover:bg-ink-50'
+                          ? 'border-l-coral-500 bg-brand-50 text-brand-700 font-semibold'
+                          : 'border-l-transparent text-ink-600 hover:bg-ink-50 hover:text-ink-900'
                       )}
                     >
-                      <Icon className="h-4 w-4 shrink-0" />
-                      {item.label}
+                      <span className="flex items-center gap-2.5 min-w-0">
+                        <Icon className="h-4 w-4 shrink-0" />
+                        <span className="truncate">{item.label}</span>
+                      </span>
+                      {isPending && (
+                        <span className="relative flex h-2 w-2">
+                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-coral-400 opacity-75" />
+                          <span className="relative inline-flex h-2 w-2 rounded-full bg-coral-500" />
+                        </span>
+                      )}
                     </Link>
                   </li>
                 );
