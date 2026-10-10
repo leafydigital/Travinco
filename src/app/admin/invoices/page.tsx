@@ -4,9 +4,10 @@ import Link from 'next/link';
 import { Search } from 'lucide-react';
 import { createClient } from '@/lib/supabase/server';
 import { requireProfile } from '@/lib/supabase/auth-helpers';
-import { assertTourAccess } from '@/lib/tour/access';
+import { assertTourAccess, isAdminRole } from '@/lib/tour/access';
 import { formatDate } from '@/lib/utils/format';
 import { InvoiceStatusBadge } from '@/components/tour/status-badges';
+import { InvoiceRowActions } from './invoice-row-actions';
 
 export const metadata: Metadata = { title: 'Invoices — Admin Portal' };
 
@@ -61,6 +62,7 @@ async function InvoicesTableContent({
 }) {
   const profile = await requireProfile();
   assertTourAccess(profile, 'invoices');
+  const isAdmin = isAdminRole(profile);
   const supabase = await createClient();
   const page = Math.max(1, Number(searchParams.page ?? 1));
 
@@ -143,12 +145,11 @@ async function InvoicesTableContent({
                     <InvoiceStatusBadge status={r.status} />
                   </td>
                   <td className="px-5 py-3 text-right">
-                    <Link
-                      href={`/admin/invoices/${r.id}`}
-                      className="btn-outline h-8 px-3 text-xs text-brand-700 hover:bg-brand-50"
-                    >
-                      View &amp; Print
-                    </Link>
+                    <InvoiceRowActions
+                      id={r.id}
+                      invoiceNumber={r.invoice_number}
+                      isAdmin={isAdmin}
+                    />
                   </td>
                 </tr>
               );

@@ -354,3 +354,52 @@ export async function cancelInvoice(id: string) {
   revalidatePath('/admin/invoices');
   return {};
 }
+
+/** Permanently deletes an invoice and cleans up associated income and payment records. */
+export async function deleteInvoice(id: string): Promise<{ error?: string }> {
+  const profile = await requireProfile();
+  if (!isAdminRole(profile)) return { error: 'Only admins can delete invoices.' };
+  const supabase = await createClient();
+
+  const { data: inv } = await supabase
+    .from('invoices')
+    .select('id, quotation_id')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (!inv) return { error: 'Invoice not found.' };
+
+  // 1. Delete associated income records created by invoice payments
+  const { data: payments } = await supabase
+    .from('invoice_payments')
+    .select('income_id')
+    .eq('invoice_id', id);
+  const incomeIds = (payments || []).map((p) => p.income_id).filter(Boolean) as string[];
+  if (incomeIds.length > 0) {
+    await supabase.from('income').delete().in('id', incomeIds);
+  }
+
+  // 2. Also delete any income record directly tagged with this invoice_id
+  await supabase.from('income').delete().eq('invoice_id', id);
+
+  // 3. Delete invoice payments (also cascades via DB FK)
+  await supabase.from('invoice_payments').delete().eq('invoice_id', id);
+
+  // 4. Delete invoice itself
+  const { error } = await supabase.from('invoices').delete().eq('id', id);
+  if (error) {
+    console.error('deleteInvoice error:', error.message);
+    return { error: 'Could not delete the invoice: ' + error.message };
+  }
+
+  // 5. If quotation was marked as invoiced, revert quotation status to accepted
+  if (inv.quotation_id) {
+    await supabase.from('quotations').update({ status: 'accepted' }).eq('id', inv.quotation_id);
+    revalidatePath(`/admin/quotations/${inv.quotation_id}`);
+  }
+
+  revalidatePath('/admin/invoices');
+  revalidatePath('/admin/quotations');
+  revalidatePath('/admin/income');
+  return {};
+}

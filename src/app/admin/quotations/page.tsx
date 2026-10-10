@@ -8,6 +8,7 @@ import { assertTourAccess, isAdminRole } from '@/lib/tour/access';
 import { loadTourMasters } from '@/lib/tour/data';
 import { formatDate } from '@/lib/utils/format';
 import { QuoteStatusBadge } from '@/components/tour/status-badges';
+import { QuoteRowActions } from './quote-row-actions';
 
 export const metadata: Metadata = { title: 'Quotations — Admin Portal' };
 
@@ -68,8 +69,10 @@ function QuotationsTableSkeleton() {
 
 async function QuotationsTableContent({
   searchParams,
+  isAdmin,
 }: {
   searchParams: { q?: string; status?: string; page?: string };
+  isAdmin: boolean;
 }) {
   const supabase = await createClient();
   const page = Math.max(1, Number(searchParams.page ?? 1));
@@ -187,22 +190,12 @@ async function QuotationsTableContent({
                     {by?.full_name && <p className="text-xs text-ink-400">{by.full_name}</p>}
                   </td>
                   <td className="px-5 py-3 text-right">
-                    <div className="flex items-center justify-end gap-1.5">
-                      {!isLocked && (
-                        <Link
-                          href={`/admin/quotations/${r.id}/edit`}
-                          className="btn-outline h-8 px-2.5 text-xs text-brand-700 hover:bg-brand-50"
-                        >
-                          Edit
-                        </Link>
-                      )}
-                      <Link
-                        href={`/admin/quotations/${r.id}`}
-                        className="btn-ghost h-8 px-2 text-xs text-ink-500 hover:text-ink-900"
-                      >
-                        View
-                      </Link>
-                    </div>
+                    <QuoteRowActions
+                      id={r.id}
+                      quoteNumber={r.quote_number}
+                      isLocked={isLocked}
+                      isAdmin={isAdmin}
+                    />
                   </td>
                 </tr>
               );
@@ -320,7 +313,7 @@ export default async function QuotationsPage({
       {/* 4. Table Container (Header loads immediately, rows show skeleton only while fetching) */}
       <div className="card overflow-hidden">
         <Suspense key={suspKey} fallback={<QuotationsTableSkeleton />}>
-          <QuotationsTableContent searchParams={searchParams} />
+          <QuotationsTableContent searchParams={searchParams} isAdmin={isAdminRole(profile)} />
         </Suspense>
       </div>
     </div>

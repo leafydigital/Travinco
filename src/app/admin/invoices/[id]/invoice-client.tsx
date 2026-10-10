@@ -4,9 +4,10 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Ban, FileDown, Pencil, Plus, Printer, Trash2, X } from 'lucide-react';
-import { addInvoicePayment, cancelInvoice, deleteInvoicePayment, updateInvoice } from '../actions';
+import { addInvoicePayment, cancelInvoice, deleteInvoice, deleteInvoicePayment, updateInvoice } from '../actions';
 import { downloadPdf, downloadWord, printAsPdf } from '@/components/tour/doc-tools';
 import { Dialog } from '@/components/admin/entity-manager';
+import { ConfirmDeleteDialog } from '@/components/admin/confirm-delete-dialog';
 import type { InvoiceDoc } from '@/components/tour/invoice-document';
 
 const METHODS = [
@@ -14,9 +15,10 @@ const METHODS = [
   ['debit_card', 'Debit card'], ['cheque', 'Cheque'], ['other', 'Other'],
 ] as const;
 
-export function InvoiceToolbar({ id, inv, fileName, canCancel, companyState }: { id: string; inv: InvoiceDoc; fileName: string; canCancel: boolean; companyState: string }) {
+export function InvoiceToolbar({ id, inv, fileName, canCancel, companyState, isAdmin }: { id: string; inv: InvoiceDoc; fileName: string; canCancel: boolean; companyState: string; isAdmin?: boolean }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [pending, start] = useTransition();
   const cancelled = inv.status === 'cancelled';
   return (
@@ -53,7 +55,41 @@ export function InvoiceToolbar({ id, inv, fileName, canCancel, companyState }: {
           <Ban className="h-4 w-4" /> Cancel invoice
         </button>
       )}
+      {isAdmin && (
+        <button
+          type="button"
+          className="btn-ghost text-red-600 hover:bg-red-50 hover:text-red-700"
+          disabled={pending}
+          onClick={() => setDeleteConfirmOpen(true)}
+        >
+          <Trash2 className="h-4 w-4" /> Delete invoice
+        </button>
+      )}
       {editing && <InvoiceEditor id={id} inv={inv} companyState={companyState} onClose={() => setEditing(false)} />}
+
+      <ConfirmDeleteDialog
+        isOpen={deleteConfirmOpen}
+        isPending={pending}
+        title="Delete Invoice"
+        description={
+          <>
+            Are you sure you want to delete invoice{' '}
+            <strong className="text-ink-900">{inv.invoice_number}</strong>? This
+            action will permanently remove it and any associated payment records
+            from the database. This cannot be undone.
+          </>
+        }
+        onConfirm={() => {
+          start(async () => {
+            const r = await deleteInvoice(id);
+            if (r.error) return void toast.error(r.error);
+            toast.success('Invoice deleted successfully');
+            setDeleteConfirmOpen(false);
+            router.push('/admin/invoices');
+          });
+        }}
+        onClose={() => setDeleteConfirmOpen(false)}
+      />
     </div>
   );
 }

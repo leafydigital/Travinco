@@ -67,7 +67,7 @@ export default async function InvoicePage({ params }: { params: { id: string } }
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <InvoiceToolbar id={inv.id} inv={doc} fileName={fileName} canCancel={isFinanceRole(profile)} companyState={settings.company_state || 'Kerala'} />
+          <InvoiceToolbar id={inv.id} inv={doc} fileName={fileName} canCancel={isFinanceRole(profile)} companyState={settings.company_state || 'Kerala'} isAdmin={isAdminRole(profile)} />
           {inv.bill_to_phone && (
             <a className="btn-outline" href={waLink(inv.bill_to_phone, msg)} target="_blank" rel="noreferrer">
               <MessageCircle className="h-4 w-4" /> WhatsApp

@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { requireProfile } from '@/lib/supabase/auth-helpers';
-import { canAccess, canOverrideMarkup } from '@/lib/tour/access';
+import { canAccess, canOverrideMarkup, isAdminRole } from '@/lib/tour/access';
 import { loadRatesForStays, loadTourMasters } from '@/lib/tour/data';
 import { addDays, buildCtx, buildSnapshot, normalizeInputs, quote, totalNights } from '@/lib/tour/engine';
 import type { QuoteInputs, RateRow } from '@/lib/tour/types';
@@ -163,14 +163,14 @@ export async function duplicateQuotation(id: string): Promise<{ error?: string; 
   return saveQuotation(null, inputs, 'draft');
 }
 
-export async function deleteQuotation(id: string) {
+export async function deleteQuotation(id: string): Promise<{ error?: string }> {
   const profile = await requireProfile();
-  if (profile.role !== 'admin' && profile.role !== 'super_admin') return { error: 'Only admins can delete quotations.' };
+  if (!isAdminRole(profile)) return { error: 'Only admins can delete quotations.' };
   const supabase = await createClient();
   const { data: inv } = await supabase.from('invoices').select('id').eq('quotation_id', id).neq('status', 'cancelled').limit(1);
-  if (inv && inv.length) return { error: 'This quotation has an invoice. Cancel the invoice first.' };
+  if (inv && inv.length) return { error: 'This quotation has an active invoice. Cancel or delete the invoice first.' };
   const { error } = await supabase.from('quotations').delete().eq('id', id);
-  if (error) return { error: 'Could not delete the quotation.' };
+  if (error) return { error: 'Could not delete the quotation: ' + error.message };
   revalidatePath('/admin/quotations');
   return {};
 }

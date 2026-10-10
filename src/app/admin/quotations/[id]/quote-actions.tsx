@@ -9,6 +9,7 @@ import { setQuotationStatus, duplicateQuotation, deleteQuotation } from '../acti
 import { convertQuotationToInvoice } from '../../invoices/actions';
 import { copyElement, copyText, downloadPdf, downloadWord, printAsPdf, waLink } from '@/components/tour/doc-tools';
 import { Dialog } from '@/components/admin/entity-manager';
+import { ConfirmDeleteDialog } from '@/components/admin/confirm-delete-dialog';
 
 export function QuoteActions({
   id,
@@ -34,6 +35,7 @@ export function QuoteActions({
   const router = useRouter();
   const [pending, start] = useTransition();
   const [convertOpen, setConvertOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [option, setOption] = useState<1 | 2>(1);
   const locked = status === 'invoiced';
 
@@ -113,13 +115,32 @@ export function QuoteActions({
           type="button"
           className="btn-ghost text-red-600"
           disabled={pending}
-          onClick={() => {
-            if (window.confirm(`Delete quotation ${number}? This cannot be undone.`)) run(() => deleteQuotation(id), 'Quotation deleted', () => router.push('/admin/quotations'));
-          }}
+          onClick={() => setDeleteOpen(true)}
         >
           <Trash2 className="h-4 w-4" /> Delete
         </button>
       )}
+
+      <ConfirmDeleteDialog
+        isOpen={deleteOpen}
+        isPending={pending}
+        title="Delete Quotation"
+        description={
+          <>
+            Are you sure you want to delete quotation{' '}
+            <strong className="text-ink-900">{number}</strong>? This action
+            will permanently remove it from the database and cannot be undone.
+          </>
+        }
+        onConfirm={() =>
+          run(
+            () => deleteQuotation(id),
+            'Quotation deleted',
+            () => router.push('/admin/quotations')
+          )
+        }
+        onClose={() => setDeleteOpen(false)}
+      />
 
       {convertOpen && (
         <Dialog title="Convert to invoice" onClose={() => setConvertOpen(false)}>
