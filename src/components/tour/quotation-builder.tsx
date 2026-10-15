@@ -41,7 +41,7 @@ import {
   type QuoteCalc,
 } from '@/lib/tour/engine';
 import type { DayEdit, HotelPick, QuoteInputs, RateRow, StayInput, TourMasters } from '@/lib/tour/types';
-import { getRatesForLocations, saveAsTemplate, saveQuotation, searchCustomers } from '@/app/admin/quotations/actions';
+import { getRatesForLocations, saveAsTemplate, saveQuotation, searchCustomers } from '@/app/travinco_dashboard/quotations/actions';
 import { QuoteDocument } from './quote-document';
 
 const TRIP_TYPES = ['Tour', 'Honeymoon', 'Family', 'Group', 'Pilgrimage', 'Corporate', 'Adventure'];

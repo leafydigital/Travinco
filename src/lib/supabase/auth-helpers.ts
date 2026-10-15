@@ -12,6 +12,7 @@ export type AdminModule =
   | 'enquiries'
   | 'bookings'
   | 'customers'
+  | 'leads'
   | 'offers'
   | 'gallery'
   | 'blog'
@@ -37,7 +38,7 @@ export const requireProfile = cache(async (): Promise<CurrentProfile> => {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect('/login');
+    redirect('/travinco_admin_login');
   }
 
   const { data: profile, error } = await supabase
@@ -48,12 +49,12 @@ export const requireProfile = cache(async (): Promise<CurrentProfile> => {
 
   if (error || !profile) {
     await supabase.auth.signOut();
-    redirect('/login?reason=not_staff');
+    redirect('/travinco_admin_login?reason=not_staff');
   }
 
   if (!profile.is_active) {
     await supabase.auth.signOut();
-    redirect('/login?reason=deactivated');
+    redirect('/travinco_admin_login?reason=deactivated');
   }
 
   return profile;
@@ -67,11 +68,31 @@ export const requireProfile = cache(async (): Promise<CurrentProfile> => {
  */
 export const getStaffPermissions = cache(async (profileId: string) => {
   const supabase = await createClient();
-  const { data } = await supabase
-    .from('staff_permissions')
-    .select('*')
-    .eq('profile_id', profileId);
-  return data ?? [];
+  const [{ data: dbPerms }, { data: settingRow }] = await Promise.all([
+    supabase
+      .from('staff_permissions')
+      .select('*')
+      .eq('profile_id', profileId),
+    supabase
+      .from('website_settings')
+      .select('value')
+      .eq('key', `staff_perms_${profileId}`)
+      .maybeSingle(),
+  ]);
+
+  if (settingRow?.value && Array.isArray((settingRow.value as any).pages)) {
+    const grantedPages = (settingRow.value as any).pages as string[];
+    return grantedPages.map((pageKey) => ({
+      id: `virtual_${profileId}_${pageKey}`,
+      profile_id: profileId,
+      module: pageKey as any,
+      can_view: true,
+      can_edit: true,
+      created_at: new Date().toISOString(),
+    }));
+  }
+
+  return dbPerms ?? [];
 });
 
 /** Non-throwing helper returning current profile or null (cached per request) */
@@ -94,98 +115,148 @@ export const getProfile = cache(async (): Promise<CurrentProfile | null> => {
 });
 
 /** Throws redirect for pages requiring a specific role tier. */
-export function assertRole(
+export async function assertRole(
   profile: CurrentProfile,
   allowed: UserRole[]
 ) {
   if (!allowed.includes(profile.role)) {
-    redirect('/admin?error=forbidden');
+    try {
+      const supabase = await createClient();
+      await supabase.auth.signOut();
+    } catch {}
+    redirect('/travinco_admin_login?reason=forbidden');
   }
 }
 
 /**
- * Evaluates whether a staff member has permission for a specific module and action.
+ * Evaluates whether a staff member has permission for a specific page and action.
  *
- * Hierarchy:
- * 1. Super admin has full access to every module and action.
- * 2. User management edit/creation is exclusively reserved for super_admin.
- * 3. Explicit override rows in the `staff_permissions` table take precedence.
- * 4. Fallback to default role baseline:
- *    - admin: All operational and financial modules (cannot manage users without super_admin).
- *    - sales_staff: packages, destinations, enquiries, bookings, customers, offers, gallery, blog, whatsapp.
- *    - accounts_staff: finance, bookings, customers (view).
+ * Rules:
+ * 1. Super admin has unrestricted access to all pages and actions.
+ * 2. Role Management pages ('page_access', 'users') are strictly restricted to admin & super_admin.
+ * 3. If explicit records exist in `staff_permissions` for this user, a STRICT WHITELIST is enforced:
+ *    only pages where can_view === true are allowed. Any page without can_view === true is rejected.
+ * 4. Default role baselines apply ONLY if the user has never had permissions configured.
  */
-export const hasModulePermission = cache(async (
+export const hasPageAccess = cache(async (
   profile: CurrentProfile,
-  module: AdminModule,
+  pageKey: string,
   action: PermissionAction = 'view'
 ): Promise<boolean> => {
   if (!profile || !profile.is_active) return false;
 
-  // 1. super_admin always has unrestricted access
+  // 1. Super admin always has unrestricted access
   if (profile.role === 'super_admin') return true;
 
-  // 2. Editing staff user accounts is strictly restricted to super_admin
-  if (module === 'users' && action === 'edit') {
-    return false;
+  // 2. Role Management pages are strictly reserved for admin and super_admin
+  if (pageKey === 'page_access' || pageKey === 'users') {
+    return profile.role === 'admin';
   }
 
   // 3. Check for granular overrides in staff_permissions
-  const checkableModules = [
-    'packages', 'destinations', 'enquiries', 'offers',
-    'gallery', 'blog', 'settings', 'users',
-  ];
-
-  if (checkableModules.includes(module)) {
-    const supabase = await createClient();
-    const { data: permission } = await supabase
-      .from('staff_permissions')
-      .select('can_view, can_edit')
-      .eq('profile_id', profile.id)
-      .eq('module', module)
-      .maybeSingle();
-
-    if (permission) {
-      if (action === 'view') return permission.can_view;
-      if (action === 'edit') return permission.can_view && permission.can_edit;
+  const permissions = await getStaffPermissions(profile.id);
+  if (permissions && permissions.length > 0) {
+    const explicit = permissions.find((p) => p.module === pageKey);
+    if (explicit) {
+      if (action === 'view') return explicit.can_view;
+      if (action === 'edit') return explicit.can_view && explicit.can_edit;
     }
+    // With explicit permissions configured, unassigned pages are strictly forbidden
+    return false;
   }
 
-  // 4. Role default baselines
+  // 4. Role default baselines (fallback when no custom permissions are set)
   switch (profile.role) {
     case 'admin':
-      if (module === 'users') {
-        return action === 'view';
-      }
       return true;
 
-    case 'sales_staff':
-      const salesAllowedModules: AdminModule[] = [
-        'packages', 'destinations', 'enquiries', 'bookings',
-        'customers', 'offers', 'gallery', 'blog',
+    case 'sales_staff': {
+      const salesAllowed = [
+        'dashboard', 'packages', 'destinations', 'enquiries', 'bookings',
+        'customers', 'offers', 'events', 'gallery', 'blog',
+        'quotations', 'invoices', 'hotels', 'transport', 'pickup_points', 'locations',
       ];
-      return salesAllowedModules.includes(module);
+      return salesAllowed.includes(pageKey);
+    }
 
-    case 'accounts_staff':
-      if (module === 'finance') return true;
-      if (module === 'bookings') return true; // View bookings and manage payments
-      if (module === 'customers') return action === 'view';
-      return false;
+    case 'accounts_staff': {
+      const accountsAllowed = [
+        'dashboard', 'income', 'expenses', 'bookings', 'customers',
+        'quotations', 'invoices',
+      ];
+      if (pageKey === 'customers' && action === 'edit') return false;
+      return accountsAllowed.includes(pageKey);
+    }
 
     default:
       return false;
   }
 });
 
+/** Throws redirect if staff member lacks page permission (for Server Components/Pages). */
+export async function assertPageAccess(
+  profile: CurrentProfile,
+  pageKey: string,
+  action: PermissionAction = 'view'
+) {
+  const allowed = await hasPageAccess(profile, pageKey, action);
+  if (!allowed) {
+    try {
+      const supabase = await createClient();
+      await supabase.auth.signOut();
+    } catch {}
+    redirect('/travinco_admin_login?reason=forbidden');
+  }
+}
+
+/**
+ * Returns authorization status object for Server Actions without throwing Next.js redirects.
+ */
+export async function checkPageAccess(
+  profile: CurrentProfile,
+  pageKey: string,
+  action: PermissionAction = 'view'
+): Promise<{ allowed: boolean; error?: string }> {
+  const allowed = await hasPageAccess(profile, pageKey, action);
+  if (!allowed) {
+    return {
+      allowed: false,
+      error: `You do not have permission to ${action} ${pageKey}.`,
+    };
+  }
+  return { allowed: true };
+}
+
+/**
+ * Backward-compatible wrapper for module permission checks.
+ */
+export const hasModulePermission = cache(async (
+  profile: CurrentProfile,
+  module: AdminModule | string,
+  action: PermissionAction = 'view'
+): Promise<boolean> => {
+  if (module === 'finance') {
+    // 'finance' encompasses both income and expenses
+    const canIncome = await hasPageAccess(profile, 'income', action);
+    const canExpenses = await hasPageAccess(profile, 'expenses', action);
+    return canIncome || canExpenses;
+  }
+  return hasPageAccess(profile, module, action);
+});
+
 /** Throws redirect if staff member lacks module permission (for Server Components/Pages). */
 export async function assertModulePermission(
   profile: CurrentProfile,
-  module: AdminModule,
+  module: AdminModule | string,
   action: PermissionAction = 'view'
 ) {
   const allowed = await hasModulePermission(profile, module, action);
   if (!allowed) {
-    redirect('/admin?error=forbidden');
+    try {
+      const supabase = await createClient();
+      await supabase.auth.signOut();
+    } catch {}
+    redirect('/travinco_admin_login?reason=forbidden');
   }
 }
 
@@ -194,7 +265,7 @@ export async function assertModulePermission(
  */
 export async function checkModulePermission(
   profile: CurrentProfile,
-  module: AdminModule,
+  module: AdminModule | string,
   action: PermissionAction = 'view'
 ): Promise<{ allowed: boolean; error?: string }> {
   const allowed = await hasModulePermission(profile, module, action);

@@ -28,8 +28,8 @@ export function AdminNavProgress() {
       // Only trigger for internal admin routes that aren't the same page or hash links
       if (
         href &&
-        href.startsWith('/admin') &&
-        !href.startsWith('/admin#') &&
+        href.startsWith('/travinco_dashboard') &&
+        !href.startsWith('/travinco_dashboard#') &&
         href !== pathname &&
         !target.hasAttribute('download') &&
         target.getAttribute('target') !== '_blank'

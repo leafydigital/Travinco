@@ -33,10 +33,43 @@ export type IncomeCategory =
 export type NotificationType =
   | 'new_enquiry' | 'new_booking' | 'payment_received' | 'followup_due'
   | 'followup_overdue' | 'contact_message' | 'low_availability';
+export type LeadStatus = 'fresh_lead' | 'follow_up' | 'interested' | 'not_interested' | 'enquired';
 
 export interface Database {
   public: {
     Tables: {
+      leads: {
+        Row: {
+          id: string;
+          contact_name: string;
+          contact_number: string;
+          email: string | null;
+          package: string | null;
+          number_of_days: number | null;
+          budget: number | null;
+          from_date: string | null;
+          to_date: string | null;
+          number_of_people: number | null;
+          status: LeadStatus;
+          source: string | null;
+          import_batch: string | null;
+          is_deleted: boolean;
+          deleted_at: string | null;
+          deleted_by: string | null;
+          created_at: string;
+          updated_at: string;
+          created_by: string | null;
+        };
+        Insert: Omit<Database['public']['Tables']['leads']['Row'], 'id' | 'created_at' | 'updated_at'> & {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+          is_deleted?: boolean;
+          deleted_at?: string | null;
+          deleted_by?: string | null;
+        };
+        Update: Partial<Database['public']['Tables']['leads']['Insert']>;
+      };
       profiles: {
         Row: {
           id: string;
@@ -44,7 +77,9 @@ export interface Database {
           email: string;
           phone: string | null;
           role: UserRole;
+          role_title: string | null;
           is_active: boolean;
+          is_deleted?: boolean;
           avatar_url: string | null;
           last_login_at: string | null;
           created_at: string;
@@ -54,6 +89,8 @@ export interface Database {
           id: string;
           full_name: string;
           email: string;
+          role_title?: string | null;
+          is_deleted?: boolean;
         };
         Update: Partial<Database['public']['Tables']['profiles']['Row']>;
       };
@@ -135,6 +172,7 @@ export interface Database {
           created_by: string | null;
           created_at: string;
           updated_at: string;
+          is_deleted?: boolean;
         };
         Insert: Partial<Database['public']['Tables']['travel_packages']['Row']> & {
           title: string;
@@ -142,6 +180,7 @@ export interface Database {
           duration_days: number;
           duration_nights: number;
           base_price: number;
+          is_deleted?: boolean;
         };
         Update: Partial<Database['public']['Tables']['travel_packages']['Row']>;
       };

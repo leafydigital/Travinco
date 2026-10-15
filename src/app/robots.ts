@@ -7,7 +7,7 @@ export default function robots(): MetadataRoute.Robots {
     rules: {
       userAgent: '*',
       allow: '/',
-      disallow: ['/admin', '/login', '/api'],
+      disallow: ['/travinco_dashboard', '/travinco_admin_login', '/api'],
     },
     sitemap: `${siteUrl}/sitemap.xml`,
   };

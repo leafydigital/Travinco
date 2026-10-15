@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X, AlertTriangle, Loader2 } from 'lucide-react';
 
 interface ConfirmDeleteDialogProps {
@@ -11,6 +12,7 @@ interface ConfirmDeleteDialogProps {
   onConfirm: () => void;
   onClose: () => void;
   confirmLabel?: string;
+  maxWidth?: string;
 }
 
 export function ConfirmDeleteDialog({
@@ -21,23 +23,39 @@ export function ConfirmDeleteDialog({
   onConfirm,
   onClose,
   confirmLabel = 'Delete',
+  maxWidth = 'max-w-[420px]',
 }: ConfirmDeleteDialogProps) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   useEffect(() => {
     if (!isOpen) return;
+
+    // Prevent body scroll when modal is open
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && !isPending) {
         onClose();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
   }, [isOpen, isPending, onClose]);
 
-  if (!isOpen) return null;
+  if (!isOpen || !mounted) return null;
 
-  return (
+  const dialogContent = (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-ink-900/50 p-4 backdrop-blur-sm print:hidden"
+      className="fixed inset-0 z-[9999] flex items-center justify-center overflow-y-auto overflow-x-hidden bg-ink-950/60 p-4 backdrop-blur-xs transition-opacity animate-in fade-in duration-150 print:hidden"
       onClick={() => {
         if (!isPending) onClose();
       }}
@@ -46,36 +64,45 @@ export function ConfirmDeleteDialog({
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="card w-full max-w-md bg-white p-6 shadow-2xl transition-all"
+        className={`relative w-full ${maxWidth} max-w-[calc(100vw-2rem)] mx-auto overflow-hidden rounded-2xl border border-ink-100 bg-white p-5 sm:p-6 shadow-2xl transition-all animate-in zoom-in-95 duration-150 box-border`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start gap-4">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-coral-100 text-coral-600">
-            <AlertTriangle className="h-5 w-5" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <h3 className="text-base font-semibold text-ink-900">{title}</h3>
-            <div className="mt-2 text-sm text-ink-600 leading-relaxed break-words">
-              {description}
+        {/* Header with Danger Badge Icon, Title, and Close Button */}
+        <div className="flex items-start justify-between gap-3 border-b border-ink-100 pb-3.5">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-coral-50 border border-coral-200/80 text-coral-600 shadow-2xs">
+              <AlertTriangle className="h-5 w-5" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <h3 className="font-sans text-base font-bold tracking-tight text-ink-900 leading-snug truncate">
+                {title}
+              </h3>
+              <p className="text-xs text-ink-500 mt-0.5">Please confirm to proceed</p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
             disabled={isPending}
-            className="rounded-lg p-1 text-ink-400 hover:bg-ink-100 hover:text-ink-600 disabled:opacity-50"
+            className="rounded-lg p-1.5 text-ink-400 hover:bg-ink-100 hover:text-ink-700 disabled:opacity-50 transition cursor-pointer -mr-1 -mt-1 shrink-0"
             aria-label="Close"
           >
-            <X className="h-5 w-5" />
+            <X className="h-4 w-4" />
           </button>
         </div>
 
-        <div className="mt-6 flex justify-end gap-2.5">
+        {/* Formatted Description Body */}
+        <div className="py-4 text-sm text-ink-700 leading-relaxed text-left break-words">
+          {description}
+        </div>
+
+        {/* Responsive Footer Action Buttons */}
+        <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2.5 border-t border-ink-100 pt-4">
           <button
             type="button"
             onClick={onClose}
             disabled={isPending}
-            className="btn-outline px-4 py-2 text-xs font-medium"
+            className="btn-outline w-full sm:w-auto px-4 py-2 text-xs font-semibold justify-center transition cursor-pointer rounded-xl"
           >
             Cancel
           </button>
@@ -83,13 +110,15 @@ export function ConfirmDeleteDialog({
             type="button"
             onClick={onConfirm}
             disabled={isPending}
-            className="btn-danger flex items-center gap-1.5 px-4 py-2 text-xs font-medium"
+            className="btn-danger w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 text-xs font-semibold shadow-xs transition cursor-pointer rounded-xl bg-coral-600 hover:bg-coral-700 text-white"
           >
             {isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-            {isPending ? 'Deleting…' : confirmLabel}
+            <span>{isPending ? 'Deleting…' : confirmLabel}</span>
           </button>
         </div>
       </div>
     </div>
   );
+
+  return createPortal(dialogContent, document.body);
 }

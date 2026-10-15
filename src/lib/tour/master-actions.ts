@@ -87,10 +87,10 @@ const vehicleSchema = z.object({
 export async function saveTransportVehicle(id: number | string | null, raw: Record<string, unknown>) {
   const p = vehicleSchema.safeParse(raw);
   if (!p.success) return { error: firstIssue(p.error) };
-  return save('transport_vehicles', 'vehicle', id, { ...p.data, free_km: Math.round(p.data.free_km) }, ['/admin/transport']);
+  return save('transport_vehicles', 'vehicle', id, { ...p.data, free_km: Math.round(p.data.free_km) }, ['/travinco_dashboard/transport']);
 }
 export async function deleteTransportVehicle(id: number | string) {
-  return remove('transport_vehicles', 'vehicle', id, ['/admin/transport']);
+  return remove('transport_vehicles', 'vehicle', id, ['/travinco_dashboard/transport']);
 }
 
 // ---------- Pickup & drop points ------------------------------------------
@@ -114,10 +114,10 @@ const pointSchema = z.object({
 export async function savePickupPoint(id: number | string | null, raw: Record<string, unknown>) {
   const p = pointSchema.safeParse(raw);
   if (!p.success) return { error: firstIssue(p.error) };
-  return save('pickup_drop_points', 'pickup / drop point', id, p.data, ['/admin/pickup-points']);
+  return save('pickup_drop_points', 'pickup / drop point', id, p.data, ['/travinco_dashboard/pickup-points']);
 }
 export async function deletePickupPoint(id: number | string) {
-  return remove('pickup_drop_points', 'pickup / drop point', id, ['/admin/pickup-points']);
+  return remove('pickup_drop_points', 'pickup / drop point', id, ['/travinco_dashboard/pickup-points']);
 }
 
 // ---------- Locations -------------------------------------------------------
@@ -137,10 +137,10 @@ export async function saveLocation(id: number | string | null, raw: Record<strin
   const p = locationSchema.safeParse(raw);
   if (!p.success) return { error: firstIssue(p.error) };
   if (id != null && p.data.parent_id === Number(id)) return { error: 'A location cannot be its own parent.' };
-  return save('locations', 'location', id, p.data, ['/admin/locations']);
+  return save('locations', 'location', id, p.data, ['/travinco_dashboard/locations']);
 }
 export async function deleteLocation(id: number | string) {
-  return remove('locations', 'location', id, ['/admin/locations']);
+  return remove('locations', 'location', id, ['/travinco_dashboard/locations']);
 }
 
 // ---------- Activities ------------------------------------------------------
@@ -164,10 +164,10 @@ const activitySchema = z.object({
 export async function saveActivity(id: number | string | null, raw: Record<string, unknown>) {
   const p = activitySchema.safeParse(raw);
   if (!p.success) return { error: firstIssue(p.error) };
-  return save('location_activities', 'activity', id, p.data, ['/admin/locations', '/admin/locations/activities']);
+  return save('location_activities', 'activity', id, p.data, ['/travinco_dashboard/locations', '/travinco_dashboard/locations/activities']);
 }
 export async function deleteActivity(id: number | string) {
-  return remove('location_activities', 'activity', id, ['/admin/locations/activities']);
+  return remove('location_activities', 'activity', id, ['/travinco_dashboard/locations/activities']);
 }
 
 // ---------- Distances --------------------------------------------------------
@@ -185,10 +185,10 @@ export async function saveDistance(id: number | string | null, raw: Record<strin
   if (!p.success) return { error: firstIssue(p.error) };
   const { from_location_id: a, to_location_id: b } = p.data;
   if (a === b) return { error: 'Pick two different locations.' };
-  return save('location_distances', 'distance', id, { ...p.data, from_location_id: Math.min(a, b), to_location_id: Math.max(a, b) }, ['/admin/locations/distances']);
+  return save('location_distances', 'distance', id, { ...p.data, from_location_id: Math.min(a, b), to_location_id: Math.max(a, b) }, ['/travinco_dashboard/locations/distances']);
 }
 export async function deleteDistance(id: number | string) {
-  return remove('location_distances', 'distance', id, ['/admin/locations/distances']);
+  return remove('location_distances', 'distance', id, ['/travinco_dashboard/locations/distances']);
 }
 
 // ---------- Day plans ---------------------------------------------------------
@@ -235,17 +235,17 @@ export async function saveDayPlan(id: number | string | null, raw: Record<string
     'day plan',
     id,
     { ...rest, from_location_id: needsFrom ? rest.from_location_id : null, items: textToItems(items_text) },
-    ['/admin/locations/day-plans']
+    ['/travinco_dashboard/locations/day-plans']
   );
 }
 export async function deleteDayPlan(id: number | string) {
-  return remove('day_plans', 'day plan', id, ['/admin/locations/day-plans']);
+  return remove('day_plans', 'day plan', id, ['/travinco_dashboard/locations/day-plans']);
 }
 
 // ---------- Quotation templates ----------------------------------------------
 
 export async function deleteQuotationTemplate(id: number | string) {
-  return remove('quotation_templates', 'template', id, ['/admin/quotations/settings']);
+  return remove('quotation_templates', 'template', id, ['/travinco_dashboard/quotations/settings']);
 }
 
 export async function toggleQuotationTemplate(id: number, is_active: boolean) {
@@ -253,7 +253,7 @@ export async function toggleQuotationTemplate(id: number, is_active: boolean) {
   if ('error' in c) return { error: c.error };
   const { error } = await c.supabase.from('quotation_templates').update({ is_active }).eq('id', id);
   if (error) return { error: dbError(error, 'template') };
-  revalidatePath('/admin/quotations/settings');
+  revalidatePath('/travinco_dashboard/quotations/settings');
   return {};
 }
 
@@ -308,8 +308,8 @@ export async function saveTourSettings(raw: Record<string, unknown>) {
   const { error } = await c.supabase.from('tour_settings').upsert({ id: 1, ...row });
   if (error) return { error: dbError(error, 'settings') };
   invalidateTourMastersCache();
-  revalidatePath('/admin/quotations');
-  revalidatePath('/admin/quotations/settings');
+  revalidatePath('/travinco_dashboard/quotations');
+  revalidatePath('/travinco_dashboard/quotations/settings');
   return {};
 }
 
@@ -356,6 +356,6 @@ export async function rebuildRateDateWindows(): Promise<{ error?: string; period
     const { error } = await c.supabase.from('rate_period_dates').insert(rows.slice(i, i + 500));
     if (error) return { error: dbError(error, 'rate period dates') };
   }
-  revalidatePath('/admin/master');
+  revalidatePath('/travinco_dashboard/master');
   return { periods: periods.length, unreadable: Array.from(unreadable) };
 }

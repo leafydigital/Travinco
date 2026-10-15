@@ -1,0 +1,116 @@
+'use server';
+
+import { createClient } from '@/lib/supabase/server';
+import { redirect } from 'next/navigation';
+import { z } from 'zod';
+
+const loginSchema = z.object({
+  email: z.string().email('Enter a valid email address'),
+  password: z.string().min(1, 'Password is required'),
+});
+
+export type LoginState = {
+  error?: string;
+};
+
+function getSafeRedirectPath(rawPath: unknown, fallback: string): string {
+  if (
+    typeof rawPath !== 'string' ||
+    !rawPath.startsWith('/') ||
+    rawPath.startsWith('//') ||
+    rawPath.includes('\\')
+  ) {
+    return fallback;
+  }
+  return rawPath;
+}
+
+export async function login(
+  _prevState: LoginState,
+  formData: FormData
+): Promise<LoginState> {
+  const parsed = loginSchema.safeParse({
+    email: formData.get('email'),
+    password: formData.get('password'),
+  });
+
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? 'Invalid input' };
+  }
+
+  const supabase = await createClient();
+  let { data: authData, error } = await supabase.auth.signInWithPassword(parsed.data);
+
+  if (error && error.message?.toLowerCase().includes('email not confirmed')) {
+    try {
+      const { data: confirmed } = await supabase.rpc('confirm_staff_email', {
+        p_email: parsed.data.email,
+      });
+
+      if (confirmed) {
+        // Retry sign-in now that user email is confirmed
+        const retry = await supabase.auth.signInWithPassword(parsed.data);
+        if (!retry.error && retry.data.user) {
+          authData = retry.data;
+          error = null;
+        }
+      }
+    } catch (rpcErr) {
+      console.error('Error auto-confirming staff user:', rpcErr);
+    }
+  }
+
+  if (error || !authData?.user) {
+    if (error) {
+      console.error('Staff login error:', error.message, error.status);
+      if (error.message?.toLowerCase().includes('email not confirmed')) {
+        return {
+          error:
+            'This staff email is not confirmed yet. Run the SQL snippet in Supabase SQL editor or click "Confirm User" in Supabase Authentication > Users.',
+        };
+      }
+    }
+    return { error: 'Incorrect email or password.' };
+  }
+
+  // Verify that the user has a corresponding profiles record (staff/admin)
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', authData.user.id)
+    .maybeSingle();
+
+  if (profileError || !profile) {
+    // Session belongs to customer account or non-staff user
+    await supabase.auth.signOut();
+    return {
+      error:
+        'That account is a customer account, not a staff account — please sign in with your staff email.',
+    };
+  }
+
+  if (!profile.is_active) {
+    await supabase.auth.signOut();
+    return {
+      error: 'This staff account has been deactivated. Contact your administrator.',
+    };
+  }
+
+  // Find staff member's first accessible page so staff without dashboard access land directly on an allowed page
+  let defaultDestination = '/travinco_dashboard';
+  try {
+    const { getStaffPermissions } = await import('@/lib/supabase/auth-helpers');
+    const { navForProfile } = await import('@/lib/admin-nav');
+    const permissions = await getStaffPermissions(profile.id);
+    const accessibleSections = navForProfile(profile, permissions);
+    const firstAllowed = accessibleSections.flatMap((s) => s.items)[0]?.href;
+    if (firstAllowed) {
+      defaultDestination = firstAllowed;
+    }
+  } catch {}
+
+  const rawRedirect = formData.get('redirectTo');
+  const safeRedirect = getSafeRedirectPath(rawRedirect, defaultDestination);
+
+  redirect(safeRedirect);
+}

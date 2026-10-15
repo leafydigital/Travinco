@@ -14,7 +14,6 @@ export const iconNames = [
   'Users',
   'TrendingUp',
   'Receipt',
-
   'UsersRound',
   'Database',
   'FileText',
@@ -23,6 +22,8 @@ export const iconNames = [
   'Car',
   'MapPinned',
   'Landmark',
+  'ShieldCheck',
+  'ClipboardList',
 ] as const;
 
 export type IconName = (typeof iconNames)[number];
@@ -31,6 +32,7 @@ export type NavItem = {
   label: string;
   href: string;
   icon: IconName;
+  pageKey: string;
   module?: AdminModule;
   roles?: UserRole[]; // default role allowance if no explicit permission
 };
@@ -43,49 +45,36 @@ export type NavSection = {
 export const adminNav: NavSection[] = [
   {
     items: [
-      { label: 'Dashboard', href: '/admin', icon: 'LayoutDashboard' },
-      { label: 'Packages', href: '/admin/packages', icon: 'Package', module: 'packages' },
-      { label: 'Destinations', href: '/admin/destinations', icon: 'MapPin', module: 'destinations' },
-      { label: 'Enquiries', href: '/admin/enquiries', icon: 'Inbox', module: 'enquiries' },
-      { label: 'Bookings', href: '/admin/bookings', icon: 'CalendarCheck', module: 'bookings' },
-      { label: 'Customers', href: '/admin/customers', icon: 'UsersRound', module: 'customers' },
-      { label: 'Special offers', href: '/admin/offers', icon: 'Tag', module: 'offers' },
-      { label: 'Gallery', href: '/admin/gallery', icon: 'ImageIcon', module: 'gallery' },
-      { label: 'Blog', href: '/admin/blog', icon: 'BookOpen', module: 'blog' },
-      {
-        label: 'Income',
-        href: '/admin/income',
-        icon: 'TrendingUp',
-        module: 'finance',
-        roles: ['accounts_staff', 'admin', 'super_admin'],
-      },
+      { label: 'Dashboard', href: '/travinco_dashboard', icon: 'LayoutDashboard', pageKey: 'dashboard' },
+      { label: 'Packages', href: '/travinco_dashboard/packages', icon: 'Package', pageKey: 'packages', module: 'packages' },
+      { label: 'Destinations', href: '/travinco_dashboard/destinations', icon: 'MapPin', pageKey: 'destinations', module: 'destinations' },
+      { label: 'Enquiries', href: '/travinco_dashboard/enquiries', icon: 'Inbox', pageKey: 'enquiries', module: 'enquiries' },
+      { label: 'Bookings', href: '/travinco_dashboard/bookings', icon: 'CalendarCheck', pageKey: 'bookings', module: 'bookings' },
+      { label: 'Customers', href: '/travinco_dashboard/customers', icon: 'UsersRound', pageKey: 'customers', module: 'customers' },
+      { label: 'Leads', href: '/travinco_dashboard/leads', icon: 'ClipboardList', pageKey: 'leads', module: 'leads' },
+      { label: 'Blog', href: '/travinco_dashboard/blog', icon: 'BookOpen', pageKey: 'blog', module: 'blog' },
       {
         label: 'Expenses',
-        href: '/admin/expenses',
+        href: '/travinco_dashboard/expenses',
         icon: 'Receipt',
+        pageKey: 'expenses',
         module: 'finance',
         roles: ['accounts_staff', 'admin', 'super_admin'],
       },
-
       {
         label: 'Master',
-        href: '/admin/master',
+        href: '/travinco_dashboard/master',
         icon: 'Database',
+        pageKey: 'master',
         roles: ['admin', 'super_admin'],
       },
       {
         label: 'Settings',
-        href: '/admin/settings',
+        href: '/travinco_dashboard/settings',
         icon: 'Settings',
+        pageKey: 'settings',
         module: 'settings',
         roles: ['admin', 'super_admin'],
-      },
-      {
-        label: 'Users',
-        href: '/admin/users',
-        icon: 'Users',
-        module: 'users',
-        roles: ['super_admin'],
       },
     ],
   },
@@ -94,39 +83,65 @@ export const adminNav: NavSection[] = [
     items: [
       {
         label: 'Quotations',
-        href: '/admin/quotations',
+        href: '/travinco_dashboard/quotations',
         icon: 'FileText',
+        pageKey: 'quotations',
         roles: ['sales_staff', 'accounts_staff', 'admin', 'super_admin'],
       },
       {
         label: 'Invoices',
-        href: '/admin/invoices',
+        href: '/travinco_dashboard/invoices',
         icon: 'ReceiptText',
+        pageKey: 'invoices',
         roles: ['sales_staff', 'accounts_staff', 'admin', 'super_admin'],
       },
       {
         label: 'Hotels',
-        href: '/admin/hotels',
+        href: '/travinco_dashboard/hotels',
         icon: 'Hotel',
+        pageKey: 'hotels',
         roles: ['sales_staff', 'admin', 'super_admin'],
       },
       {
         label: 'Transportation',
-        href: '/admin/transport',
+        href: '/travinco_dashboard/transport',
         icon: 'Car',
+        pageKey: 'transport',
         roles: ['sales_staff', 'admin', 'super_admin'],
       },
       {
         label: 'Pickup & Drop Points',
-        href: '/admin/pickup-points',
+        href: '/travinco_dashboard/pickup-points',
         icon: 'MapPinned',
+        pageKey: 'pickup_points',
         roles: ['sales_staff', 'admin', 'super_admin'],
       },
       {
         label: 'Locations & Activities',
-        href: '/admin/locations',
+        href: '/travinco_dashboard/locations',
         icon: 'Landmark',
+        pageKey: 'locations',
         roles: ['sales_staff', 'admin', 'super_admin'],
+      },
+    ],
+  },
+  {
+    title: 'Role Management',
+    items: [
+      {
+        label: 'Page Access Management',
+        href: '/travinco_dashboard/role-management/page-access',
+        icon: 'ShieldCheck',
+        pageKey: 'page_access',
+        roles: ['admin', 'super_admin'],
+      },
+      {
+        label: 'Staff Users',
+        href: '/travinco_dashboard/users',
+        icon: 'Users',
+        pageKey: 'users',
+        module: 'users',
+        roles: ['admin', 'super_admin'],
       },
     ],
   },
@@ -135,11 +150,16 @@ export const adminNav: NavSection[] = [
 /**
  * Filters the admin navigation according to the staff member's role and
  * granular staff_permissions overrides.
+ *
+ * If explicit staff_permissions exist for the user, a strict whitelist
+ * is enforced: only pages with can_view = true are displayed in the sidebar.
  */
 export function navForProfile(
   profile: Tables<'profiles'>,
   permissions: Tables<'staff_permissions'>[] = []
 ): NavSection[] {
+  const hasCustomPermissions = permissions && permissions.length > 0;
+
   return adminNav
     .map((section) => ({
       ...section,
@@ -147,28 +167,44 @@ export function navForProfile(
         // 1. Super admin sees all navigation items
         if (profile.role === 'super_admin') return true;
 
-        // 2. If this item has a configurable module, check explicit staff_permissions
-        if (item.module) {
-          const explicit = permissions.find((p) => p.module === item.module);
+        // 2. Role Management section & items are strictly restricted to admin & super_admin
+        if (item.pageKey === 'page_access' || item.pageKey === 'users') {
+          return profile.role === 'admin';
+        }
+
+        // 3. If explicit staff_permissions exist for this profile, enforce strict whitelist
+        if (hasCustomPermissions) {
+          const explicit = permissions.find(
+            (p) => p.module === item.pageKey || (item.module && p.module === item.module)
+          );
           if (explicit !== undefined) {
             return explicit.can_view;
           }
+          // Any page not explicitly granted in custom permissions is hidden
+          return false;
         }
 
-        // 3. Check role-restricted items
+        // 4. Default role allowance fallback (when no custom permissions configured yet)
         if (item.roles && !item.roles.includes(profile.role)) {
           return false;
         }
 
-        // 4. Role default baselines
+        // 5. Default role baselines
         if (profile.role === 'sales_staff') {
-          const disallowedForSales: (AdminModule | undefined)[] = ['finance', 'settings', 'users'];
-          return !disallowedForSales.includes(item.module);
+          const disallowedForSales = ['income', 'expenses', 'master', 'settings', 'users', 'page_access'];
+          return !disallowedForSales.includes(item.pageKey);
         }
 
         if (profile.role === 'accounts_staff') {
-          const allowedForAccounts: (AdminModule | undefined)[] = ['finance', 'bookings', 'customers', undefined];
-          return allowedForAccounts.includes(item.module);
+          const allowedForAccounts = [
+            'dashboard',
+            'expenses',
+            'bookings',
+            'customers',
+            'quotations',
+            'invoices',
+          ];
+          return allowedForAccounts.includes(item.pageKey);
         }
 
         return true;

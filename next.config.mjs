@@ -17,6 +17,20 @@ const nextConfig = {
       bodySizeLimit: '5mb',
     },
   },
+  async redirects() {
+    return [
+      {
+        source: '/admin',
+        destination: '/travinco_dashboard',
+        permanent: false,
+      },
+      {
+        source: '/admin/:path*',
+        destination: '/travinco_dashboard/:path*',
+        permanent: false,
+      },
+    ];
+  },
 };
 
 export default nextConfig;
