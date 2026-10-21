@@ -31,6 +31,7 @@ const STATUS_OPTIONS: { value: LeadStatus; label: string }[] = [
   { value: 'interested', label: 'Interested' },
   { value: 'not_interested', label: 'Not Interested' },
   { value: 'enquired', label: 'Enquired' },
+  { value: 'converted', label: 'Converted' },
 ];
 
 export function LeadEditModal({ lead, onClose }: Props) {

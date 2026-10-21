@@ -1,6 +1,8 @@
 import { createClient } from '@/lib/supabase/server';
 import { requireProfile, assertModulePermission } from '@/lib/supabase/auth-helpers';
 import { PackageForm } from '../package-form';
+import Link from 'next/link';
+import { ArrowLeft, Layers } from 'lucide-react';
 
 export const metadata = { title: 'New package' };
 
@@ -16,11 +18,28 @@ export default async function NewPackagePage() {
   return (
     <div className="max-w-3xl space-y-5">
       <div>
-        <h1 className="text-xl font-semibold text-ink-900">New package</h1>
-        <p className="text-sm text-ink-500">
-          Package is created as a draft. Itinerary, inclusions, exclusions and images can be
-          added once it&apos;s saved.
-        </p>
+        <Link
+          href="/travinco_dashboard/packages"
+          className="mb-2 inline-flex items-center gap-1.5 text-xs font-medium text-ink-500 hover:text-brand-700 transition"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+          <span>Back to packages</span>
+        </Link>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h1 className="text-xl font-semibold text-ink-900">New package</h1>
+            <p className="text-sm text-ink-500">
+              Create a single tour package with full details, or use bulk create to add multiple packages.
+            </p>
+          </div>
+          <Link
+            href="/travinco_dashboard/packages/bulk"
+            className="btn-outline inline-flex items-center gap-2 text-xs shadow-2xs hover:shadow-xs transition"
+          >
+            <Layers className="h-4 w-4 text-brand-600" />
+            <span>Switch to Bulk create</span>
+          </Link>
+        </div>
       </div>
       <PackageForm destinations={destinations ?? []} />
     </div>

@@ -44,6 +44,12 @@ export const STATUS_OPTIONS: {
     badgeClass: 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100/70',
     dotColor: 'bg-purple-500',
   },
+  {
+    value: 'converted',
+    label: 'Converted',
+    badgeClass: 'bg-teal-50 text-teal-700 border-teal-200 hover:bg-teal-100/70',
+    dotColor: 'bg-teal-500',
+  },
 ];
 
 export function LeadStatusSelect({ id, status }: { id: string; status: LeadStatus }) {
@@ -165,6 +171,8 @@ export function LeadRowActions({ lead, isAdmin }: { lead: LeadRecord; isAdmin: b
   const [isPending, startTransition] = useTransition();
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+
+  if (!isAdmin) return null;
 
   function executeDelete() {
     startTransition(async () => {

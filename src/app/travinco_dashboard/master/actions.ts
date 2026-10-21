@@ -1,6 +1,6 @@
 'use server';
 
-import { requireProfile, assertRole } from '@/lib/supabase/auth-helpers';
+import { requireProfile, assertRole, assertPageAccess } from '@/lib/supabase/auth-helpers';
 import { createClient } from '@/lib/supabase/server';
 import {
   importRateMasterBatch,
@@ -114,7 +114,7 @@ export async function getMasterRatesAction(
   params: RateMasterQueryParams = {}
 ): Promise<RateMasterQueryResult> {
   const profile = await requireProfile();
-  assertRole(profile, ['admin', 'super_admin']);
+  await assertPageAccess(profile, 'master');
 
   return getMasterRatesFromDb(params);
 }
@@ -124,7 +124,7 @@ export async function getMasterRatesAction(
  */
 export async function getMasterFiltersAction(): Promise<MasterFilterOptions> {
   const profile = await requireProfile();
-  assertRole(profile, ['admin', 'super_admin']);
+  await assertPageAccess(profile, 'master');
 
   return getMasterFilterOptions();
 }
@@ -170,3 +170,55 @@ export async function clearAllMasterRatesAction(): Promise<{ success: boolean; e
     return { success: false, error: 'Could not clear master rates.' };
   }
 }
+
+/**
+ * Updates a specific master rate item (CP, MAP, extra beds, notes).
+ */
+export async function updateMasterRateAction(
+  rateId: string | number,
+  data: {
+    cpCost?: number | null;
+    mapCost?: number | null;
+    extraAdultCP?: number | null;
+    extraAdultMAP?: number | null;
+    childBedCost?: number | null;
+    childNoBedCost?: number | null;
+    notes?: string | null;
+  }
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const profile = await requireProfile();
+    assertRole(profile, ['admin', 'super_admin']);
+
+    const supabase = await createClient();
+    const idNum = typeof rateId === 'string' ? parseInt(rateId, 10) : rateId;
+    if (isNaN(idNum)) {
+      return { success: false, error: 'Invalid rate ID.' };
+    }
+
+    const { error } = await supabase
+      .from('room_rates')
+      .update({
+        cp_cost: data.cpCost !== undefined ? data.cpCost : null,
+        map_cost: data.mapCost !== undefined ? data.mapCost : null,
+        extra_adult_cp: data.extraAdultCP !== undefined ? data.extraAdultCP : null,
+        extra_adult_map: data.extraAdultMAP !== undefined ? data.extraAdultMAP : null,
+        child_bed_cost: data.childBedCost !== undefined ? data.childBedCost : null,
+        child_no_bed_cost: data.childNoBedCost !== undefined ? data.childNoBedCost : null,
+        notes: data.notes !== undefined ? data.notes : null,
+      })
+      .eq('id', idNum);
+
+    if (error) {
+      console.error('Error updating master rate in DB:', error);
+      return { success: false, error: error.message };
+    }
+
+    revalidatePath('/travinco_dashboard/master');
+    return { success: true };
+  } catch (err: unknown) {
+    console.error('Update master rate error:', err);
+    return { success: false, error: 'Could not update the rate record.' };
+  }
+}
+

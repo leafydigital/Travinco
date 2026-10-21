@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import { cache } from 'react';
 import type { Tables } from '@/types/database';
@@ -16,6 +16,7 @@ export type AdminModule =
   | 'offers'
   | 'gallery'
   | 'blog'
+  | 'theme'
   | 'settings'
   | 'users'
   | 'finance';
@@ -23,38 +24,53 @@ export type AdminModule =
 export type PermissionAction = 'view' | 'edit';
 
 /**
- * Fetches the logged-in user's profile row (id, role, is_active, etc).
- * Redirects to /login if there's no session. If the authenticated session
- * belongs to a customer account (no profiles row), signs them out and
- * redirects to /login?reason=not_staff.
- *
- * Wrapped in React cache() so multiple Server Components and layouts in the
- * same render pass share a single database round-trip.
+ * Non-throwing helper returning current staff profile or null (cached per request).
+ * Uses createAdminClient() so it reads strictly from the staff/admin session cookie (sb-admin-auth-token).
  */
-export const requireProfile = cache(async (): Promise<CurrentProfile> => {
-  const supabase = await createClient();
+export const getProfile = cache(async (): Promise<CurrentProfile | null> => {
+  const supabase = await createAdminClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) {
-    redirect('/travinco_admin_login');
-  }
+  if (!user) return null;
 
-  const { data: profile, error } = await supabase
+  // Strictly reject customer accounts from being treated as staff
+  const isCustomerMeta =
+    user.user_metadata?.is_customer_signup === 'true' ||
+    user.user_metadata?.is_customer_signup === true ||
+    user.user_metadata?.role === 'customer';
+
+  if (isCustomerMeta) return null;
+
+  const { data: customerAccount } = await supabase
+    .from('customer_accounts')
+    .select('id')
+    .eq('id', user.id)
+    .maybeSingle();
+
+  if (customerAccount) return null;
+
+  const { data: profile } = await supabase
     .from('profiles')
     .select('*')
     .eq('id', user.id)
-    .single();
+    .maybeSingle();
 
-  if (error || !profile) {
-    await supabase.auth.signOut();
-    redirect('/travinco_admin_login?reason=not_staff');
-  }
+  if (!profile || !profile.is_active) return null;
+  return profile;
+});
 
-  if (!profile.is_active) {
-    await supabase.auth.signOut();
-    redirect('/travinco_admin_login?reason=deactivated');
+/**
+ * Fetches the logged-in staff member's profile row (id, role, is_active, etc).
+ * Redirects to /travinco_admin_login if unauthenticated or not an active staff member.
+ * Customer sessions attempting to access staff routes are rejected.
+ */
+export const requireProfile = cache(async (): Promise<CurrentProfile> => {
+  const profile = await getProfile();
+
+  if (!profile) {
+    redirect('/travinco_admin_login');
   }
 
   return profile;
@@ -62,12 +78,10 @@ export const requireProfile = cache(async (): Promise<CurrentProfile> => {
 
 /**
  * Fetches granular module permission overrides for the given profile.
- * Wrapped in React cache() so the layout and pages share one DB round-trip
- * per render pass — prevents the admin layout from querying this table on
- * every sidebar navigation.
+ * Wrapped in React cache() so the layout and pages share one DB round-trip per render pass.
  */
 export const getStaffPermissions = cache(async (profileId: string) => {
-  const supabase = await createClient();
+  const supabase = await createAdminClient();
   const [{ data: dbPerms }, { data: settingRow }] = await Promise.all([
     supabase
       .from('staff_permissions')
@@ -95,35 +109,12 @@ export const getStaffPermissions = cache(async (profileId: string) => {
   return dbPerms ?? [];
 });
 
-/** Non-throwing helper returning current profile or null (cached per request) */
-export const getProfile = cache(async (): Promise<CurrentProfile | null> => {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) return null;
-
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', user.id)
-    .maybeSingle();
-
-  if (!profile || !profile.is_active) return null;
-  return profile;
-});
-
 /** Throws redirect for pages requiring a specific role tier. */
 export async function assertRole(
   profile: CurrentProfile,
   allowed: UserRole[]
 ) {
   if (!allowed.includes(profile.role)) {
-    try {
-      const supabase = await createClient();
-      await supabase.auth.signOut();
-    } catch {}
     redirect('/travinco_admin_login?reason=forbidden');
   }
 }
@@ -158,8 +149,9 @@ export const hasPageAccess = cache(async (
   if (permissions && permissions.length > 0) {
     const explicit = permissions.find((p) => p.module === pageKey);
     if (explicit) {
-      if (action === 'view') return explicit.can_view;
-      if (action === 'edit') return explicit.can_view && explicit.can_edit;
+      // In Travinco, giving access to a page allows viewing and creating/editing items on that page.
+      if (action === 'view') return Boolean(explicit.can_view);
+      if (action === 'edit') return Boolean(explicit.can_view);
     }
     // With explicit permissions configured, unassigned pages are strictly forbidden
     return false;
@@ -173,16 +165,16 @@ export const hasPageAccess = cache(async (
     case 'sales_staff': {
       const salesAllowed = [
         'dashboard', 'packages', 'destinations', 'enquiries', 'bookings',
-        'customers', 'offers', 'events', 'gallery', 'blog',
-        'quotations', 'invoices', 'hotels', 'transport', 'pickup_points', 'locations',
+        'customers', 'leads', 'offers', 'events', 'gallery', 'blog',
+        'quotations', 'invoices', 'hotels', 'transport', 'pickup_points', 'locations', 'master', 'theme',
       ];
       return salesAllowed.includes(pageKey);
     }
 
     case 'accounts_staff': {
       const accountsAllowed = [
-        'dashboard', 'income', 'expenses', 'bookings', 'customers',
-        'quotations', 'invoices',
+        'dashboard', 'income', 'expenses', 'bookings', 'customers', 'leads',
+        'quotations', 'invoices', 'master',
       ];
       if (pageKey === 'customers' && action === 'edit') return false;
       return accountsAllowed.includes(pageKey);
@@ -201,11 +193,7 @@ export async function assertPageAccess(
 ) {
   const allowed = await hasPageAccess(profile, pageKey, action);
   if (!allowed) {
-    try {
-      const supabase = await createClient();
-      await supabase.auth.signOut();
-    } catch {}
-    redirect('/travinco_admin_login?reason=forbidden');
+    redirect('/travinco_dashboard?error=unauthorized');
   }
 }
 
@@ -252,11 +240,7 @@ export async function assertModulePermission(
 ) {
   const allowed = await hasModulePermission(profile, module, action);
   if (!allowed) {
-    try {
-      const supabase = await createClient();
-      await supabase.auth.signOut();
-    } catch {}
-    redirect('/travinco_admin_login?reason=forbidden');
+    redirect('/travinco_dashboard?error=unauthorized');
   }
 }
 

@@ -12,8 +12,15 @@ interface ConfirmDeleteDialogProps {
   onConfirm: () => void;
   onClose: () => void;
   confirmLabel?: string;
-  maxWidth?: string;
+  maxWidth?: string | number;
 }
+
+const widthMap: Record<string, string> = {
+  'max-w-xs': '320px',
+  'max-w-sm': '384px',
+  'max-w-md': '420px',
+  'max-w-lg': '480px',
+};
 
 export function ConfirmDeleteDialog({
   title = 'Confirm Delete',
@@ -23,7 +30,7 @@ export function ConfirmDeleteDialog({
   onConfirm,
   onClose,
   confirmLabel = 'Delete',
-  maxWidth = 'max-w-[420px]',
+  maxWidth,
 }: ConfirmDeleteDialogProps) {
   const [mounted, setMounted] = useState(false);
 
@@ -53,6 +60,14 @@ export function ConfirmDeleteDialog({
 
   if (!isOpen || !mounted) return null;
 
+  // Resolve rigid max-width so modal never expands to full-width
+  const resolvedMaxWidth =
+    (typeof maxWidth === 'string' && widthMap[maxWidth]) ||
+    (typeof maxWidth === 'number' ? `${maxWidth}px` : null) ||
+    (typeof maxWidth === 'string' && maxWidth.includes('px')
+      ? maxWidth.replace(/max-w-\[?|\]/g, '')
+      : '400px');
+
   const dialogContent = (
     <div
       className="fixed inset-0 z-[9999] flex items-center justify-center overflow-y-auto overflow-x-hidden bg-ink-950/60 p-4 backdrop-blur-xs transition-opacity animate-in fade-in duration-150 print:hidden"
@@ -64,7 +79,8 @@ export function ConfirmDeleteDialog({
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className={`relative w-full ${maxWidth} max-w-[calc(100vw-2rem)] mx-auto overflow-hidden rounded-2xl border border-ink-100 bg-white p-5 sm:p-6 shadow-2xl transition-all animate-in zoom-in-95 duration-150 box-border`}
+        style={{ maxWidth: resolvedMaxWidth }}
+        className="relative w-full mx-auto overflow-hidden rounded-2xl border border-ink-100 bg-white p-5 sm:p-6 shadow-2xl transition-all animate-in zoom-in-95 duration-150 box-border"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header with Danger Badge Icon, Title, and Close Button */}

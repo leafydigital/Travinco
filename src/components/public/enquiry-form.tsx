@@ -23,11 +23,15 @@ export function EnquiryForm({
   destinationName,
   buttonLabel = 'Send enquiry',
   isLoggedIn,
+  defaultName = '',
+  defaultEmail = '',
 }: {
   packageId?: string;
   destinationName?: string;
   buttonLabel?: string;
   isLoggedIn: boolean;
+  defaultName?: string;
+  defaultEmail?: string;
 }) {
   const [state, formAction] = useFormState(submitEnquiry, initialState);
   const [phoneValid, setPhoneValid] = useState(false);
@@ -43,6 +47,11 @@ export function EnquiryForm({
         <p className="mt-1 text-sm text-brand-700">
           Reference number <strong>{state.enquiryNumber}</strong>. Our team will reach out shortly.
         </p>
+        <div className="mt-4">
+          <Link href="/account/bookings" className="btn-primary text-xs">
+            View in My Bookings
+          </Link>
+        </div>
       </div>
     );
   }
@@ -85,8 +94,21 @@ export function EnquiryForm({
           overflow that's easy to miss. */}
       <div className="max-h-[340px] space-y-3 overflow-y-auto rounded-xl2 border border-ink-100 bg-ink-50/40 p-3">
         <div className="grid gap-3 sm:grid-cols-2">
-          <input name="customer_name" required placeholder="Full name*" className="input" />
-          <input name="email" type="email" required placeholder="Email*" className="input" />
+          <input
+            name="customer_name"
+            required
+            defaultValue={defaultName}
+            placeholder="Full name*"
+            className="input"
+          />
+          <input
+            name="email"
+            type="email"
+            required
+            defaultValue={defaultEmail}
+            placeholder="Email*"
+            className="input"
+          />
         </div>
 
         <div>

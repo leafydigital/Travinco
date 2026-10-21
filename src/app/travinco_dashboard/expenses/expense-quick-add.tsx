@@ -12,7 +12,7 @@ export function ExpenseQuickAdd({ categories }: { categories: { id: string; name
   const [isPending, startTransition] = useTransition();
   const [form, setForm] = useState({
     expense_date: new Date().toISOString().slice(0, 10),
-    category_id: categories[0]?.id ?? '',
+    category_id: '',
     supplier: '',
     description: '',
     amount: '',
@@ -21,8 +21,8 @@ export function ExpenseQuickAdd({ categories }: { categories: { id: string; name
   });
 
   function submit() {
-    if (!form.category_id) {
-      toast.error('Select a category — add one in Settings if none exist yet.');
+    if (!form.category_id.trim()) {
+      toast.error('Please enter an expense category.');
       return;
     }
     startTransition(async () => {
@@ -32,7 +32,7 @@ export function ExpenseQuickAdd({ categories }: { categories: { id: string; name
         return;
       }
       toast.success('Expense recorded');
-      setForm((f) => ({ ...f, supplier: '', description: '', amount: '', reference_number: '' }));
+      setForm((f) => ({ ...f, category_id: '', supplier: '', description: '', amount: '', reference_number: '' }));
       setOpen(false);
       router.refresh();
     });
@@ -48,11 +48,6 @@ export function ExpenseQuickAdd({ categories }: { categories: { id: string; name
 
   return (
     <div className="card space-y-3 p-5">
-      {categories.length === 0 && (
-        <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          No expense categories yet — add some from Settings → Finance first.
-        </p>
-      )}
       <div className="grid gap-3 sm:grid-cols-3">
         <input
           type="date"
@@ -60,18 +55,22 @@ export function ExpenseQuickAdd({ categories }: { categories: { id: string; name
           onChange={(e) => setForm((f) => ({ ...f, expense_date: e.target.value }))}
           className="input"
         />
-        <select
-          value={form.category_id}
-          onChange={(e) => setForm((f) => ({ ...f, category_id: e.target.value }))}
-          className="input"
-        >
-          <option value="">Select category…</option>
-          {categories.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
+        <div className="relative">
+          <input
+            type="text"
+            list="expense-category-suggestions"
+            value={form.category_id}
+            onChange={(e) => setForm((f) => ({ ...f, category_id: e.target.value }))}
+            placeholder="Category (e.g. Hotel, Transport)..."
+            className="input w-full"
+            required
+          />
+          <datalist id="expense-category-suggestions">
+            {categories.map((c) => (
+              <option key={c.id} value={c.name} />
+            ))}
+          </datalist>
+        </div>
         <input
           type="number"
           min={0.01}

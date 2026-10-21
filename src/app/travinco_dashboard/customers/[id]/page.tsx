@@ -12,8 +12,8 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
   await assertModulePermission(profile, 'customers', 'view');
   const supabase = await createClient();
 
-  const [{ data: customer }, { data: enquiries }, { data: bookings }] = await Promise.all([
-    supabase.from('customers').select('*').eq('id', params.id).single(),
+  const [{ data: customer }, { data: enquiries }, { data: bookings }, { data: delSetting }, { data: statusSetting }] = await Promise.all([
+    supabase.from('customers').select('*').eq('id', params.id).maybeSingle(),
     supabase
       .from('enquiries')
       .select('id, enquiry_number, status, created_at, travel_packages(title)')
@@ -26,9 +26,15 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
       )
       .eq('customer_id', params.id)
       .order('created_at', { ascending: false }),
+    supabase.from('website_settings').select('value').eq('key', `deleted_customer_${params.id}`).maybeSingle(),
+    supabase.from('website_settings').select('value').eq('key', `customer_status_${params.id}`).maybeSingle(),
   ]);
 
-  if (!customer) notFound();
+  if (!customer || (customer as any).is_deleted === true || delSetting) notFound();
+
+  const isActive = statusSetting?.value?.is_active !== undefined
+    ? Boolean(statusSetting.value.is_active)
+    : (customer as any).is_active !== false && (customer as any).status !== 'inactive';
 
   const totalSpend = (bookings ?? []).reduce((sum, b) => sum + Number(b.amount_received), 0);
   const totalBookingValue = (bookings ?? []).reduce((sum, b) => sum + Number(b.total_amount), 0);
@@ -37,12 +43,24 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
     <div className="space-y-6 pb-16">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-ink-900">{customer.full_name}</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-semibold text-ink-900">{customer.full_name}</h1>
+            {isActive ? (
+              <span className="badge badge-success">Active</span>
+            ) : (
+              <span className="badge bg-amber-100 text-amber-800 border-amber-200">Deactivated</span>
+            )}
+          </div>
           <p className="text-sm text-ink-500">Customer since {formatDate(customer.created_at)}</p>
         </div>
-        <Link href="/admin/customers" className="btn-outline">
-          Back to customers
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link href={`/admin/customers/${customer.id}/edit`} className="btn-outline">
+            Edit customer
+          </Link>
+          <Link href="/admin/customers" className="btn-outline">
+            Back to customers
+          </Link>
+        </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
@@ -97,10 +115,9 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
                 <p className="text-sm text-ink-400">No bookings from this customer yet.</p>
               )}
               {(bookings ?? []).map((b) => (
-                <Link
+                <div
                   key={b.id}
-                  href={`/admin/bookings/${b.id}`}
-                  className="flex items-center justify-between rounded-lg border border-ink-100 p-3 text-sm hover:bg-ink-50"
+                  className="flex items-center justify-between rounded-lg border border-ink-100 p-3 text-sm"
                 >
                   <div>
                     <p className="font-medium text-ink-700">{b.booking_number}</p>
@@ -116,7 +133,7 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
                     <p className="text-ink-700">{formatCurrency(b.total_amount)}</p>
                     <StatusBadge status={b.booking_status} />
                   </div>
-                </Link>
+                </div>
               ))}
             </div>
           </div>

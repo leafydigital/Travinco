@@ -3,6 +3,7 @@ import { requireProfile, assertModulePermission } from '@/lib/supabase/auth-help
 import Link from 'next/link';
 import { Plus, ArrowLeft } from 'lucide-react';
 import { DestinationsTable, type DestinationItem } from './destinations-table';
+import { BulkCreateDestinationsButton } from './bulk-create-modal';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -77,14 +78,17 @@ export default async function AdminDestinationsPage() {
           </p>
         </div>
 
-        <Link
-          href="/travinco_dashboard/destinations/new"
-          prefetch={true}
-          className="btn-primary inline-flex items-center gap-2 shadow-2xs hover:shadow-xs transition"
-        >
-          <Plus className="h-4 w-4" />
-          <span>New destination</span>
-        </Link>
+        <div className="flex items-center gap-2.5">
+          <BulkCreateDestinationsButton />
+          <Link
+            href="/travinco_dashboard/destinations/new"
+            prefetch={true}
+            className="btn-primary inline-flex items-center gap-2 shadow-2xs hover:shadow-xs transition"
+          >
+            <Plus className="h-4 w-4" />
+            <span>New destination</span>
+          </Link>
+        </div>
       </div>
 
       {/* 2. Client-Side Instant Table with In-Memory Search & Status Filter */}

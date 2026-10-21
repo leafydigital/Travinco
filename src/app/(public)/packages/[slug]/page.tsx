@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import Image from 'next/image';
-import { Clock, MapPin, Users, Check, X, MessageCircle, Phone, Sparkles } from 'lucide-react';
+import { Clock, MapPin, Users, Check, X, MessageCircle, Phone } from 'lucide-react';
 import { formatCurrency, getVideoEmbedUrl } from '@/lib/utils/format';
 import { EnquiryForm } from '@/components/public/enquiry-form';
 import { ImageLightbox } from '@/components/public/image-lightbox';
@@ -119,6 +119,8 @@ export default async function PackageDetailPage({ params }: { params: { slug: st
   const {
     data: { user },
   } = await supabaseForAuth.auth.getUser();
+
+
 
   const { pkg, images, itinerary, inclusions, exclusions, videos, faqs, activeOffer } = result;
   const offerPrice = activeOffer
@@ -325,8 +327,8 @@ export default async function PackageDetailPage({ params }: { params: { slug: st
           <div className="card sticky top-24 space-y-4 p-5">
             <div>
               {activeOffer && (
-                <span className="badge-discount mb-2 inline-flex">
-                  <Sparkles className="mr-1 h-3 w-3" /> Special offer
+                <span className="badge-discount mb-2 inline-flex font-semibold">
+                  Special offer
                 </span>
               )}
               {effectivePrice ? (
@@ -374,6 +376,8 @@ export default async function PackageDetailPage({ params }: { params: { slug: st
                 destinationName={destination?.name}
                 buttonLabel="Enquire now"
                 isLoggedIn={Boolean(user)}
+                defaultName=""
+                defaultEmail=""
               />
             </div>
           </div>

@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { requireProfile, assertModulePermission } from '@/lib/supabase/auth-helpers';
 import Link from 'next/link';
-import { Plus, ArrowLeft } from 'lucide-react';
+import { Plus, ArrowLeft, Layers } from 'lucide-react';
 import { PackagesTable, type PackageItem } from './packages-table';
 
 export const dynamic = 'force-dynamic';
@@ -103,20 +103,31 @@ export default async function AdminPackagesPage() {
           </p>
         </div>
 
-        <Link
-          href="/travinco_dashboard/packages/new"
-          prefetch={true}
-          className="btn-primary inline-flex items-center gap-2 shadow-2xs hover:shadow-xs transition"
-        >
-          <Plus className="h-4 w-4" />
-          <span>New package</span>
-        </Link>
+        <div className="flex items-center gap-2.5">
+          <Link
+            href="/travinco_dashboard/packages/bulk"
+            prefetch={true}
+            className="btn-outline inline-flex items-center gap-2 shadow-2xs hover:shadow-xs transition"
+          >
+            <Layers className="h-4 w-4 text-brand-600" />
+            <span>Bulk create</span>
+          </Link>
+          <Link
+            href="/travinco_dashboard/packages/new"
+            prefetch={true}
+            className="btn-primary inline-flex items-center gap-2 shadow-2xs hover:shadow-xs transition"
+          >
+            <Plus className="h-4 w-4" />
+            <span>New package</span>
+          </Link>
+        </div>
       </div>
 
       {/* 2. Instant Client-Side Table (0ms search and filter latency) */}
       <PackagesTable
         initialPackages={activePackages}
         destinationsMap={destinationsMap}
+        destinations={destinationsData ?? []}
         isAdmin={isAdmin}
       />
     </div>

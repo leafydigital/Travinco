@@ -1,0 +1,101 @@
+{
+  "navbar": {
+    "logo_type": "image",
+    "logo_text": "Travinco",
+    "logo_image_url": "/images/green_logo.png",
+    "logo_light_image_url": "/images/white_logo.png",
+    "cta_button_text": "Book with Us",
+    "cta_button_url": "/booking",
+    "nav_links": [
+      {
+        "key": "home",
+        "href": "/",
+        "label": "Home",
+        "visible": true
+      },
+      {
+        "key": "packages",
+        "href": "/packages",
+        "label": "Packages",
+        "visible": true
+      },
+      {
+        "key": "destinations",
+        "href": "/destinations",
+        "label": "Destinations",
+        "visible": true
+      },
+      {
+        "key": "blog",
+        "href": "/blog",
+        "label": "Blog",
+        "visible": true
+      },
+      {
+        "key": "about",
+        "href": "/about",
+        "label": "About",
+        "visible": true
+      },
+      {
+        "key": "contact",
+        "href": "/contact",
+        "label": "Contact",
+        "visible": true
+      }
+    ]
+  },
+  "footer": {
+    "brand_name": "Travinco",
+    "brand_tagline": "Handpicked holidays and end-to-end trip planning, built around how you actually like to travel.",
+    "show_social": true,
+    "social": {
+      "facebook": "",
+      "instagram": "",
+      "twitter": "",
+      "linkedin": "",
+      "youtube": ""
+    },
+    "explore_heading": "Explore",
+    "explore_links": [
+      {
+        "id": "1",
+        "label": "Packages",
+        "href": "/packages"
+      },
+      {
+        "id": "2",
+        "label": "Destinations",
+        "href": "/destinations"
+      },
+      {
+        "id": "3",
+        "label": "Travel Blog",
+        "href": "/blog"
+      }
+    ],
+    "company_heading": "Company",
+    "company_links": [
+      {
+        "id": "1",
+        "label": "About us",
+        "href": "/about"
+      },
+      {
+        "id": "2",
+        "label": "Contact",
+        "href": "/contact"
+      },
+      {
+        "id": "3",
+        "label": "Plan a trip",
+        "href": "/booking"
+      }
+    ],
+    "contact_heading": "Get in touch",
+    "phone": "",
+    "email": "",
+    "address": "",
+    "copyright_text": "All rights reserved."
+  }
+}

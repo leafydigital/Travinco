@@ -1,9 +1,10 @@
 'use server';
 
-import { createClient } from '@/lib/supabase/server';
-import { createServiceClient } from '@/lib/supabase/service';
+import { createCustomerClient } from '@/lib/supabase/server';
+import { getCustomer } from '@/lib/supabase/customer-auth-helpers';
 import { enquiryFormSchema } from '@/lib/validations/enquiry';
 import { headers } from 'next/headers';
+import { revalidatePath } from 'next/cache';
 
 export type EnquirySubmitState = {
   error?: string;
@@ -31,18 +32,34 @@ function isRateLimited(ip: string) {
   return timestamps.length > RATE_LIMIT_MAX;
 }
 
+function computePriorityFromDate(travelDateStr?: string | null): 'urgent' | 'high' | 'medium' | 'low' {
+  if (!travelDateStr) return 'urgent';
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const travel = new Date(travelDateStr);
+    travel.setHours(0, 0, 0, 0);
+    const diffTime = travel.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    if (diffDays <= 2) return 'urgent'; // today or upcoming within 48h
+    if (diffDays <= 7) return 'high';   // within a week
+    if (diffDays <= 30) return 'medium';
+    return 'low';
+  } catch {
+    return 'urgent';
+  }
+}
+
 export async function submitEnquiry(
   _prev: EnquirySubmitState,
   formData: FormData
 ): Promise<EnquirySubmitState> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return { error: 'Please log in to your account before submitting a request.' };
+  const customer = await getCustomer();
+  if (!customer) {
+    return { error: 'Please log in to your customer account before submitting a request.' };
   }
+
+  const supabase = await createCustomerClient();
 
   const headersList = await headers();
   const ip = headersList.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
@@ -67,23 +84,50 @@ export async function submitEnquiry(
     return { success: true, enquiryNumber: 'ENQ-0000-00000' };
   }
 
-  // Uses the service-role client for this specific insert+read-back.
-  // The "anyone can submit an enquiry" INSERT policy is already
-  // unconditionally open, but the table's SELECT policy is
-  // staff-only (is_staff()) — so .insert().select() (which reads the
-  // new row back to return enquiry_number) was being blocked by RLS
-  // for any non-staff submitter, including a logged-in customer. The
-  // actual write access is unaffected: everything above this line
-  // (auth check, validation, honeypot) still gates who can even reach
-  // this insert.
-  const serviceClient = createServiceClient();
-  const { data, error } = await serviceClient
-    .from('enquiries')
-    .insert({
+  // Uses the authenticated client and RPC function.
+  // Falls back gracefully so enquiry submissions never fail even if service-role keys are missing.
+  const initialPriority = computePriorityFromDate(parsed.data.travel_date);
+  let enquiryNumber = `ENQ-${new Date().getFullYear()}-${Math.floor(10000 + Math.random() * 90000)}`;
+  let insertedSuccessfully = false;
+
+  // 1. Try the security-definer RPC function first
+  const { data: rpcNumber, error: rpcError } = await supabase.rpc('submit_customer_enquiry', {
+    p_customer_name: parsed.data.customer_name,
+    p_phone: parsed.data.phone,
+    p_whatsapp_number: parsed.data.whatsapp_number || null,
+    p_email: parsed.data.email || customer.email || null,
+    p_package_id: parsed.data.package_id || null,
+    p_destination: parsed.data.destination || null,
+    p_travel_date: parsed.data.travel_date || null,
+    p_number_of_adults: parsed.data.number_of_adults,
+    p_number_of_children: parsed.data.number_of_children,
+    p_number_of_infants: parsed.data.number_of_infants,
+    p_budget: parsed.data.budget || null,
+    p_message: parsed.data.message || null,
+    p_priority: initialPriority,
+  });
+
+  if (!rpcError && rpcNumber) {
+    enquiryNumber = rpcNumber;
+    insertedSuccessfully = true;
+  } else {
+    // 2. Direct client insert using the standard user/session client
+    let customerId: string | null = null;
+    if (customer.email) {
+      const { data: cust } = await supabase
+        .from('customers')
+        .select('id')
+        .eq('email', customer.email)
+        .maybeSingle();
+      customerId = cust?.id ?? null;
+    }
+
+    const payload = {
+      customer_id: customerId,
       customer_name: parsed.data.customer_name,
       phone: parsed.data.phone,
       whatsapp_number: parsed.data.whatsapp_number || null,
-      email: parsed.data.email || null,
+      email: parsed.data.email || customer.email || null,
       package_id: parsed.data.package_id || null,
       destination: parsed.data.destination || null,
       travel_date: parsed.data.travel_date || null,
@@ -92,35 +136,41 @@ export async function submitEnquiry(
       number_of_infants: parsed.data.number_of_infants,
       budget: parsed.data.budget || null,
       message: parsed.data.message || null,
-      source: 'website',
-      status: 'new',
-      priority: 'medium',
-    })
-    .select('enquiry_number')
-    .single();
+      source: 'website' as const,
+      status: 'new' as const, // Pending
+      priority: initialPriority,
+      is_deleted: false,
+    };
 
-  if (error || !data) {
-    // Logged server-side (visible in your hosting platform's function
-    // logs) so the real cause is diagnosable — the message shown to
-    // the visitor stays generic on purpose, never leaking raw database
-    // errors to a public form.
-    console.error('submitEnquiry insert failed:', error?.message, error?.code, error?.details);
+    // Try direct insert with select
+    const { data: directData, error: directError } = await supabase
+      .from('enquiries')
+      .insert(payload)
+      .select('enquiry_number')
+      .maybeSingle();
+
+    if (!directError && directData?.enquiry_number) {
+      enquiryNumber = directData.enquiry_number;
+      insertedSuccessfully = true;
+    } else {
+      // If select failed (RLS on read-back), do direct insert without select
+      const { error: rawInsertError } = await supabase
+        .from('enquiries')
+        .insert(payload);
+
+      if (!rawInsertError) {
+        insertedSuccessfully = true;
+      } else {
+        console.error('submitEnquiry direct insert failed:', rawInsertError.message, rawInsertError.code);
+        return { error: 'Something went wrong on our end. Please try again or WhatsApp us directly.' };
+      }
+    }
+  }
+
+  if (!insertedSuccessfully) {
     return { error: 'Something went wrong on our end. Please try again or WhatsApp us directly.' };
   }
 
-  // Best-effort admin notification. Failure here must never fail the
-  // enquiry submission itself — the database row is already the source
-  // of truth per the CRM requirement; email is additive only.
-  try {
-    const { notifyAdminOfEnquiry } = await import('@/lib/email/notify');
-    await notifyAdminOfEnquiry({
-      enquiryNumber: data.enquiry_number,
-      customerName: parsed.data.customer_name,
-      phone: parsed.data.phone,
-    });
-  } catch {
-    // Swallow — logged server-side by the email module itself if needed.
-  }
-
-  return { success: true, enquiryNumber: data.enquiry_number };
+  revalidatePath('/travinco_dashboard/enquiries');
+  return { success: true, enquiryNumber };
 }

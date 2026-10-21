@@ -24,6 +24,7 @@ export const iconNames = [
   'Landmark',
   'ShieldCheck',
   'ClipboardList',
+  'Palette',
 ] as const;
 
 export type IconName = (typeof iconNames)[number];
@@ -49,10 +50,10 @@ export const adminNav: NavSection[] = [
       { label: 'Packages', href: '/travinco_dashboard/packages', icon: 'Package', pageKey: 'packages', module: 'packages' },
       { label: 'Destinations', href: '/travinco_dashboard/destinations', icon: 'MapPin', pageKey: 'destinations', module: 'destinations' },
       { label: 'Enquiries', href: '/travinco_dashboard/enquiries', icon: 'Inbox', pageKey: 'enquiries', module: 'enquiries' },
-      { label: 'Bookings', href: '/travinco_dashboard/bookings', icon: 'CalendarCheck', pageKey: 'bookings', module: 'bookings' },
       { label: 'Customers', href: '/travinco_dashboard/customers', icon: 'UsersRound', pageKey: 'customers', module: 'customers' },
       { label: 'Leads', href: '/travinco_dashboard/leads', icon: 'ClipboardList', pageKey: 'leads', module: 'leads' },
       { label: 'Blog', href: '/travinco_dashboard/blog', icon: 'BookOpen', pageKey: 'blog', module: 'blog' },
+      { label: 'Theme', href: '/travinco_dashboard/theme', icon: 'Palette', pageKey: 'theme', module: 'theme', roles: ['admin', 'super_admin', 'sales_staff'] },
       {
         label: 'Expenses',
         href: '/travinco_dashboard/expenses',
@@ -62,11 +63,11 @@ export const adminNav: NavSection[] = [
         roles: ['accounts_staff', 'admin', 'super_admin'],
       },
       {
-        label: 'Master',
+        label: 'Rate Master',
         href: '/travinco_dashboard/master',
         icon: 'Database',
         pageKey: 'master',
-        roles: ['admin', 'super_admin'],
+        roles: ['admin', 'super_admin', 'sales_staff', 'accounts_staff'],
       },
       {
         label: 'Settings',
@@ -191,7 +192,7 @@ export function navForProfile(
 
         // 5. Default role baselines
         if (profile.role === 'sales_staff') {
-          const disallowedForSales = ['income', 'expenses', 'master', 'settings', 'users', 'page_access'];
+          const disallowedForSales = ['income', 'expenses', 'settings', 'users', 'page_access'];
           return !disallowedForSales.includes(item.pageKey);
         }
 
@@ -199,10 +200,10 @@ export function navForProfile(
           const allowedForAccounts = [
             'dashboard',
             'expenses',
-            'bookings',
             'customers',
             'quotations',
             'invoices',
+            'master',
           ];
           return allowedForAccounts.includes(item.pageKey);
         }

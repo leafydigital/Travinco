@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { requireProfile, checkModulePermission } from '@/lib/supabase/auth-helpers';
-import { packageSchema, slugify, type PackageFormValues } from '@/lib/validations/package';
+import { packageSchema, packageCategories, slugify, type PackageFormValues } from '@/lib/validations/package';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 
@@ -511,4 +511,271 @@ export async function deletePackage(id: string): Promise<ActionState> {
   revalidatePath('/travinco_dashboard');
   revalidatePath('/packages');
   return {};
+}
+
+export type BulkPackageInput = {
+  // Basic info
+  title: string;
+  slug?: string;
+  destination_id?: string | null;
+  category?: (typeof packageCategories)[number];
+  duration_days: number;
+  duration_nights: number;
+  short_description?: string | null;
+  full_description?: string | null;
+
+  // Pricing & availability
+  base_price: number;
+  discount_price?: number | null;
+  child_price?: number | null;
+  currency?: string;
+  available_from?: string | null;
+  available_to?: string | null;
+  total_seats?: number | null;
+  pickup_info?: string | null;
+  is_featured?: boolean;
+
+  // Highlights
+  highlights?: string[];
+
+  // SEO
+  meta_title?: string | null;
+  meta_description?: string | null;
+
+  // Status
+  status?: 'draft' | 'published';
+
+  // Sub-resources
+  cover_image_url?: string | null;
+  video_url?: string | null;
+  imageUrls?: string[];
+  videoUrls?: string[];
+  itineraryDays?: { day_number: number; title: string; description?: string }[];
+  inclusions?: string[];
+  exclusions?: string[];
+  faqs?: { question: string; answer: string }[];
+};
+
+export async function bulkCreatePackages(
+  items: BulkPackageInput[]
+): Promise<{ error?: string; count?: number; packages?: any[] }> {
+  const profile = await requireProfile();
+  const perm = await checkModulePermission(profile, 'packages', 'edit');
+  if (!perm.allowed) {
+    return { error: perm.error || 'You do not have permission to create packages.' };
+  }
+
+  if (!Array.isArray(items) || items.length === 0) {
+    return { error: 'Please provide at least one package to save.' };
+  }
+
+  // Filter candidate items with a valid title
+  const candidates = items.filter((item) => item.title && item.title.trim().length >= 2);
+  if (candidates.length === 0) {
+    return { error: 'Each package must have a valid title (at least 2 characters).' };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  // Fetch all existing package slugs to prevent conflicts
+  const { data: existingPackages } = await supabase
+    .from('travel_packages')
+    .select('slug');
+  const usedSlugs = new Set((existingPackages || []).map((p) => p.slug.toLowerCase()));
+
+  const preparedCandidates = candidates.map((item) => {
+    const rawTitle = item.title.trim();
+    let baseSlug = item.slug ? slugify(item.slug) : slugify(rawTitle);
+    if (!baseSlug) baseSlug = 'package';
+    let slug = baseSlug;
+    let counter = 2;
+    while (usedSlugs.has(slug)) {
+      slug = `${baseSlug}-${counter}`;
+      counter++;
+    }
+    usedSlugs.add(slug);
+
+    const days = Math.max(1, Math.floor(Number(item.duration_days) || 1));
+    const nights = Math.max(0, Math.floor(Number(item.duration_nights) || 0));
+    const basePrice = Math.max(0, Number(item.base_price) || 0);
+    const discountPrice =
+      item.discount_price && Number(item.discount_price) > 0
+        ? Math.min(basePrice, Number(item.discount_price))
+        : null;
+
+    const validImages = Array.isArray(item.imageUrls)
+      ? item.imageUrls.map((u) => u.trim()).filter(Boolean)
+      : [];
+    const coverUrl = validImages[0] || item.cover_image_url || null;
+
+    return {
+      item,
+      slug,
+      payload: {
+        title: rawTitle,
+        slug,
+        destination_id: item.destination_id && item.destination_id.trim() ? item.destination_id.trim() : null,
+        category: item.category || 'other',
+        duration_days: days,
+        duration_nights: nights,
+        base_price: basePrice,
+        discount_price: discountPrice,
+        child_price: item.child_price && Number(item.child_price) > 0 ? Number(item.child_price) : null,
+        currency: item.currency || 'INR',
+        available_from: item.available_from || null,
+        available_to: item.available_to || null,
+        total_seats: item.total_seats && Number(item.total_seats) > 0 ? Math.floor(Number(item.total_seats)) : null,
+        pickup_info: item.pickup_info?.trim() || null,
+        is_featured: Boolean(item.is_featured),
+        short_description: item.short_description?.trim() || null,
+        full_description: item.full_description?.trim() || null,
+        highlights: Array.isArray(item.highlights) ? item.highlights.filter(Boolean) : [],
+        cover_image_url: coverUrl,
+        video_url: item.videoUrls?.[0] || item.video_url || null,
+        status: item.status === 'published' ? 'published' : 'draft',
+        meta_title: item.meta_title?.trim() || rawTitle,
+        meta_description: item.meta_description?.trim() || item.short_description?.trim() || null,
+        created_by: user?.id ?? null,
+      },
+    };
+  });
+
+  const { data: inserted, error: insertError } = await supabase
+    .from('travel_packages')
+    .insert(preparedCandidates.map((c) => c.payload))
+    .select(
+      'id, title, slug, status, base_price, discount_price, currency, duration_days, duration_nights, cover_image_url, is_featured, destination_id'
+    );
+
+  if (insertError) {
+    console.error('Error during bulk create packages:', insertError);
+    return { error: 'Failed to bulk create packages: ' + insertError.message };
+  }
+
+  // Map inserted package IDs by slug to attach sub-resources
+  if (inserted && inserted.length > 0) {
+    const insertedMap = new Map(inserted.map((p) => [p.slug, p.id]));
+
+    const allImagesToInsert: { package_id: string; image_url: string; is_cover: boolean; sort_order: number }[] = [];
+    const allVideosToInsert: { package_id: string; video_url: string; sort_order: number }[] = [];
+    const allItinerariesToInsert: { package_id: string; day_number: number; title: string; description: string | null }[] = [];
+    const allInclusionsToInsert: { package_id: string; item: string; sort_order: number }[] = [];
+    const allExclusionsToInsert: { package_id: string; item: string; sort_order: number }[] = [];
+    const allFaqsToInsert: { package_id: string; question: string; answer: string; sort_order: number }[] = [];
+
+    for (const prep of preparedCandidates) {
+      const packageId = insertedMap.get(prep.slug);
+      if (!packageId) continue;
+
+      // 1. Images
+      const images = Array.isArray(prep.item.imageUrls) ? prep.item.imageUrls.map((u) => u.trim()).filter(Boolean) : [];
+      images.forEach((url, idx) => {
+        allImagesToInsert.push({
+          package_id: packageId,
+          image_url: url,
+          is_cover: idx === 0,
+          sort_order: idx,
+        });
+      });
+
+      // 2. Videos
+      const videos = Array.isArray(prep.item.videoUrls) ? prep.item.videoUrls.map((u) => u.trim()).filter(Boolean) : [];
+      videos.forEach((url, idx) => {
+        allVideosToInsert.push({
+          package_id: packageId,
+          video_url: url,
+          sort_order: idx,
+        });
+      });
+
+      // 3. Itineraries
+      if (Array.isArray(prep.item.itineraryDays)) {
+        prep.item.itineraryDays
+          .filter((d) => d && d.title && d.title.trim())
+          .forEach((d) => {
+            allItinerariesToInsert.push({
+              package_id: packageId,
+              day_number: d.day_number,
+              title: d.title.trim(),
+              description: d.description?.trim() || null,
+            });
+          });
+      }
+
+      // 4. Inclusions
+      if (Array.isArray(prep.item.inclusions)) {
+        prep.item.inclusions
+          .map((i) => i?.trim())
+          .filter(Boolean)
+          .forEach((item, idx) => {
+            allInclusionsToInsert.push({
+              package_id: packageId,
+              item,
+              sort_order: idx,
+            });
+          });
+      }
+
+      // 5. Exclusions
+      if (Array.isArray(prep.item.exclusions)) {
+        prep.item.exclusions
+          .map((i) => i?.trim())
+          .filter(Boolean)
+          .forEach((item, idx) => {
+            allExclusionsToInsert.push({
+              package_id: packageId,
+              item,
+              sort_order: idx,
+            });
+          });
+      }
+
+      // 6. FAQs
+      if (Array.isArray(prep.item.faqs)) {
+        prep.item.faqs
+          .filter((f) => f && f.question?.trim() && f.answer?.trim())
+          .forEach((f, idx) => {
+            allFaqsToInsert.push({
+              package_id: packageId,
+              question: f.question.trim(),
+              answer: f.answer.trim(),
+              sort_order: idx,
+            });
+          });
+      }
+    }
+
+    // Insert all sub-resources in parallel
+    await Promise.all([
+      allImagesToInsert.length > 0 ? supabase.from('package_images').insert(allImagesToInsert) : Promise.resolve(),
+      allVideosToInsert.length > 0 ? supabase.from('package_videos').insert(allVideosToInsert) : Promise.resolve(),
+      allItinerariesToInsert.length > 0 ? supabase.from('package_itineraries').insert(allItinerariesToInsert) : Promise.resolve(),
+      allInclusionsToInsert.length > 0 ? supabase.from('package_inclusions').insert(allInclusionsToInsert) : Promise.resolve(),
+      allExclusionsToInsert.length > 0 ? supabase.from('package_exclusions').insert(allExclusionsToInsert) : Promise.resolve(),
+      allFaqsToInsert.length > 0 ? supabase.from('package_faqs').insert(allFaqsToInsert) : Promise.resolve(),
+    ]);
+
+    for (const pkg of inserted) {
+      try {
+        await logActivity({
+          action: 'package.bulk_created',
+          entityType: 'travel_packages',
+          entityId: pkg.id,
+          afterData: pkg,
+        });
+      } catch {}
+    }
+  }
+
+  revalidatePath('/travinco_dashboard/packages');
+  revalidatePath('/travinco_dashboard');
+  revalidatePath('/packages');
+
+  return {
+    count: inserted?.length || 0,
+    packages: inserted || [],
+  };
 }

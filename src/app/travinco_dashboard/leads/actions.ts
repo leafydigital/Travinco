@@ -7,7 +7,7 @@ import { z } from 'zod';
 
 const LEADS_PATH = '/travinco_dashboard/leads';
 
-export type LeadStatus = 'fresh_lead' | 'follow_up' | 'interested' | 'not_interested' | 'enquired';
+export type LeadStatus = 'fresh_lead' | 'follow_up' | 'interested' | 'not_interested' | 'enquired' | 'converted';
 
 async function checkLeadPermission(action: 'view' | 'edit' = 'edit') {
   const profile = await requireProfile();
@@ -119,8 +119,10 @@ export async function updateLead(
   leadId: string,
   data: Partial<LeadImportRow> & { status?: LeadStatus }
 ): Promise<{ error?: string }> {
-  const check = await checkLeadPermission('edit');
-  if (check.error) return { error: check.error };
+  const profile = await requireProfile();
+  if (!['admin', 'super_admin'].includes(profile.role)) {
+    return { error: 'Only admins can edit leads.' };
+  }
 
   const parsed = leadRowSchema.partial().safeParse(data);
   if (!parsed.success) {

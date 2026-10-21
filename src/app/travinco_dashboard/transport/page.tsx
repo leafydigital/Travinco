@@ -51,11 +51,27 @@ const columns: ColumnDef[] = [
 ];
 
 /* ── data (streamed) ──────────────────────────────────────── */
-async function TransportContent({ canEdit }: { canEdit: boolean }) {
+async function TransportContent({ canEdit, canDelete }: { canEdit: boolean; canDelete: boolean }) {
   const supabase = await createClient();
-  const { data } = await supabase.from('transport_vehicles').select('*').order('vehicle_type').order('company_name');
+  const [{ data }, { data: deletedSettingsData }] = await Promise.all([
+    supabase.from('transport_vehicles').select('*').order('vehicle_type').order('company_name'),
+    supabase.from('website_settings').select('key').like('key', 'deleted_transport_vehicle_%'),
+  ]);
 
-  const rows = (data ?? []).map((v) => ({
+  const deletedKeys = new Set(
+    (deletedSettingsData || []).map((s: { key: string }) => s.key.replace('deleted_transport_vehicle_', ''))
+  );
+
+  const activeVehicles = (data ?? []).filter(
+    (v: any) =>
+      v &&
+      v.is_deleted !== true &&
+      v.is_deleted !== 'true' &&
+      v.is_deleted !== 1 &&
+      !deletedKeys.has(String(v.id))
+  );
+
+  const rows = activeVehicles.map((v) => ({
     ...v,
     rate_label: `₹${Math.round(Number(v.amount)).toLocaleString('en-IN')} ${v.rate_basis === 'per_day' ? '/ day' : '/ trip'}`,
     free_label: `${v.free_km} km ${v.rate_basis === 'per_day' ? '/ day' : '/ trip'}`,
@@ -69,6 +85,7 @@ async function TransportContent({ canEdit }: { canEdit: boolean }) {
       fields={fields}
       columns={columns}
       canEdit={canEdit}
+      canDelete={canDelete}
       saveAction={saveTransportVehicle}
       deleteAction={deleteTransportVehicle}
       searchKeys={['vehicle_type', 'company_name', 'contact_person', 'contact_number']}
@@ -87,6 +104,7 @@ export default async function TransportPage() {
   await assertPageAccess(profile, 'transport');
   assertTourAccess(profile, 'masters');
   const editable = canEditMasters(profile);
+  const isAdmin = profile.role === 'admin' || profile.role === 'super_admin';
 
   return (
     <div className="space-y-5">
@@ -105,7 +123,7 @@ export default async function TransportPage() {
           </div>
         </div>
       }>
-        <TransportContent canEdit={editable} />
+        <TransportContent canEdit={editable} canDelete={isAdmin} />
       </Suspense>
     </div>
   );

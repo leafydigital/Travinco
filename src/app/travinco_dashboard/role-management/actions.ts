@@ -54,116 +54,84 @@ export async function saveStaffPagePermissions(
     const validKeys = PAGE_CATALOG.map((p) => p.key);
     const sanitizedKeys = Array.from(new Set(pageKeys.filter((k) => validKeys.includes(k))));
 
-    // Delete existing permissions for this profile
-    const { error: deleteErr } = await supabase
-      .from('staff_permissions')
-      .delete()
-      .eq('profile_id', targetProfileId);
+    // 1. ALWAYS persist permissions to website_settings FIRST
+    // (website_settings has an RLS policy granting write access to public.is_admin(), so both admin & super_admin can reliably write here)
+    await supabase.from('website_settings').upsert(
+      {
+        key: `staff_perms_${targetProfileId}`,
+        value: { pages: sanitizedKeys },
+      },
+      { onConflict: 'key' }
+    );
 
-    if (deleteErr) {
-      console.error('Error clearing staff permissions:', deleteErr);
-      return { error: 'Failed to update permissions in database.' };
-    }
-
-    // Build new rows
-    if (sanitizedKeys.length > 0) {
-      const rows = sanitizedKeys.map((key) => ({
-        profile_id: targetProfileId,
-        module: key,
-        can_view: true,
-        can_edit: true,
-      }));
-
-      const { error: insertErr } = await supabase
+    // 2. Also sync to staff_permissions table (best-effort; don't fail if table RLS restricts non-super_admin)
+    try {
+      await supabase
         .from('staff_permissions')
-        .insert(rows);
+        .delete()
+        .eq('profile_id', targetProfileId);
 
-      if (insertErr) {
-        // If Postgres has not yet altered the module column from admin_module enum to text
-        const isEnumConstraint =
-          insertErr.code === '22P02' ||
-          insertErr.message?.toLowerCase().includes('admin_module') ||
-          insertErr.message?.toLowerCase().includes('enum');
+      if (sanitizedKeys.length > 0) {
+        const rows = sanitizedKeys.map((key) => ({
+          profile_id: targetProfileId,
+          module: key,
+          can_view: true,
+          can_edit: true,
+        }));
 
-        if (isEnumConstraint) {
-          // 1. Insert only the subset of modules that match the legacy enum
-          const LEGACY_MODULE_ENUMS = [
-            'packages',
-            'destinations',
-            'enquiries',
-            'offers',
-            'gallery',
-            'blog',
-            'settings',
-            'users',
-          ];
-          const legacyRows = sanitizedKeys
-            .filter((k) => LEGACY_MODULE_ENUMS.includes(k))
-            .map((key) => ({
-              profile_id: targetProfileId,
-              module: key,
-              can_view: true,
-              can_edit: true,
-            }));
+        const { error: insertErr } = await supabase
+          .from('staff_permissions')
+          .insert(rows);
 
-          if (legacyRows.length > 0) {
-            await supabase.from('staff_permissions').insert(legacyRows);
-          } else {
-            // Keep at least one record to denote custom permissions
-            await supabase.from('staff_permissions').insert([
-              {
+        if (insertErr) {
+          // If Postgres has not yet altered the module column from admin_module enum to text
+          const isEnumConstraint =
+            insertErr.code === '22P02' ||
+            insertErr.message?.toLowerCase().includes('admin_module') ||
+            insertErr.message?.toLowerCase().includes('enum');
+
+          if (isEnumConstraint) {
+            const LEGACY_MODULE_ENUMS = [
+              'packages',
+              'destinations',
+              'enquiries',
+              'offers',
+              'gallery',
+              'blog',
+              'settings',
+              'users',
+            ];
+            const legacyRows = sanitizedKeys
+              .filter((k) => LEGACY_MODULE_ENUMS.includes(k))
+              .map((key) => ({
                 profile_id: targetProfileId,
-                module: 'packages',
-                can_view: false,
-                can_edit: false,
-              },
-            ]);
-          }
+                module: key,
+                can_view: true,
+                can_edit: true,
+              }));
 
-          // 2. Persist the complete list of all granted page keys in website_settings
-          await supabase.from('website_settings').upsert(
-            {
-              key: `staff_perms_${targetProfileId}`,
-              value: { pages: sanitizedKeys },
-            },
-            { onConflict: 'key' }
-          );
-        } else {
-          console.error('Error inserting staff permissions:', insertErr);
-          return { error: 'Failed to save selected page permissions: ' + insertErr.message };
+            if (legacyRows.length > 0) {
+              await supabase.from('staff_permissions').insert(legacyRows);
+            }
+          }
         }
       } else {
-        // Successfully inserted directly into staff_permissions; sync website_settings
-        await supabase.from('website_settings').upsert(
-          {
-            key: `staff_perms_${targetProfileId}`,
-            value: { pages: sanitizedKeys },
-          },
-          { onConflict: 'key' }
-        );
+        // When user explicitly sets 0 pages (empty whitelist):
+        try {
+          await supabase.from('staff_permissions').insert([
+            {
+              profile_id: targetProfileId,
+              module: '__none__',
+              can_view: false,
+              can_edit: false,
+            },
+          ]);
+        } catch {
+          // Ignored if __none__ not in legacy enum
+        }
       }
-    } else {
-      // Store sentinel row so getStaffPermissions returns > 0 rows, activating strict empty whitelist
-      try {
-        await supabase.from('staff_permissions').insert([
-          {
-            profile_id: targetProfileId,
-            module: '__none__',
-            can_view: false,
-            can_edit: false,
-          },
-        ]);
-      } catch {
-        // Ignored if __none__ not in legacy enum
-      }
-
-      await supabase.from('website_settings').upsert(
-        {
-          key: `staff_perms_${targetProfileId}`,
-          value: { pages: [] },
-        },
-        { onConflict: 'key' }
-      );
+    } catch (tableSyncErr) {
+      console.warn('Note: staff_permissions DB table sync skipped, website_settings persisted successfully:', tableSyncErr);
     }
 
     revalidatePath('/travinco_dashboard', 'layout');

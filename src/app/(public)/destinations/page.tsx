@@ -1,60 +1,66 @@
 import { createClient } from '@/lib/supabase/server';
-import Link from 'next/link';
-import Image from 'next/image';
+import {
+  DestinationsExplorer,
+  type DestinationExplorerItem,
+} from '@/components/public/destinations-explorer';
+import { getDestinationsPageContent } from '@/lib/destinations-page-content';
 import type { Metadata } from 'next';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export const metadata: Metadata = {
-  title: 'Destinations',
-  description: 'Explore the destinations we plan trips to, each with its own curated set of packages.',
+  title: 'Destinations | Handcrafted Holiday Regions & Sanctuaries',
+  description:
+    'Explore iconic travel destinations across Asia, each handpicked with bespoke itineraries, luxury boutique resorts, and private chauffeured tours.',
 };
 
-export default async function DestinationsPage() {
+export default async function DestinationsPage({
+  searchParams,
+}: {
+  searchParams: { search?: string; q?: string };
+}) {
   const supabase = await createClient();
-  const { data: destinations } = await supabase
-    .from('destinations')
-    .select('id, name, slug, country, description, cover_image_url')
-    .eq('status', 'published')
-    .order('sort_order');
+
+  const [
+    { data: destinationsData },
+    { data: deletedSettingsData },
+    pageContent,
+  ] = await Promise.all([
+    supabase
+      .from('destinations')
+      .select(
+        'id, name, slug, country, description, cover_image_url, is_featured, is_deleted, status, sort_order'
+      )
+      .eq('status', 'published')
+      .order('sort_order', { ascending: true })
+      .order('name', { ascending: true }),
+    supabase.from('website_settings').select('key').like('key', 'deleted_destination_%'),
+    getDestinationsPageContent(),
+  ]);
+
+  const deletedKeys = new Set(
+    (deletedSettingsData || []).map((s: { key: string }) => s.key.replace('deleted_destination_', ''))
+  );
+
+  // Guarantee that is_deleted true destinations NEVER show on customer side
+  const mappedDestinations: DestinationExplorerItem[] = (destinationsData ?? [])
+    .filter((d: any) => d.is_deleted !== true && !deletedKeys.has(d.id))
+    .map((d: any) => ({
+      id: d.id,
+      name: d.name,
+      slug: d.slug,
+      country: d.country,
+      description: d.description,
+      cover_image_url: d.cover_image_url,
+      is_featured: Boolean(d.is_featured),
+    }));
 
   return (
-    <div className="container-page pt-32 pb-12">
-      <div className="mb-8">
-        <h1 className="font-display text-3xl font-semibold text-ink-900">Destinations</h1>
-        <p className="mt-2 text-ink-500">{(destinations ?? []).length} places we know well</p>
-      </div>
-
-      {(destinations ?? []).length === 0 ? (
-        <p className="py-16 text-center text-ink-400">Destinations are being added — check back soon.</p>
-      ) : (
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {(destinations ?? []).map((d) => (
-            <Link
-              key={d.id}
-              href={`/destinations/${d.slug}`}
-              className="card-hover group overflow-hidden"
-            >
-              <div className="relative aspect-[4/3] bg-ink-100">
-                {d.cover_image_url ? (
-                  <Image
-                    src={d.cover_image_url}
-                    alt={d.name}
-                    fill
-                    className="object-cover transition-transform duration-300 group-hover:scale-105"
-                    sizes="(min-width: 1024px) 320px, (min-width: 640px) 45vw, 90vw"
-                  />
-                ) : (
-                  <div className="flex h-full items-center justify-center text-ink-300">No image</div>
-                )}
-              </div>
-              <div className="p-4">
-                <h2 className="font-display text-lg font-semibold text-ink-900">{d.name}</h2>
-                {d.country && <p className="text-sm text-ink-400">{d.country}</p>}
-                {d.description && <p className="mt-2 text-sm text-ink-500 line-clamp-2">{d.description}</p>}
-              </div>
-            </Link>
-          ))}
-        </div>
-      )}
-    </div>
+    <DestinationsExplorer
+      initialDestinations={mappedDestinations}
+      initialSearch={searchParams.search ?? searchParams.q ?? ''}
+      pageContent={pageContent}
+    />
   );
 }

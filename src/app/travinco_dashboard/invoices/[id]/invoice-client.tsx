@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Ban, FileDown, Pencil, Plus, Printer, Trash2, X } from 'lucide-react';
@@ -75,8 +75,7 @@ export function InvoiceToolbar({ id, inv, fileName, canCancel, companyState, isA
           <>
             Are you sure you want to delete invoice{' '}
             <strong className="text-ink-900">{inv.invoice_number}</strong>? This
-            action will permanently remove it and any associated payment records
-            from the database. This cannot be undone.
+            action will remove it from the active invoices list.
           </>
         }
         onConfirm={() => {
@@ -111,6 +110,8 @@ function InvoiceEditor({ id, inv, companyState, onClose }: { id: string; inv: In
     tax_mode: inv.tax_mode,
     notes: inv.notes ?? '',
     terms: inv.terms ?? '',
+    markup_pct: String(inv.markup_pct ?? 15),
+    markup_amount: String(inv.markup_amount ?? ''),
   });
   const [items, setItems] = useState(inv.items.map((i) => ({ description: i.description, sac: i.sac, qty: String(i.qty), rate: String(i.rate) })));
   const set = (k: keyof typeof f, v: string) => setF((s) => ({ ...s, [k]: v }));
@@ -118,9 +119,19 @@ function InvoiceEditor({ id, inv, companyState, onClose }: { id: string; inv: In
   const taxable = Math.max(0, subtotal - (Number(f.discount) || 0));
   const total = Math.round(taxable * (1 + (Number(f.gst_pct) || 0) / 100));
 
+  const markupPctVal = Number(f.markup_pct) || 0;
+  const computedMarkup = markupPctVal > 0 ? Math.round((taxable * markupPctVal) / (100 + markupPctVal)) : 0;
+  const currentMarkupAmount = Number(f.markup_amount) || computedMarkup;
+
   const save = () =>
     start(async () => {
-      const r = await updateInvoice(id, { ...f, items });
+      const finalMarkupAmt = Number(f.markup_amount) || computedMarkup;
+      const r = await updateInvoice(id, {
+        ...f,
+        markup_pct: markupPctVal,
+        markup_amount: finalMarkupAmt,
+        items,
+      });
       if (r.error) return void toast.error(r.error);
       toast.success('Invoice saved');
       onClose();
@@ -192,9 +203,46 @@ function InvoiceEditor({ id, inv, companyState, onClose }: { id: string; inv: In
         </div>
         <div className="mt-3 grid gap-4 sm:grid-cols-2">
           {input('discount', 'Discount (₹, before GST)', 'number')}
-          <div className="rounded-lg bg-ink-50 p-3 text-sm">
-            Taxable ₹{taxable.toLocaleString('en-IN')} · Total ≈ <b>₹{total.toLocaleString('en-IN')}</b>
+          <div>
+            <label className="label">Markup % (Profit margin)</label>
+            <div className="relative">
+              <input
+                className="input pr-8"
+                type="number"
+                step="any"
+                value={f.markup_pct}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  const pct = Number(val) || 0;
+                  const amt = pct > 0 ? Math.round((taxable * pct) / (100 + pct)) : 0;
+                  setF((s) => ({ ...s, markup_pct: val, markup_amount: String(amt) }));
+                }}
+                placeholder="15"
+              />
+              <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs font-semibold text-ink-400">
+                %
+              </span>
+            </div>
+            <p className="mt-1 text-xs text-ink-500">
+              Markup Price: <span className="font-semibold text-emerald-700">₹{currentMarkupAmount.toLocaleString('en-IN')}</span>
+            </p>
           </div>
+
+          <div className="sm:col-span-2 rounded-lg bg-emerald-50/60 border border-emerald-100 p-3 text-sm flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <span className="text-ink-600">Taxable: </span>
+              <span className="font-semibold text-ink-900">₹{taxable.toLocaleString('en-IN')}</span>
+              <span className="mx-2 text-ink-300">·</span>
+              <span className="text-emerald-700 font-medium">Markup Price: </span>
+              <span className="font-bold text-emerald-800">₹{currentMarkupAmount.toLocaleString('en-IN')}</span>
+              <span className="text-xs text-emerald-600 font-medium ml-1">({markupPctVal}%)</span>
+            </div>
+            <div>
+              <span className="text-ink-600">Total Invoice Amount ≈ </span>
+              <span className="font-bold text-ink-950 text-base">₹{total.toLocaleString('en-IN')}</span>
+            </div>
+          </div>
+
           <div className="sm:col-span-2">
             <label className="label">Notes</label>
             <textarea className="input" rows={2} value={f.notes} onChange={(e) => set('notes', e.target.value)} />
@@ -217,10 +265,10 @@ type Payment = { id: string; paid_on: string; amount: number; method: string; re
 
 export function PaymentsPanel({
   id,
-  payments,
-  balance,
+  payments: initialPayments,
+  balance: initialBalance,
   totalAmount,
-  amountPaid,
+  amountPaid: initialAmountPaid,
   cancelled,
   isAdmin,
 }: {
@@ -233,25 +281,42 @@ export function PaymentsPanel({
   isAdmin: boolean;
 }) {
   const router = useRouter();
+  const [paymentsList, setPaymentsList] = useState<Payment[]>(initialPayments);
   const [pending, start] = useTransition();
+  const [deleting, startDelete] = useTransition();
+  const [paymentToDelete, setPaymentToDelete] = useState<Payment | null>(null);
   const today = new Date().toISOString().slice(0, 10);
   const [f, setF] = useState({ paid_on: today, amount: '', method: 'upi', reference: '', notes: '' });
+
+  useEffect(() => {
+    setPaymentsList(initialPayments);
+  }, [initialPayments]);
+
+  const computedTotal = totalAmount ?? (initialBalance + (initialAmountPaid ?? 0));
+  const computedPaid = paymentsList.reduce((s, p) => s + Number(p.amount || 0), 0);
+  const balance = Math.max(0, computedTotal - computedPaid);
 
   const enteredAmount = Number(f.amount) || 0;
   const newBalance = Math.max(0, balance - enteredAmount);
 
-  const add = () =>
+  const add = () => {
+    if (pending || !(enteredAmount > 0)) return;
+    const payload = { ...f };
+
     start(async () => {
-      const r = await addInvoicePayment(id, f);
-      if (r.error) return void toast.error(r.error);
+      const r = await addInvoicePayment(id, payload);
+      if (r.error) {
+        return void toast.error(r.error);
+      }
       toast.success('Payment recorded successfully');
       if (r.info) toast.message(r.info);
+      if (r.payment) {
+        setPaymentsList((prev) => [...prev, r.payment!]);
+      }
       setF({ paid_on: today, amount: '', method: f.method, reference: '', notes: '' });
       router.refresh();
     });
-
-  const computedTotal = totalAmount ?? (balance + (amountPaid ?? 0));
-  const computedPaid = amountPaid ?? (payments.reduce((s, p) => s + Number(p.amount || 0), 0));
+  };
 
   return (
     <div className="card p-5 space-y-4 print:hidden">
@@ -290,10 +355,10 @@ export function PaymentsPanel({
 
       {/* Payment History List */}
       <div>
-        <p className="text-xs font-semibold uppercase tracking-wider text-ink-500 mb-2">Payment History ({payments.length})</p>
+        <p className="text-xs font-semibold uppercase tracking-wider text-ink-500 mb-2">Payment History ({paymentsList.length})</p>
         <ul className="space-y-2 text-sm max-h-52 overflow-y-auto">
-          {payments.length === 0 && <li className="text-ink-400 text-xs py-2 text-center bg-ink-50/50 rounded-lg">No payments recorded yet.</li>}
-          {payments.map((p) => (
+          {paymentsList.length === 0 && <li className="text-ink-400 text-xs py-2 text-center bg-ink-50/50 rounded-lg">No payments recorded yet.</li>}
+          {paymentsList.map((p) => (
             <li key={p.id} className="flex items-start justify-between gap-2 rounded-lg border border-ink-100 bg-white p-2.5 shadow-sm">
               <div className="space-y-0.5">
                 <div className="flex items-center gap-2">
@@ -313,15 +378,8 @@ export function PaymentsPanel({
                   className="rounded p-1 text-ink-400 hover:text-red-600 transition-colors"
                   aria-label="Delete payment"
                   title="Delete payment"
-                  onClick={() =>
-                    window.confirm('Delete this payment (and its Income entry)?') &&
-                    start(async () => {
-                      const r = await deleteInvoicePayment(id, p.id);
-                      if (r.error) return void toast.error(r.error);
-                      toast.success('Payment deleted');
-                      router.refresh();
-                    })
-                  }
+                  disabled={deleting}
+                  onClick={() => setPaymentToDelete(p)}
                 >
                   <Trash2 className="h-4 w-4" />
                 </button>
@@ -423,6 +481,46 @@ export function PaymentsPanel({
           </button>
         </div>
       )}
+
+      <ConfirmDeleteDialog
+        isOpen={Boolean(paymentToDelete)}
+        isPending={deleting}
+        title="Delete Payment"
+        description={
+          paymentToDelete ? (
+            <>
+              Are you sure you want to delete the payment of{' '}
+              <strong className="text-ink-900">
+                ₹{Number(paymentToDelete.amount).toLocaleString('en-IN')}
+              </strong>
+              {paymentToDelete.reference ? (
+                <> (Ref: <span className="font-mono">{paymentToDelete.reference}</span>)</>
+              ) : null}
+              {paymentToDelete.income_id ? ' and its corresponding Income entry' : ''}?
+              This action cannot be undone.
+            </>
+          ) : null
+        }
+        confirmLabel="Delete Payment"
+        onConfirm={() => {
+          if (!paymentToDelete) return;
+          const target = paymentToDelete;
+
+          startDelete(async () => {
+            const r = await deleteInvoicePayment(id, target.id);
+            if (r.error) {
+              return void toast.error(r.error);
+            }
+            setPaymentsList((prev) => prev.filter((p) => p.id !== target.id));
+            setPaymentToDelete(null);
+            toast.success('Payment deleted successfully');
+            router.refresh();
+          });
+        }}
+        onClose={() => {
+          if (!deleting) setPaymentToDelete(null);
+        }}
+      />
     </div>
   );
 }

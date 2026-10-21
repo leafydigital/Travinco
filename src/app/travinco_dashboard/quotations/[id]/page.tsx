@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/server';
 import { requireProfile } from '@/lib/supabase/auth-helpers';
 import { assertTourAccess, isAdminRole } from '@/lib/tour/access';
 import { whatsappText, inr } from '@/lib/tour/engine';
+import { getTourSettings } from '@/lib/tour/data';
 import { formatDate, formatDateTime } from '@/lib/utils/format';
 import { QuoteDocument } from '@/components/tour/quote-document';
 import { QuoteStatusBadge } from '@/components/tour/status-badges';
@@ -18,11 +19,12 @@ export default async function QuotationPage({ params, searchParams }: { params: 
   const profile = await requireProfile();
   assertTourAccess(profile, 'quotations');
   const supabase = await createClient();
-  const [{ data: q }, { data: inv }] = await Promise.all([
+  const [{ data: q }, { data: inv }, settings] = await Promise.all([
     supabase.from('quotations').select('*, profiles:created_by(full_name)').eq('id', params.id).maybeSingle(),
     supabase.from('invoices').select('id, invoice_number, status').eq('quotation_id', params.id).neq('status', 'cancelled').maybeSingle(),
+    getTourSettings(supabase),
   ]);
-  if (!q) notFound();
+  if (!q || (q as any).is_deleted === true) notFound();
   const snap = q.snapshot as QuoteSnapshot;
   const by = (Array.isArray(q.profiles) ? q.profiles[0] : q.profiles) as { full_name: string } | null;
   const fileName = `${q.quote_number} ${q.guest_name} ${snap.duration}`.replace(/[^\w\- ]+/g, '').replace(/\s+/g, '_');
@@ -31,7 +33,7 @@ export default async function QuotationPage({ params, searchParams }: { params: 
   return (
     <div className="space-y-5 pb-16 print:space-y-0 print:pb-0">
       <div className="space-y-3 print:hidden">
-        <Link href="/admin/quotations" className="inline-flex items-center gap-1 text-sm text-ink-500 hover:text-brand-700">
+        <Link href="/travinco_dashboard/quotations" className="inline-flex items-center gap-1 text-sm text-ink-500 hover:text-brand-700">
           <ArrowLeft className="h-4 w-4" /> Quotations
         </Link>
         <div className="flex flex-wrap items-start justify-between gap-4">
@@ -107,7 +109,7 @@ export default async function QuotationPage({ params, searchParams }: { params: 
       </div>
 
       <div className="card overflow-hidden print:border-0 print:shadow-none">
-        <QuoteDocument s={snap} quoteNumber={q.quote_number} />
+        <QuoteDocument s={snap} quoteNumber={q.quote_number} logosConfig={settings.logos_config} />
       </div>
     </div>
   );

@@ -172,6 +172,14 @@ export function LeadsTable({ leads, totalCount, currentPage, pageSize, isAdmin }
             >
               Enquired
             </button>
+            <button
+              type="button"
+              disabled={isBulkPending}
+              onClick={() => handleBulkStatus('converted')}
+              className="rounded bg-teal-100 px-2 py-1 font-medium text-teal-700 hover:bg-teal-200 disabled:opacity-50"
+            >
+              Converted
+            </button>
 
             {isAdmin && (
               <button
@@ -198,7 +206,7 @@ export function LeadsTable({ leads, totalCount, currentPage, pageSize, isAdmin }
 
       {/* Main Table */}
       <div className="overflow-x-auto min-h-[340px] pb-32">
-        <table className="w-full text-sm">
+        <table className="w-full min-w-[850px] text-sm">
           <thead>
             <tr className="border-b border-ink-100 text-left text-xs uppercase tracking-wide text-ink-400 bg-ink-50/50">
               <th className="w-10 px-4 py-3">
@@ -227,14 +235,14 @@ export function LeadsTable({ leads, totalCount, currentPage, pageSize, isAdmin }
               <th className="px-4 py-3 font-semibold">To Date</th>
               <th className="px-4 py-3 text-center font-semibold">People</th>
               <th className="px-4 py-3 font-semibold">Status</th>
-              <th className="px-4 py-3 text-right font-semibold">Actions</th>
+              {isAdmin && <th className="px-4 py-3 text-right font-semibold">Actions</th>}
             </tr>
           </thead>
 
           <tbody className="divide-y divide-ink-50">
             {leads.length === 0 ? (
               <tr>
-                <td colSpan={12} className="px-5 py-16 text-center text-ink-400">
+                <td colSpan={isAdmin ? 12 : 11} className="px-5 py-16 text-center text-ink-400">
                   No leads found matching your criteria.
                 </td>
               </tr>
@@ -278,9 +286,11 @@ export function LeadsTable({ leads, totalCount, currentPage, pageSize, isAdmin }
                     <td className="px-4 py-3">
                       <LeadStatusSelect id={lead.id} status={lead.status} />
                     </td>
-                    <td className="px-4 py-3">
-                      <LeadRowActions lead={lead} isAdmin={isAdmin} />
-                    </td>
+                    {isAdmin && (
+                      <td className="px-4 py-3">
+                        <LeadRowActions lead={lead} isAdmin={isAdmin} />
+                      </td>
+                    )}
                   </tr>
                 );
               })

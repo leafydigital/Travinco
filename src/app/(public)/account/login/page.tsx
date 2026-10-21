@@ -64,9 +64,14 @@ export default function LoginPage() {
         <p className="mt-1 text-sm text-ink-500">See your booking history and manage your trips.</p>
 
         {reason && REASON_MESSAGES[reason] && (
-          <p className="mt-4 rounded-lg border border-sand-200 bg-sand-50 px-3 py-2 text-xs text-sand-800">
-            {REASON_MESSAGES[reason]}
-          </p>
+          <div className="mt-4 rounded-lg border border-sand-200 bg-sand-50 px-3 py-2 text-xs text-sand-800">
+            <p>{REASON_MESSAGES[reason]}</p>
+            {reason === 'not_customer' && (
+              <Link href="/travinco_admin_login" className="mt-1 inline-block font-semibold text-brand-600 hover:underline">
+                Go to Staff Portal &rarr;
+              </Link>
+            )}
+          </div>
         )}
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-4">

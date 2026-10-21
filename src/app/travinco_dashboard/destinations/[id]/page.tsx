@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import { DestinationForm } from '../destination-form';
 import { StatusBadge } from '@/components/ui/status-badge';
 import Link from 'next/link';
+import { ArrowLeft } from 'lucide-react';
 
 export default async function EditDestinationPage({ params }: { params: { id: string } }) {
   const profile = await requireProfile();
@@ -20,8 +21,9 @@ export default async function EditDestinationPage({ params }: { params: { id: st
           <h1 className="text-xl font-semibold text-ink-900">{destination.name}</h1>
           <StatusBadge status={destination.status} />
         </div>
-        <Link href="/travinco_dashboard/destinations" className="btn-outline">
-          Back
+        <Link href="/travinco_dashboard/destinations" className="btn-outline inline-flex items-center gap-1.5">
+          <ArrowLeft className="h-4 w-4" />
+          <span>Back to destinations</span>
         </Link>
       </div>
       <DestinationForm

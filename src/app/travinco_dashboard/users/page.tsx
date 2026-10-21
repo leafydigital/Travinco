@@ -11,9 +11,7 @@ export const revalidate = 0;
 export default async function AdminUsersPage() {
   const profile = await requireProfile();
   if (profile.role !== 'admin' && profile.role !== 'super_admin') {
-    const supabase = await createClient();
-    await supabase.auth.signOut();
-    redirect('/login?reason=forbidden');
+    redirect('/travinco_dashboard?error=unauthorized');
   }
 
   const supabase = await createClient();

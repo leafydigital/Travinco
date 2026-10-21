@@ -67,8 +67,7 @@ export function InvoiceRowActions({
           <>
             Are you sure you want to delete invoice{' '}
             <strong className="text-ink-900">{invoiceNumber}</strong>? This
-            action will permanently remove it and any associated payment records
-            from the database. This cannot be undone.
+            action will remove it from the active invoices list.
           </>
         }
         onConfirm={handleDelete}

@@ -117,7 +117,7 @@ export async function saveQuotation(
 
   const res = id
     ? await supabase.from('quotations').update(row).eq('id', id).select('id').single()
-    : await supabase.from('quotations').insert({ ...row, created_by: profile.id }).select('id').single();
+    : await supabase.from('quotations').insert({ ...row, created_by: profile.id, is_deleted: false }).select('id').single();
   if (res.error) {
     console.error('saveQuotation', res.error.message);
     return { error: 'Could not save the quotation.' };
@@ -167,16 +167,50 @@ export async function deleteQuotation(id: string): Promise<{ error?: string }> {
   const profile = await requireProfile();
   if (!isAdminRole(profile)) return { error: 'Only admins can delete quotations.' };
   const supabase = await createClient();
-  const { data: inv } = await supabase.from('invoices').select('id').eq('quotation_id', id).neq('status', 'cancelled').limit(1);
-  // Soft delete quotation so it is hidden from tables but kept in database
-  let { error } = await supabase.from('quotations').update({ is_deleted: true } as any).eq('id', id);
-  if (error && error.message?.includes('is_deleted')) {
-    const fallback = await supabase.from('quotations').update({ status: 'cancelled' } as any).eq('id', id);
-    if (fallback.error) return { error: fallback.error.message };
-  } else if (error) {
-    return { error: 'Could not delete the quotation: ' + error.message };
+
+  const { data: inv } = await supabase
+    .from('invoices')
+    .select('id')
+    .eq('quotation_id', id)
+    .neq('status', 'cancelled')
+    .limit(1);
+
+  if (inv && inv.length > 0) {
+    return { error: 'This quotation has an active invoice and cannot be deleted. Cancel the invoice first.' };
   }
+
+  // 1. Try RPC soft_delete_quotation
+  const { error: rpcError } = await supabase.rpc('soft_delete_quotation', {
+    quote_id: id,
+  });
+
+  // 2. Direct update fallback
+  if (rpcError) {
+    let { error } = await supabase
+      .from('quotations')
+      .update({ is_deleted: true } as any)
+      .eq('id', id);
+
+    if (error && error.message?.includes('is_deleted')) {
+      console.warn('Column is_deleted missing from quotations table. Using website_settings marker.');
+    } else if (error) {
+      return { error: 'Could not delete the quotation: ' + error.message };
+    }
+  }
+
+  // 3. Fallback tracking in website_settings so it is always filtered out
+  try {
+    await supabase.from('website_settings').upsert({
+      key: `deleted_quotation_${id}`,
+      value: { is_deleted: true, deleted_at: new Date().toISOString() },
+    });
+  } catch (err) {
+    console.warn('Failed to record deleted_quotation marker:', err);
+  }
+
   revalidatePath('/travinco_dashboard/quotations');
+  revalidatePath('/travinco_dashboard');
+  revalidatePath(`/admin/quotations/${id}`);
   return {};
 }
 

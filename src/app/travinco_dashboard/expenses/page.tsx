@@ -3,8 +3,7 @@ import { requireProfile, assertPageAccess } from '@/lib/supabase/auth-helpers';
 import { redirect } from 'next/navigation';
 import { formatCurrency, formatDate } from '@/lib/utils/format';
 import { ExpenseQuickAdd } from './expense-quick-add';
-import { DeleteFinanceRowButton } from '../delete-finance-row-button';
-import { deleteExpense } from '../finance-actions';
+import { ExpenseRowActions } from './expense-row-actions';
 import { Suspense } from 'react';
 
 const PAGE_SIZE = 25;
@@ -17,11 +16,13 @@ function ExpensesTableSkeleton() {
     <>
       {Array.from({ length: 8 }).map((_, i) => (
         <tr key={i} className="border-b border-ink-50 last:border-0">
-          {Array.from({ length: 6 }).map((_, j) => (
-            <td key={j} className="px-5 py-3">
-              <div className="h-4 w-full animate-pulse rounded bg-ink-100" />
-            </td>
-          ))}
+          <td className="px-3 sm:px-4 py-3"><div className="h-4 w-20 animate-pulse rounded bg-ink-100" /></td>
+          <td className="px-3 sm:px-4 py-3"><div className="h-4 w-24 animate-pulse rounded bg-ink-100" /></td>
+          <td className="px-3 sm:px-4 py-3"><div className="h-4 w-full animate-pulse rounded bg-ink-100" /></td>
+          <td className="hidden md:table-cell px-3 sm:px-4 py-3"><div className="h-4 w-20 animate-pulse rounded bg-ink-100" /></td>
+          <td className="hidden sm:table-cell px-3 sm:px-4 py-3"><div className="h-4 w-16 animate-pulse rounded bg-ink-100" /></td>
+          <td className="px-3 sm:px-4 py-3 text-right"><div className="h-4 w-16 animate-pulse rounded bg-ink-100 ml-auto" /></td>
+          <td className="px-3 sm:px-4 py-3 text-right"><div className="h-6 w-12 animate-pulse rounded bg-ink-100 ml-auto" /></td>
         </tr>
       ))}
     </>
@@ -32,25 +33,47 @@ function ExpensesTableSkeleton() {
 async function ExpensesContent({ searchParams }: { searchParams: SearchParams }) {
   const profile = await requireProfile();
   await assertPageAccess(profile, 'expenses');
+  const isAdmin = profile.role === 'admin' || profile.role === 'super_admin';
+  const canEdit = ['accounts_staff', 'admin', 'super_admin'].includes(profile.role);
 
   const supabase = await createClient();
   const page = Math.max(1, Number(searchParams.page ?? 1));
   const from = (page - 1) * PAGE_SIZE;
   const to = from + PAGE_SIZE - 1;
 
-  const [{ data: expenses, count }, { data: categories }] = await Promise.all([
+  const [
+    { data: expensesData, count: expensesCount, error: expensesError },
+    { data: categories },
+    { data: deletedSettingsData },
+  ] = await Promise.all([
     supabase
       .from('expenses')
-      .select('*, expense_categories(name)', { count: 'exact' })
+      .select('*, expense_categories(id, name)', { count: 'exact' })
       .order('expense_date', { ascending: false })
       .range(from, to),
     supabase.from('expense_categories').select('id, name').eq('is_active', true).order('sort_order'),
+    supabase.from('website_settings').select('key').like('key', 'deleted_expense_%'),
   ]);
 
-  const rawExpenses = expenses ?? [];
-  const filteredExpenses = rawExpenses.filter((r: any) => r.is_deleted !== true);
+  if (expensesError) {
+    console.error('Error fetching expenses:', expensesError.message);
+  }
+
+  const deletedExpenseKeys = new Set(
+    (deletedSettingsData || []).map((s: { key: string }) => s.key.replace('deleted_expense_', ''))
+  );
+
+  const rawExpenses = expensesData ?? [];
+  const filteredExpenses = rawExpenses.filter(
+    (r: any) =>
+      r &&
+      r.is_deleted !== true &&
+      r.is_deleted !== 'true' &&
+      r.is_deleted !== 1 &&
+      !deletedExpenseKeys.has(r.id)
+  );
   const total = filteredExpenses.reduce((sum, r) => sum + Number(r.amount), 0);
-  const totalPages = Math.max(1, Math.ceil((count ?? 0) / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(((expensesCount ?? filteredExpenses.length) || 0) / PAGE_SIZE));
 
   return (
     <>
@@ -62,44 +85,57 @@ async function ExpensesContent({ searchParams }: { searchParams: SearchParams })
       </tr>
       {filteredExpenses.length === 0 && (
         <tr>
-          <td colSpan={7} className="px-5 py-10 text-center text-ink-400">
+          <td colSpan={7} className="px-4 py-10 text-center text-ink-400">
             No expenses recorded yet.
           </td>
         </tr>
       )}
       {filteredExpenses.map((row) => (
-        <tr key={row.id} className="border-b border-ink-50 last:border-0">
-          <td className="px-5 py-3 text-ink-600">{formatDate(row.expense_date)}</td>
-          <td className="px-5 py-3 text-ink-500">{row.expense_number}</td>
-          <td className="px-5 py-3 text-ink-600">
+        <tr key={row.id} className="border-b border-ink-50 last:border-0 hover:bg-sand-50/40 transition-colors">
+          <td className="px-3 sm:px-4 py-3 text-ink-600 whitespace-nowrap text-xs sm:text-sm">{formatDate(row.expense_date)}</td>
+          <td className="px-3 sm:px-4 py-3 text-ink-700 font-medium whitespace-nowrap text-xs sm:text-sm">
             {(() => {
               const cat = row.expense_categories as { name: string } | { name: string }[] | null;
               return (Array.isArray(cat) ? cat[0]?.name : cat?.name) ?? '—';
             })()}
           </td>
-          <td className="px-5 py-3 text-ink-600">{row.supplier ?? '—'}</td>
-          <td className="px-5 py-3 capitalize text-ink-500">{row.payment_method.replace('_', ' ')}</td>
-          <td className="px-5 py-3 text-right font-medium text-red-600">
+          <td className="px-3 sm:px-4 py-3 text-ink-600 max-w-[160px] sm:max-w-xs truncate text-xs sm:text-sm" title={row.description || undefined}>
+            {row.description || '—'}
+          </td>
+          <td className="hidden md:table-cell px-3 sm:px-4 py-3 text-ink-600 max-w-[120px] truncate text-xs sm:text-sm">{row.supplier ?? '—'}</td>
+          <td className="hidden sm:table-cell px-3 sm:px-4 py-3 capitalize text-ink-500 whitespace-nowrap text-xs sm:text-sm">{row.payment_method.replace('_', ' ')}</td>
+          <td className="px-3 sm:px-4 py-3 text-right font-medium text-red-600 whitespace-nowrap text-xs sm:text-sm">
             {formatCurrency(row.amount)}
           </td>
-          <td className="px-5 py-3 text-right">
-            <DeleteFinanceRowButton id={row.id} action={deleteExpense} />
+          <td className="px-3 sm:px-4 py-3 text-right whitespace-nowrap">
+            <ExpenseRowActions
+              row={row}
+              categories={categories ?? []}
+              canEdit={canEdit}
+              isAdmin={isAdmin}
+            />
           </td>
         </tr>
       ))}
       {totalPages > 1 && (
         <tr>
-          <td colSpan={7} className="px-5 py-3 text-sm text-ink-500">
+          <td colSpan={7} className="px-4 py-3 text-sm text-ink-500">
             Page {page} of {totalPages}
           </td>
         </tr>
       )}
       {/* Summary footer */}
-      <tr className="border-t border-ink-100 bg-ink-50/50 font-medium">
-        <td colSpan={5} className="px-5 py-3 text-ink-600">
-          {count ?? 0} entries · Total shown
+      <tr className="border-t border-ink-100 bg-ink-50/50 font-medium text-xs sm:text-sm">
+        <td colSpan={3} className="px-3 sm:px-4 py-3 text-ink-600 sm:hidden">
+          {(expensesCount ?? filteredExpenses.length) || 0} entries · Total shown
         </td>
-        <td className="px-5 py-3 text-right text-red-600">{formatCurrency(total)}</td>
+        <td colSpan={4} className="hidden sm:table-cell md:hidden px-3 sm:px-4 py-3 text-ink-600">
+          {(expensesCount ?? filteredExpenses.length) || 0} entries · Total shown
+        </td>
+        <td colSpan={5} className="hidden md:table-cell px-3 sm:px-4 py-3 text-ink-600">
+          {(expensesCount ?? filteredExpenses.length) || 0} entries · Total shown
+        </td>
+        <td className="px-3 sm:px-4 py-3 text-right text-red-600 whitespace-nowrap font-semibold">{formatCurrency(total)}</td>
         <td />
       </tr>
     </>
@@ -143,17 +179,17 @@ export default async function AdminExpensesPage({
       </Suspense>
 
       <div className="card overflow-hidden">
-        <div className="overflow-x-auto">
+        <div className="w-full overflow-hidden">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-ink-100 text-left text-xs uppercase tracking-wide text-ink-400">
-                <th className="px-5 py-3">Date</th>
-                <th className="px-5 py-3">#</th>
-                <th className="px-5 py-3">Category</th>
-                <th className="px-5 py-3">Supplier</th>
-                <th className="px-5 py-3">Method</th>
-                <th className="px-5 py-3 text-right">Amount</th>
-                <th className="px-5 py-3" />
+                <th className="px-3 sm:px-4 py-3 whitespace-nowrap">Date</th>
+                <th className="px-3 sm:px-4 py-3 whitespace-nowrap">Category</th>
+                <th className="px-3 sm:px-4 py-3">Description</th>
+                <th className="hidden md:table-cell px-3 sm:px-4 py-3">Supplier</th>
+                <th className="hidden sm:table-cell px-3 sm:px-4 py-3 whitespace-nowrap">Method</th>
+                <th className="px-3 sm:px-4 py-3 text-right whitespace-nowrap">Amount</th>
+                <th className="px-3 sm:px-4 py-3 text-right whitespace-nowrap">Actions</th>
               </tr>
             </thead>
             <tbody>

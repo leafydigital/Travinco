@@ -17,17 +17,22 @@ export default async function InvoicePage({ params }: { params: { id: string } }
   const profile = await requireProfile();
   assertTourAccess(profile, 'invoices');
   const supabase = await createClient();
-  const [{ data: inv }, { data: payments }, settings] = await Promise.all([
-    supabase.from('invoices').select('*, quotations(id, quote_number)').eq('id', params.id).maybeSingle(),
+  const [{ data: inv }, { data: payments }, settings, { data: delSetting }, { data: markupSetting }] = await Promise.all([
+    supabase.from('invoices').select('*, quotations(id, quote_number, markup_pct, markup_amount, total_amount)').eq('id', params.id).maybeSingle(),
     supabase.from('invoice_payments').select('*').eq('invoice_id', params.id).order('paid_on'),
     getTourSettings(),
+    supabase.from('website_settings').select('value').eq('key', `deleted_invoice_${params.id}`).maybeSingle(),
+    supabase.from('website_settings').select('value').eq('key', `invoice_markup_${params.id}`).maybeSingle(),
   ]);
-  if (!inv) notFound();
-  const q = (Array.isArray(inv.quotations) ? inv.quotations[0] : inv.quotations) as { id: string; quote_number: string } | null;
+  if (!inv || (inv as any).is_deleted === true || delSetting) notFound();
+  const q = (Array.isArray(inv.quotations) ? inv.quotations[0] : inv.quotations) as { id: string; quote_number: string; markup_pct?: number; markup_amount?: number } | null;
+  const markupMeta = markupSetting?.value as { markup_amount?: number; markup_pct?: number } | null;
   const doc: InvoiceDoc = {
     ...inv,
     items: Array.isArray(inv.items) ? inv.items : [],
     quote_number: q?.quote_number ?? null,
+    markup_pct: inv.markup_pct ?? markupMeta?.markup_pct ?? q?.markup_pct ?? 15,
+    markup_amount: inv.markup_amount ?? markupMeta?.markup_amount ?? q?.markup_amount ?? 0,
   };
   const fileName = `${inv.invoice_number}_${inv.bill_to_name}`.replace(/[^\w\-]+/g, '_');
   const balance = inv.status === 'cancelled' ? 0 : Number(inv.balance_amount);

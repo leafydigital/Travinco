@@ -22,17 +22,40 @@ const itemsToText = (items: PlanItem[]) =>
 export default async function DayPlansPage() {
   const profile = await requireProfile();
   const supabase = await createClient();
-  const [{ data: plans }, { data: locs }] = await Promise.all([
+  const [{ data: plans }, { data: locs }, { data: deletedPlanSettings }, { data: deletedLocSettings }] = await Promise.all([
     supabase.from('day_plans').select('*').order('sort_order').order('id'),
     supabase.from('locations').select('id, name, display_name').order('sort_order').order('name'),
+    supabase.from('website_settings').select('key').like('key', 'deleted_day_plan_%'),
+    supabase.from('website_settings').select('key').like('key', 'deleted_location_%'),
   ]);
+
+  const deletedPlanKeys = new Set(
+    (deletedPlanSettings || []).map((s: { key: string }) => s.key.replace('deleted_day_plan_', ''))
+  );
+  const deletedLocKeys = new Set(
+    (deletedLocSettings || []).map((s: { key: string }) => s.key.replace('deleted_location_', ''))
+  );
+
+  const activeLocs = (locs ?? []).filter(
+    (l: any) => l && l.is_deleted !== true && l.is_deleted !== 'true' && l.is_deleted !== 1 && !deletedLocKeys.has(String(l.id))
+  );
+
+  const activePlans = (plans ?? []).filter(
+    (p: any) =>
+      p &&
+      p.is_deleted !== true &&
+      p.is_deleted !== 'true' &&
+      p.is_deleted !== 1 &&
+      !deletedPlanKeys.has(String(p.id))
+  );
+
   const name = (id: number | null) => {
     if (id == null) return '';
-    const l = (locs ?? []).find((x) => x.id === id);
+    const l = activeLocs.find((x) => x.id === id);
     return l ? l.display_name || l.name : `#${id}`;
   };
-  const locOptions = (locs ?? []).map((l) => ({ value: String(l.id), label: l.display_name || l.name }));
-  const rows = (plans ?? []).map((p) => ({
+  const locOptions = activeLocs.map((l) => ({ value: String(l.id), label: l.display_name || l.name }));
+  const rows = activePlans.map((p) => ({
     ...p,
     from_location_id: p.from_location_id == null ? null : String(p.from_location_id),
     to_location_id: String(p.to_location_id),
@@ -69,12 +92,15 @@ export default async function DayPlansPage() {
     { key: 'is_active', label: 'Active', format: 'bool', align: 'center' },
   ];
 
+  const isAdmin = profile.role === 'admin' || profile.role === 'super_admin';
+
   return (
     <EntityManager
       rows={rows}
       fields={fields}
       columns={columns}
       canEdit={canEditMasters(profile)}
+      canDelete={isAdmin}
       saveAction={saveDayPlan}
       deleteAction={deleteDayPlan}
       searchKeys={['route', 'label', 'title', 'items_text']}

@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
 import { requireProfile } from '@/lib/supabase/auth-helpers';
 import { canEditMasters } from './access';
-import type { PlanItem } from './types';
+import type { PlanItem, QuotationLogosConfig, InvoiceSettings } from './types';
 
 import { invalidateTourMastersCache } from './data';
 
@@ -65,6 +65,72 @@ async function remove(table: string, what: string, id: number | string, paths: s
   return {};
 }
 
+async function softDelete(
+  table: string,
+  entityName: string,
+  id: number | string,
+  paths: string[],
+  rpcName?: string,
+  rpcArgName?: string,
+  settingKeyPrefix?: string
+): Promise<Result> {
+  const c = await adminClient();
+  if ('error' in c) return { error: c.error };
+
+  const numericId = Number(id);
+
+  // 1. Try RPC if provided
+  if (rpcName && rpcArgName) {
+    const { error: rpcError } = await c.supabase.rpc(rpcName, {
+      [rpcArgName]: numericId,
+    });
+    if (!rpcError) {
+      if (settingKeyPrefix) {
+        try {
+          await c.supabase.from('website_settings').upsert({
+            key: `${settingKeyPrefix}_${numericId}`,
+            value: { is_deleted: true, deleted_at: new Date().toISOString() },
+          });
+        } catch (err) {
+          console.warn(`Failed to record ${settingKeyPrefix} marker:`, err);
+        }
+      }
+      invalidateTourMastersCache();
+      paths.forEach((p) => revalidatePath(p));
+      return {};
+    }
+  }
+
+  // 2. Direct update fallback
+  let { error } = await c.supabase
+    .from(table)
+    .update({ is_deleted: true, updated_at: new Date().toISOString() } as any)
+    .eq('id', numericId);
+
+  if (error && error.message?.includes('is_deleted')) {
+    console.warn(`Column is_deleted missing from ${table} table. Using website_settings marker.`);
+  } else if (error) {
+    console.error(`softDelete (${table}) error:`, error);
+    return { error: dbError(error, entityName) };
+  }
+
+  // 3. Fallback tracking in website_settings
+  if (settingKeyPrefix) {
+    try {
+      await c.supabase.from('website_settings').upsert({
+        key: `${settingKeyPrefix}_${numericId}`,
+        value: { is_deleted: true, deleted_at: new Date().toISOString() },
+      });
+    } catch (err) {
+      console.warn(`Failed to record ${settingKeyPrefix} marker:`, err);
+    }
+  }
+
+  invalidateTourMastersCache();
+  paths.forEach((p) => revalidatePath(p));
+  return {};
+}
+
 // ---------- Transportation ----------------------------------------------
 
 const vehicleSchema = z.object({
@@ -87,10 +153,21 @@ const vehicleSchema = z.object({
 export async function saveTransportVehicle(id: number | string | null, raw: Record<string, unknown>) {
   const p = vehicleSchema.safeParse(raw);
   if (!p.success) return { error: firstIssue(p.error) };
-  return save('transport_vehicles', 'vehicle', id, { ...p.data, free_km: Math.round(p.data.free_km) }, ['/travinco_dashboard/transport']);
+  const payload = id == null
+    ? { ...p.data, free_km: Math.round(p.data.free_km), is_deleted: false }
+    : { ...p.data, free_km: Math.round(p.data.free_km) };
+  return save('transport_vehicles', 'vehicle', id, payload, ['/travinco_dashboard/transport', '/travinco_dashboard/quotations']);
 }
 export async function deleteTransportVehicle(id: number | string) {
-  return remove('transport_vehicles', 'vehicle', id, ['/travinco_dashboard/transport']);
+  return softDelete(
+    'transport_vehicles',
+    'vehicle',
+    id,
+    ['/travinco_dashboard/transport', '/travinco_dashboard/quotations'],
+    'soft_delete_transport_vehicle',
+    'vehicle_id',
+    'deleted_transport_vehicle'
+  );
 }
 
 // ---------- Pickup & drop points ------------------------------------------
@@ -114,10 +191,19 @@ const pointSchema = z.object({
 export async function savePickupPoint(id: number | string | null, raw: Record<string, unknown>) {
   const p = pointSchema.safeParse(raw);
   if (!p.success) return { error: firstIssue(p.error) };
-  return save('pickup_drop_points', 'pickup / drop point', id, p.data, ['/travinco_dashboard/pickup-points']);
+  const payload = id == null ? { ...p.data, is_deleted: false } : p.data;
+  return save('pickup_drop_points', 'pickup / drop point', id, payload, ['/travinco_dashboard/pickup-points']);
 }
 export async function deletePickupPoint(id: number | string) {
-  return remove('pickup_drop_points', 'pickup / drop point', id, ['/travinco_dashboard/pickup-points']);
+  return softDelete(
+    'pickup_drop_points',
+    'pickup / drop point',
+    id,
+    ['/travinco_dashboard/pickup-points', '/travinco_dashboard/quotations'],
+    'soft_delete_pickup_drop_point',
+    'point_id',
+    'deleted_pickup_point'
+  );
 }
 
 // ---------- Locations -------------------------------------------------------
@@ -137,10 +223,25 @@ export async function saveLocation(id: number | string | null, raw: Record<strin
   const p = locationSchema.safeParse(raw);
   if (!p.success) return { error: firstIssue(p.error) };
   if (id != null && p.data.parent_id === Number(id)) return { error: 'A location cannot be its own parent.' };
-  return save('locations', 'location', id, p.data, ['/travinco_dashboard/locations']);
+  const payload = id == null ? { ...p.data, is_deleted: false } : p.data;
+  return save('locations', 'location', id, payload, ['/travinco_dashboard/locations']);
 }
 export async function deleteLocation(id: number | string) {
-  return remove('locations', 'location', id, ['/travinco_dashboard/locations']);
+  return softDelete(
+    'locations',
+    'location',
+    id,
+    [
+      '/travinco_dashboard/locations',
+      '/travinco_dashboard/locations/activities',
+      '/travinco_dashboard/locations/distances',
+      '/travinco_dashboard/locations/day-plans',
+      '/travinco_dashboard/quotations',
+    ],
+    'soft_delete_location',
+    'loc_id',
+    'deleted_location'
+  );
 }
 
 // ---------- Activities ------------------------------------------------------
@@ -148,26 +249,350 @@ export async function deleteLocation(id: number | string) {
 const activitySchema = z.object({
   location_id: reqId,
   name: str(150).pipe(z.string().min(1, 'Name is required')),
-  kind: z.enum(['sightseeing', 'activity', 'experience', 'temple', 'shopping']),
+  category: optStr(100),
+  kind: z.string().optional().default('sightseeing'),
+  preferred_types: optStr(200),
   description: optStr(4000),
   duration: optStr(60),
   timings: optStr(120),
   closed_on: optStr(120),
   entry_fee_adult: optNum,
   entry_fee_child: optNum,
-  is_optional_paid: bool,
+  is_optional_paid: bool.optional().default(false),
   approx_cost_text: optStr(120),
-  sort_order: reqNum,
-  is_active: bool,
+  sort_order: reqNum.optional().default(100),
+  is_active: bool.optional().default(true),
 });
 
 export async function saveActivity(id: number | string | null, raw: Record<string, unknown>) {
   const p = activitySchema.safeParse(raw);
   if (!p.success) return { error: firstIssue(p.error) };
-  return save('location_activities', 'activity', id, p.data, ['/travinco_dashboard/locations', '/travinco_dashboard/locations/activities']);
+  const payload: Record<string, unknown> = id == null ? { ...p.data, is_deleted: false } : { ...p.data };
+  
+  const c = await adminClient();
+  if ('error' in c) return { error: c.error };
+
+  let q = id == null
+    ? c.supabase.from('location_activities').insert(payload).select('id').single()
+    : c.supabase.from('location_activities').update(payload).eq('id', id).select('id').single();
+
+  let { data, error } = await q;
+
+  // Fallback if category or preferred_types columns are not yet in database
+  if (error && (error.code === '42703' || error.message?.includes('category') || error.message?.includes('preferred_types'))) {
+    delete payload.category;
+    delete payload.preferred_types;
+    q = id == null
+      ? c.supabase.from('location_activities').insert(payload).select('id').single()
+      : c.supabase.from('location_activities').update(payload).eq('id', id).select('id').single();
+    const retry = await q;
+    data = retry.data;
+    error = retry.error;
+  }
+
+  if (error) return { error: dbError(error, 'activity') };
+  invalidateTourMastersCache();
+  ['/travinco_dashboard/locations', '/travinco_dashboard/locations/activities'].forEach((p) => revalidatePath(p));
+  return { id: data?.id };
 }
+
 export async function deleteActivity(id: number | string) {
-  return remove('location_activities', 'activity', id, ['/travinco_dashboard/locations/activities']);
+  return softDelete(
+    'location_activities',
+    'activity',
+    id,
+    ['/travinco_dashboard/locations/activities', '/travinco_dashboard/locations', '/travinco_dashboard/quotations'],
+    'soft_delete_location_activity',
+    'act_id',
+    'deleted_activity'
+  );
+}
+
+export type ExcelActivityRow = {
+  location: string;
+  activities: string;
+  categories?: string;
+  preferred_types?: string;
+};
+
+export type ImportLocationActivitiesOptions = {
+  updateExisting?: boolean;
+};
+
+export type ImportLocationActivitiesResult = {
+  error?: string;
+  imported?: number;
+  updated?: number;
+  skippedDuplicates?: number;
+  locationsCreated?: number;
+  totalProcessed?: number;
+};
+
+function cleanExcelString(val: any): string {
+  if (val == null) return '';
+  return String(val)
+    .replace(/[\u00A0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function cleanExcelKey(val: any): string {
+  return cleanExcelString(val).toLowerCase();
+}
+
+function toTitleCase(val: string): string {
+  const s = cleanExcelString(val);
+  if (!s) return '';
+  return s
+    .split(' ')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(' ');
+}
+
+export async function importLocationActivitiesAction(
+  rows: ExcelActivityRow[],
+  options: ImportLocationActivitiesOptions = { updateExisting: true }
+): Promise<ImportLocationActivitiesResult> {
+  const c = await adminClient();
+  if ('error' in c) return { error: c.error };
+  const { supabase } = c;
+
+  if (!rows || rows.length === 0) {
+    return { error: 'No data found to import.' };
+  }
+
+  // 1. Fetch all existing locations
+  const { data: existingLocs } = await supabase
+    .from('locations')
+    .select('id, name, display_name, is_deleted');
+
+  const locMap = new Map<string, number>();
+  (existingLocs || []).forEach((l: any) => {
+    if (l.name) locMap.set(cleanExcelKey(l.name), Number(l.id));
+    if (l.display_name) locMap.set(cleanExcelKey(l.display_name), Number(l.id));
+  });
+
+  // 2. Fetch all existing activities (both active and soft-deleted)
+  const { data: existingActs } = await supabase
+    .from('location_activities')
+    .select('id, location_id, name, category, preferred_types, is_deleted');
+
+  // Key format: `${location_id}:::${cleanExcelKey(name)}`
+  const actMap = new Map<
+    string,
+    { id: number; is_deleted: boolean; category?: string | null; preferred_types?: string | null }
+  >();
+
+  (existingActs || []).forEach((a: any) => {
+    const key = `${a.location_id}:::${cleanExcelKey(a.name)}`;
+    // If duplicates exist in DB, prefer an active record
+    if (!actMap.has(key) || !a.is_deleted) {
+      actMap.set(key, {
+        id: Number(a.id),
+        is_deleted: Boolean(a.is_deleted),
+        category: a.category,
+        preferred_types: a.preferred_types,
+      });
+    }
+  });
+
+  // 3. Track intra-file duplicates
+  const seenInFile = new Set<string>();
+
+  let imported = 0;
+  let updated = 0;
+  let skippedDuplicates = 0;
+  let locationsCreated = 0;
+  let totalProcessed = 0;
+
+  for (const r of rows) {
+    const locName = cleanExcelString(r.location);
+    const actName = cleanExcelString(r.activities);
+    if (!locName || !actName) continue;
+
+    totalProcessed++;
+    const locKey = cleanExcelKey(locName);
+    const actKey = cleanExcelKey(actName);
+    const fileRowKey = `${locKey}:::${actKey}`;
+
+    // Intra-file duplicate check: skip subsequent duplicates in same upload
+    if (seenInFile.has(fileRowKey)) {
+      skippedDuplicates++;
+      continue;
+    }
+    seenInFile.add(fileRowKey);
+
+    // Find or create location
+    let locId = locMap.get(locKey);
+
+    if (!locId) {
+      const formattedLocName = toTitleCase(locName);
+      const { data: newLoc, error: locErr } = await supabase
+        .from('locations')
+        .insert({
+          name: formattedLocName,
+          display_name: formattedLocName,
+          state: 'Kerala',
+          sort_order: 100,
+          is_active: true,
+          is_deleted: false,
+        })
+        .select('id')
+        .single();
+
+      if (!locErr && newLoc) {
+        locId = Number(newLoc.id);
+        locMap.set(locKey, locId);
+        locationsCreated++;
+      } else {
+        const { data: found } = await supabase
+          .from('locations')
+          .select('id')
+          .ilike('name', locName)
+          .maybeSingle();
+        if (found) {
+          locId = Number(found.id);
+          locMap.set(locKey, locId);
+        }
+      }
+    }
+
+    if (!locId) continue;
+
+    const dbKey = `${locId}:::${actKey}`;
+    const existingAct = actMap.get(dbKey);
+
+    const category = cleanExcelString(r.categories) || 'Sightseeing';
+    const prefType = cleanExcelString(r.preferred_types) || 'All';
+    const kind = category.toLowerCase().includes('activity')
+      ? 'activity'
+      : category.toLowerCase().includes('experience')
+      ? 'experience'
+      : category.toLowerCase().includes('temple')
+      ? 'temple'
+      : category.toLowerCase().includes('shopping')
+      ? 'shopping'
+      : 'sightseeing';
+
+    if (existingAct) {
+      // Existing in database
+      const shouldUpdate = options.updateExisting !== false || existingAct.is_deleted;
+      if (shouldUpdate) {
+        const updateData: Record<string, any> = {
+          name: actName,
+          category,
+          preferred_types: prefType,
+          kind,
+          is_active: true,
+          is_deleted: false,
+          updated_at: new Date().toISOString(),
+        };
+
+        let { error } = await supabase
+          .from('location_activities')
+          .update(updateData)
+          .eq('id', existingAct.id);
+
+        if (error && (error.code === '42703' || error.message?.includes('category') || error.message?.includes('preferred_types'))) {
+          delete updateData.category;
+          delete updateData.preferred_types;
+          const retry = await supabase
+            .from('location_activities')
+            .update(updateData)
+            .eq('id', existingAct.id);
+          error = retry.error;
+        }
+
+        if (!error) {
+          updated++;
+          actMap.set(dbKey, {
+            id: existingAct.id,
+            is_deleted: false,
+            category,
+            preferred_types: prefType,
+          });
+        }
+      } else {
+        skippedDuplicates++;
+      }
+    } else {
+      // Brand new activity
+      const insertData: Record<string, any> = {
+        location_id: locId,
+        name: actName,
+        category,
+        preferred_types: prefType,
+        kind,
+        is_active: true,
+        is_deleted: false,
+        sort_order: 100,
+      };
+
+      let { data: newAct, error } = await supabase
+        .from('location_activities')
+        .insert(insertData)
+        .select('id')
+        .single();
+
+      if (error && (error.code === '42703' || error.message?.includes('category') || error.message?.includes('preferred_types'))) {
+        delete insertData.category;
+        delete insertData.preferred_types;
+        const retry = await supabase
+          .from('location_activities')
+          .insert(insertData)
+          .select('id')
+          .single();
+        error = retry.error;
+        newAct = retry.data;
+      }
+
+      if (!error && newAct) {
+        imported++;
+        actMap.set(dbKey, {
+          id: Number(newAct.id),
+          is_deleted: false,
+          category,
+          preferred_types: prefType,
+        });
+      }
+    }
+  }
+
+  invalidateTourMastersCache();
+  revalidatePath('/travinco_dashboard/locations');
+  revalidatePath('/travinco_dashboard/locations/activities');
+  return {
+    imported,
+    updated,
+    skippedDuplicates,
+    locationsCreated,
+    totalProcessed,
+  };
+}
+
+export async function clearSeedActivitiesAction(): Promise<{ error?: string; count?: number }> {
+  const c = await adminClient();
+  if ('error' in c) return { error: c.error };
+  const { profile, supabase } = c;
+
+  if (profile.role !== 'admin' && profile.role !== 'super_admin') {
+    return { error: 'Only administrators can clear activities.' };
+  }
+
+  const { data, error } = await supabase
+    .from('location_activities')
+    .update({ is_deleted: true, updated_at: new Date().toISOString() })
+    .neq('is_deleted', true)
+    .select('id');
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  invalidateTourMastersCache();
+  revalidatePath('/travinco_dashboard/locations');
+  revalidatePath('/travinco_dashboard/locations/activities');
+  return { count: data?.length ?? 0 };
 }
 
 // ---------- Distances --------------------------------------------------------
@@ -185,10 +610,21 @@ export async function saveDistance(id: number | string | null, raw: Record<strin
   if (!p.success) return { error: firstIssue(p.error) };
   const { from_location_id: a, to_location_id: b } = p.data;
   if (a === b) return { error: 'Pick two different locations.' };
-  return save('location_distances', 'distance', id, { ...p.data, from_location_id: Math.min(a, b), to_location_id: Math.max(a, b) }, ['/travinco_dashboard/locations/distances']);
+  const payload = id == null
+    ? { ...p.data, from_location_id: Math.min(a, b), to_location_id: Math.max(a, b), is_deleted: false }
+    : { ...p.data, from_location_id: Math.min(a, b), to_location_id: Math.max(a, b) };
+  return save('location_distances', 'distance', id, payload, ['/travinco_dashboard/locations/distances']);
 }
 export async function deleteDistance(id: number | string) {
-  return remove('location_distances', 'distance', id, ['/travinco_dashboard/locations/distances']);
+  return softDelete(
+    'location_distances',
+    'distance',
+    id,
+    ['/travinco_dashboard/locations/distances', '/travinco_dashboard/quotations'],
+    'soft_delete_location_distance',
+    'dist_id',
+    'deleted_distance'
+  );
 }
 
 // ---------- Day plans ---------------------------------------------------------
@@ -230,16 +666,27 @@ export async function saveDayPlan(id: number | string | null, raw: Record<string
   const { items_text, ...rest } = p.data;
   const needsFrom = rest.plan_type === 'transfer' || rest.plan_type === 'departure';
   if (needsFrom && !rest.from_location_id) return { error: 'Travel and departure days need a "from" location.' };
+  const payload = id == null
+    ? { ...rest, from_location_id: needsFrom ? rest.from_location_id : null, items: textToItems(items_text), is_deleted: false }
+    : { ...rest, from_location_id: needsFrom ? rest.from_location_id : null, items: textToItems(items_text) };
   return save(
     'day_plans',
     'day plan',
     id,
-    { ...rest, from_location_id: needsFrom ? rest.from_location_id : null, items: textToItems(items_text) },
-    ['/travinco_dashboard/locations/day-plans']
+    payload,
+    ['/travinco_dashboard/locations/day-plans', '/travinco_dashboard/quotations']
   );
 }
 export async function deleteDayPlan(id: number | string) {
-  return remove('day_plans', 'day plan', id, ['/travinco_dashboard/locations/day-plans']);
+  return softDelete(
+    'day_plans',
+    'day plan',
+    id,
+    ['/travinco_dashboard/locations/day-plans', '/travinco_dashboard/quotations'],
+    'soft_delete_day_plan',
+    'plan_id',
+    'deleted_day_plan'
+  );
 }
 
 // ---------- Quotation templates ----------------------------------------------
@@ -359,3 +806,98 @@ export async function rebuildRateDateWindows(): Promise<{ error?: string; period
   revalidatePath('/travinco_dashboard/master');
   return { periods: periods.length, unreadable: Array.from(unreadable) };
 }
+
+// ---------- Quotation Branding & Logos ---------------------------------------
+
+export async function saveQuotationLogos(logosConfig: QuotationLogosConfig): Promise<{ error?: string }> {
+  const c = await adminClient();
+  if ('error' in c) return { error: c.error };
+
+  const { error } = await c.supabase.from('website_settings').upsert(
+    {
+      key: 'quotation_logos',
+      value: logosConfig,
+      updated_by: c.profile.id,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'key' }
+  );
+
+  if (error) {
+    console.error('Failed to save quotation_logos:', error);
+    return { error: 'Could not save quotation logos. Please try again.' };
+  }
+
+  invalidateTourMastersCache();
+  revalidatePath('/travinco_dashboard/quotations');
+  revalidatePath('/travinco_dashboard/quotations/settings');
+  revalidatePath('/admin/quotations/settings');
+  return {};
+}
+
+export async function uploadQuotationLogo(formData: FormData): Promise<{ url?: string; error?: string }> {
+  const c = await adminClient();
+  if ('error' in c) return { error: c.error };
+
+  const file = formData.get('file') as File | null;
+  if (!file || !(file instanceof File) || file.size === 0) {
+    return { error: 'Please choose an image file to upload.' };
+  }
+
+  const { uploadImageToBucket } = await import('@/lib/storage-upload');
+  return await uploadImageToBucket('brand', file);
+}
+
+export async function saveInvoiceSettings(invoiceSettings: InvoiceSettings): Promise<{ error?: string }> {
+  const c = await adminClient();
+  if ('error' in c) return { error: c.error };
+
+  const { error } = await c.supabase.from('website_settings').upsert(
+    {
+      key: 'invoice_settings',
+      value: invoiceSettings,
+      updated_by: c.profile.id,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'key' }
+  );
+
+  if (error) {
+    console.error('Failed to save invoice_settings:', error);
+    return { error: 'Could not save invoice settings. Please try again.' };
+  }
+
+  invalidateTourMastersCache();
+  revalidatePath('/travinco_dashboard/quotations/settings');
+  revalidatePath('/travinco_dashboard/invoices');
+  revalidatePath('/admin/quotations/settings');
+  revalidatePath('/admin/invoices');
+  return {};
+}
+
+export async function uploadInvoiceSignature(formData: FormData): Promise<{ url?: string; error?: string }> {
+  const c = await adminClient();
+  if ('error' in c) return { error: c.error };
+
+  const file = formData.get('file') as File | null;
+  if (!file || !(file instanceof File) || file.size === 0) {
+    return { error: 'Please choose a signature image to upload.' };
+  }
+
+  const { uploadImageToBucket } = await import('@/lib/storage-upload');
+  return await uploadImageToBucket('brand', file);
+}
+
+export async function uploadInvoiceQrCode(formData: FormData): Promise<{ url?: string; error?: string }> {
+  const c = await adminClient();
+  if ('error' in c) return { error: c.error };
+
+  const file = formData.get('file') as File | null;
+  if (!file || !(file instanceof File) || file.size === 0) {
+    return { error: 'Please choose a QR code image to upload.' };
+  }
+
+  const { uploadImageToBucket } = await import('@/lib/storage-upload');
+  return await uploadImageToBucket('brand', file);
+}
+

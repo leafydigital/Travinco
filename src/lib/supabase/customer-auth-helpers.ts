@@ -1,53 +1,56 @@
-import { createClient } from '@/lib/supabase/server';
+import { createCustomerClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import { cache } from 'react';
 import type { Tables } from '@/types/database';
 
 export type CurrentCustomer = Tables<'customer_accounts'>;
 
-/**
- * Customer-side equivalent of requireProfile() (see
- * lib/supabase/auth-helpers.ts) — deliberately a separate function
- * reading a separate table, so a customer session can never be treated
- * as staff/admin access anywhere in the app.
- */
-export const requireCustomer = cache(async (): Promise<CurrentCustomer> => {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect('/account/login');
-  }
-
-  const { data: account, error } = await supabase
-    .from('customer_accounts')
-    .select('*')
-    .eq('id', user.id)
-    .single();
-
-  if (error || !account) {
-    redirect('/account/login?reason=not_customer');
-  }
-
-  return account;
-});
-
-/** Non-throwing customer session retriever. */
+/** Non-throwing customer session retriever. Reads strictly from customer-scoped session. */
 export const getCustomer = cache(async (): Promise<CurrentCustomer | null> => {
-  const supabase = await createClient();
+  const supabase = await createCustomerClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
   if (!user) return null;
 
+  // Verify that the user has a record in customer_accounts
   const { data: account } = await supabase
     .from('customer_accounts')
     .select('*')
     .eq('id', user.id)
     .maybeSingle();
 
-  return account ?? null;
+  if (!account) return null;
+
+  // Verify that customer account is not deactivated
+  const { data: custRecord } = await supabase
+    .from('customers')
+    .select('id, is_active')
+    .eq('email', account.email)
+    .maybeSingle();
+
+  if (custRecord?.is_active === false) {
+    return null;
+  }
+
+  return account;
+});
+
+/**
+ * Customer-side equivalent of requireProfile() — strictly enforces that the
+ * authenticated session is an active customer account.
+ * Redirects unauthenticated users to /account/login with safe redirectTo support.
+ */
+export const requireCustomer = cache(async (redirectTo?: string): Promise<CurrentCustomer> => {
+  const customer = await getCustomer();
+
+  if (!customer) {
+    const target = redirectTo
+      ? `/account/login?redirectTo=${encodeURIComponent(redirectTo)}`
+      : '/account/login';
+    redirect(target);
+  }
+
+  return customer;
 });

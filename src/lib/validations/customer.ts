@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 export const customerSchema = z.object({
   full_name: z.string().min(2, 'Name is required').max(120),
-  phone: z.string().min(8, 'Enter a valid phone number').max(20),
+  phone: z.string().min(8, 'Enter a valid phone number').max(20).or(z.literal('')).optional().nullable(),
   whatsapp_number: z.string().max(20).optional().nullable(),
   email: z.string().email('Enter a valid email').optional().nullable().or(z.literal('')),
   address: z.string().max(500).optional().nullable(),

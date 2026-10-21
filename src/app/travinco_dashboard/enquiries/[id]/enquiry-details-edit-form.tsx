@@ -19,10 +19,18 @@ function splitPhone(stored?: string | null): { dialCode: string; number: string 
   return { dialCode: '+91', number: stored.replace(/\D/g, '') };
 }
 
-export function EnquiryDetailsEditForm({ enquiry }: { enquiry: Tables<'enquiries'> }) {
+export function EnquiryDetailsEditForm({
+  enquiry,
+  canEdit = true,
+  initialEditing = false,
+}: {
+  enquiry: Tables<'enquiries'>;
+  canEdit?: boolean;
+  initialEditing?: boolean;
+}) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(initialEditing && canEdit);
   const [phoneValue, setPhoneValue] = useState(() => splitPhone(enquiry.phone));
   const [whatsappSameAsPhone, setWhatsappSameAsPhone] = useState(
     !enquiry.whatsapp_number || enquiry.whatsapp_number === enquiry.phone
@@ -58,6 +66,10 @@ export function EnquiryDetailsEditForm({ enquiry }: { enquiry: Tables<'enquiries
       setEditing(false);
       router.refresh();
     });
+  }
+
+  if (!canEdit) {
+    return null;
   }
 
   if (!editing) {

@@ -1,359 +1,436 @@
 import { createClient } from '@/lib/supabase/server';
 import Link from 'next/link';
 import Image from 'next/image';
-import { HeroSearch } from '@/components/public/hero-search';
+import { HeroSlider, type HeroSlideItem } from '@/components/public/hero-slider';
 import { SectionHeading } from '@/components/public/section-heading';
 import { TranslatedSectionHeading } from '@/components/public/translated-section-heading';
 import { TranslatedCta } from '@/components/public/translated-cta';
 import { PackageCard } from '@/components/public/package-card';
 import { ImageCarousel } from '@/components/public/image-carousel';
+import { TestimonialsCarousel } from '@/components/public/testimonials-carousel';
+import { ExperienceStats } from '@/components/public/animated-stat';
 import { testimonials } from '@/lib/testimonials-data';
 import { formatDate } from '@/lib/utils/format';
-import { ShieldCheck, Wallet, HeadphonesIcon, MapPinned, Quote, ArrowRight, Star } from 'lucide-react';
+import {
+  ShieldCheck,
+  Wallet,
+  HeadphonesIcon,
+  MapPinned,
+  Quote,
+  ArrowRight,
+  Star,
+  CheckCircle2,
+  Compass,
+  PhoneCall,
+  Calendar,
+  Clock,
+  MapPin,
+} from 'lucide-react';
 import { getGeneralSettings } from '@/lib/settings';
+import { getThemeImagesAction } from '@/app/travinco_dashboard/theme/actions';
+import { getHomePageContent } from '@/lib/home-page-content';
 
-export const revalidate = 120;
+function getExperienceIcon(key: string) {
+  switch (key) {
+    case 'shield':
+      return ShieldCheck;
+    case 'headphones':
+      return HeadphonesIcon;
+    case 'wallet':
+      return Wallet;
+    case 'map':
+    default:
+      return MapPinned;
+  }
+}
+
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 export default async function HomePage() {
-  const supabase = await createClient();
-  const settings = await getGeneralSettings();
-  const today = new Date().toISOString().slice(0, 10);
+  let destinations: any[] | null = null;
+  let featuredPackages: any[] | null = null;
+  let recentPosts: any[] | null = null;
+  let themeImagesRes: any = null;
+  let homeContent: any = null;
 
-  const [
-    { data: destinations },
-    { data: featuredPackages },
-    { data: offers },
-    { data: galleryPreview },
-    { data: recentPosts },
-  ] = await Promise.all([
-    supabase
-      .from('destinations')
-      .select('id, name, slug, cover_image_url')
-      .eq('status', 'published')
-      .order('sort_order')
-      .limit(6),
-    supabase
-      .from('travel_packages')
-      .select(
-        'id, title, slug, cover_image_url, tile_image_url, duration_days, duration_nights, base_price, discount_price, currency, short_description, destinations(name)'
-      )
-      .eq('status', 'published')
-      .eq('is_featured', true)
-      .limit(6),
-    supabase
-      .from('offers')
-      .select('id, title, slug, discount_percent, discount_flat, image_url, valid_to')
-      .eq('status', 'published')
-      .gte('valid_to', today)
-      .limit(3),
-    supabase.from('gallery').select('id, image_url, title').eq('status', 'published').limit(8),
-    supabase
-      .from('blog_posts')
-      .select('id, title, slug, excerpt, cover_image_url, created_at')
-      .eq('status', 'published')
-      .order('created_at', { ascending: false })
-      .limit(3),
-  ]);
+  try {
+    const supabase = await createClient();
+    const settings = await getGeneralSettings();
 
-  const heroImageUrl = (destinations ?? []).find((d) => d.cover_image_url)?.cover_image_url ?? null;
-  const heroCollage = (destinations ?? [])
-    .map((d) => d.cover_image_url)
-    .filter((u): u is string => Boolean(u))
-    .slice(0, 4);
-  const topOffer = (offers ?? [])[0] ?? null;
+    const [
+      destRes,
+      featRes,
+      postsRes,
+      tiRes,
+      hcRes,
+    ] = await Promise.all([
+      supabase
+        .from('destinations')
+        .select('id, name, slug, cover_image_url, description')
+        .eq('status', 'published')
+        .order('sort_order'),
+      supabase
+        .from('travel_packages')
+        .select(
+          'id, title, slug, cover_image_url, tile_image_url, duration_days, duration_nights, base_price, discount_price, currency, short_description, destinations(name)'
+        )
+        .eq('status', 'published')
+        .eq('is_featured', true)
+        .limit(4),
+      supabase
+        .from('blog_posts')
+        .select('id, title, slug, excerpt, cover_image_url, created_at')
+        .eq('status', 'published')
+        .order('created_at', { ascending: false })
+        .limit(4),
+      getThemeImagesAction(),
+      getHomePageContent(),
+    ]);
 
-  const whyChooseUs = [
-    { icon: MapPinned, title: 'Itineraries built for you', body: 'Not a template — planned around your dates, pace, and budget.', accent: 'text-brand-300' },
-    { icon: ShieldCheck, title: 'Vetted local partners', body: 'Hotels and guides we work with directly, not marketplace listings.', accent: 'text-sand-300' },
-    { icon: HeadphonesIcon, title: 'Support while you travel', body: 'A real number to call if plans change mid-trip.', accent: 'text-coral-300' },
-    { icon: Wallet, title: 'Transparent pricing', body: 'What you see in the quote is what you pay.', accent: 'text-ocean-300' },
-  ];
+    destinations = destRes?.data ?? [];
+    featuredPackages = featRes?.data ?? [];
+    recentPosts = postsRes?.data ?? [];
+    themeImagesRes = tiRes;
+    homeContent = hcRes;
+  } catch (err: any) {
+    console.error('HOMEPAGE DATA FETCH ERROR:', err);
+    throw err;
+  }
+
+  const allThemeImages = themeImagesRes?.data ?? [];
+  const homeThemeImages = allThemeImages.filter(
+    (img) => img.page === 'home' && img.is_active && !img.is_deleted
+  );
+
+  // 1. Hero slides from Theme Page
+  const themeHeroImages = homeThemeImages.filter((img) => img.placement === 'hero');
+
+  // 2. Captured On The Road images from Theme Page
+  const themeRoadImages = homeThemeImages.filter((img) => img.placement === 'captured_road');
+
+  // 3. Kerala Ayurveda & Wellness banner image from Theme Page, Content Settings, or fallback local asset
+  const themeAyurvedaImage = homeThemeImages.find(
+    (img) => (img.placement === 'ayurveda' || img.placement === 'wellness') && img.is_active && !img.is_deleted
+  );
+
+  const customContentImage =
+    homeContent.ayurveda?.image_url &&
+      homeContent.ayurveda.image_url !== '/images/kerala-ayurveda-wellness.jpg'
+      ? homeContent.ayurveda.image_url
+      : null;
+
+  const ayurvedaBgUrl =
+    customContentImage ||
+    themeAyurvedaImage?.image_url ||
+    homeContent.ayurveda?.image_url ||
+    '/images/kerala-ayurveda-wellness.jpg';
+
+  // ── Construct Hero Slides (Priority: Theme Uploads -> DB Destinations/Gallery -> Curated Fallbacks) ──
+  const heroSlides: HeroSlideItem[] = [];
+
+  if (themeHeroImages.length > 0) {
+    themeHeroImages.forEach((img) => {
+      heroSlides.push({
+        id: `theme-${img.id}`,
+        imageUrl: img.image_url,
+        title: 'Discover Asia with us',
+        subtitle: 'Explore Beyond Boundaries',
+      });
+    });
+  } else {
+    // 1. Destination slides from DB
+    (destinations ?? []).forEach((dest) => {
+      if (dest.cover_image_url) {
+        heroSlides.push({
+          id: `dest-${dest.id}`,
+          imageUrl: dest.cover_image_url,
+          title: 'Discover Asia with us',
+          subtitle: 'Explore Beyond Boundaries',
+        });
+      }
+    });
+
+
+
+    // Fallback slides in case database has very few images
+    if (heroSlides.length < 3) {
+      heroSlides.push(
+        {
+          id: 'fallback-maldives',
+          imageUrl:
+            'https://images.unsplash.com/photo-1514282401047-d79a71a590e8?auto=format&fit=crop&w=1920&q=80',
+          title: 'Discover Asia with us',
+          subtitle: 'Explore Beyond Boundaries',
+        },
+        {
+          id: 'fallback-kerala',
+          imageUrl:
+            'https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?auto=format&fit=crop&w=1920&q=80',
+          title: 'Discover Asia with us',
+          subtitle: 'Explore Beyond Boundaries',
+        }
+      );
+    }
+  }
+
+  // ── Captured On The Road Images (Managed in Theme Page) ──
+  const roadImagesToDisplay =
+    themeRoadImages.length > 0
+      ? themeRoadImages.map((img) => ({
+        url: img.image_url,
+        alt: img.title || 'Captured on the road',
+      }))
+      : [
+        {
+          url: 'https://images.unsplash.com/photo-1544644181-1484b3fdfc62?auto=format&fit=crop&w=1200&q=80',
+          alt: 'Coastal paradise drive',
+        },
+        {
+          url: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1200&q=80',
+          alt: 'Tropical serenity',
+        },
+        {
+          url: 'https://images.unsplash.com/photo-1512100356356-de1b84283e18?auto=format&fit=crop&w=1200&q=80',
+          alt: 'Island hideaway',
+        },
+      ];
 
   return (
-    <div>
-      {/* HERO — four-panel image collage with a centered headline, matching
-          travinco.com's split-image hero. Falls back to a single hero image
-          (or a plain brand-colored panel) when fewer than 4 destination
-          photos are published yet. */}
-      <section className="relative flex min-h-[85vh] items-center overflow-hidden bg-brand-900 text-white">
-        <div className="absolute inset-0 grid grid-cols-2 sm:grid-cols-4">
-          {(heroCollage.length > 0 ? heroCollage : heroImageUrl ? [heroImageUrl] : []).length === 0 ? (
-            <div className="col-span-4 bg-gradient-to-br from-brand-800 to-brand-900" />
-          ) : (
-            Array.from({ length: 4 }).map((_, i) => {
-              const pool = heroCollage.length > 0 ? heroCollage : [heroImageUrl!];
-              const src = pool[i % pool.length];
-              return (
-                <div key={i} className="relative h-full w-full">
-                  <Image src={src} alt="" fill priority className="object-cover" sizes="25vw" />
-                </div>
-              );
-            })
-          )}
-          <div className="absolute inset-0 bg-black/45" />
-        </div>
+    <div className="bg-white">
+      {/* ── 1. HERO SECTION: 100vh Full Viewport Slideshow ── */}
+      <HeroSlider slides={heroSlides} heroContent={homeContent.hero} />
 
-        <div className="container-page relative w-full py-24 text-center">
-          <p className="mb-4 inline-flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.3em] text-white/90">
-            Explore Beyond Boundaries
-          </p>
-          <h1 className="font-display text-4xl font-bold uppercase leading-tight sm:text-6xl">
-            {settings.business_name ? `Discover Asia with ${settings.business_name}` : 'Discover Asia With Us'}
-          </h1>
-          <div className="mx-auto mt-6">
-            <Link href="/packages" className="btn-cta">
-              Learn More
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      {/* QUOTE — short pull-quote band, matching the Mark Twain line on
-          travinco.com. */}
-      <section className="container-page py-14 text-center">
-        <Quote className="mx-auto h-8 w-8 text-ink-200" />
-        <p className="mx-auto mt-2 max-w-xl text-lg text-ink-600">
-          Sail away from the safe harbor. Explore. Dream. Discover.
-        </p>
-        <p className="mt-2 text-sm text-ink-400">Mark Twain</p>
-
-        <div className="mx-auto mt-8 max-w-3xl rounded-xl2 bg-white p-3 text-left shadow-lg sm:p-3.5">
-          <HeroSearch destinations={(destinations ?? []).map((d) => ({ slug: d.slug, name: d.name }))} />
-        </div>
-      </section>
-
-      {/* INTRO — "What we do" narrative + image collage. Original copy
-          written for this project. */}
-      <section className="container-page py-20">
-        <div className="grid items-start gap-12 lg:grid-cols-2">
-          <div>
-            <SectionHeading title="What We Do" />
-            <p className="text-ink-600">
-              Welcome to {settings.business_name ?? 'Travinco Travel Solutions'}, a premier travel
-              agency built around one idea: a good trip is planned by someone who has actually
-              been there. Our itineraries come from relationships we maintain directly with
-              hotels, drivers and local guides — not a marketplace of unreviewed listings.
-            </p>
-            <p className="mt-4 text-ink-600">
-              Whether it&apos;s a weekend escape, a family holiday, or a longer multi-destination
-              trip, we handle the logistics — accommodation, transport, permits where needed —
-              so what&apos;s left for you is the part worth showing up for.
-            </p>
-            <Link href="/about" className="btn-cta mt-6 inline-flex">
-              Learn More <ArrowRight className="h-4 w-4" />
-            </Link>
-          </div>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            {(galleryPreview ?? []).slice(0, 6).map((img) => (
-              <div key={img.id} className="relative aspect-square overflow-hidden rounded-xl2 bg-ink-100">
-                <Image src={img.image_url} alt={img.title ?? ''} fill className="object-cover" />
-              </div>
-            ))}
-            {(galleryPreview ?? []).length === 0 && (
-              <div className="col-span-2 flex aspect-video items-center justify-center rounded-xl2 bg-ink-100 text-sm text-ink-400 sm:col-span-3">
-                Add gallery images to show them here
-              </div>
-            )}
-          </div>
-        </div>
-      </section>
-
-      {(galleryPreview ?? []).length > 0 && (
-        <section className="section-aqua py-16">
-          <div className="container-page">
-            <SectionHeading eyebrow="From the road" title="A few favorite shots" />
-            <div className="mt-8">
-              <ImageCarousel
-                images={(galleryPreview ?? []).map((img) => ({
-                  url: img.image_url,
-                  alt: img.title ?? '',
-                }))}
-              />
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* SNAPSHOT OF PACKAGES — destination-led package cards. */}
-      {(featuredPackages ?? []).length > 0 && (
-        <section className="section-sand py-20">
-          <div className="container-page">
-            <SectionHeading
-              title="Snapshot of Our Packages"
-              description="A sample of what we plan most often — every one of these is fully customizable."
-            
-            />
-            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-              {(featuredPackages ?? []).map((pkg) => {
-                const destRaw = pkg.destinations as { name: string } | { name: string }[] | null;
-                const destinationName = Array.isArray(destRaw) ? destRaw[0]?.name : destRaw?.name;
-                return (
-                  <PackageCard key={pkg.id} pkg={{ ...pkg, destinationName }} />
-                );
-              })}
-            </div>
-            <div className="mt-10 text-center">
-              <Link href="/packages" className="btn-outline">
-                View all packages
-              </Link>
-            </div>
-          </div>
-        </section>
-      )}
-
+      {/* ── 3. POPULAR DESTINATIONS SHOWCASE ── */}
       {(destinations ?? []).length > 0 && (
-        <section className="container-page py-20">
-          <SectionHeading eyebrow="Where to next" title="Popular destinations" />
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
-            {(destinations ?? []).map((d) => (
-              <Link key={d.id} href={`/destinations/${d.slug}`} className="group">
-                <div className="relative aspect-square overflow-hidden rounded-xl2 bg-ink-100 shadow-sm transition-shadow duration-300 group-hover:shadow-lg">
-                  {d.cover_image_url && (
+        <section className="container-page py-12 sm:py-16">
+          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-8">
+            <SectionHeading
+              eyebrow={homeContent.destinations.eyebrow}
+              title={homeContent.destinations.title}
+              description={homeContent.destinations.description}
+            />
+            <Link
+              href="/destinations"
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-700 hover:text-brand-900 transition whitespace-nowrap mb-8"
+            >
+              <span>{homeContent.destinations.cta_text || 'View all destinations'}</span>
+              <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
+
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {(destinations ?? []).slice(0, 3).map((d) => (
+              <Link key={d.id} href={`/destinations/${d.slug}`} className="group block">
+                <div className="relative aspect-[4/3] sm:aspect-[16/10] overflow-hidden rounded-2xl bg-ink-100 shadow-md transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-xl">
+                  {d.cover_image_url ? (
                     <Image
                       src={d.cover_image_url}
                       alt={d.name}
                       fill
-                      className="object-cover transition-transform duration-500 group-hover:scale-110"
-                      sizes="200px"
+                      className="object-cover transition-transform duration-700 group-hover:scale-108"
+                      sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
                     />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center bg-brand-900 text-white font-medium">
+                      {d.name}
+                    </div>
                   )}
-                  <div className="absolute inset-0 bg-gradient-to-t from-navy-900/85 via-navy-900/20 to-transparent" />
-                  <div className="absolute bottom-0 left-0 right-0 border-b-2 border-coral-400 p-3">
-                    <span className="block text-sm font-semibold text-white">{d.name}</span>
-                    <span className="mt-0.5 flex items-center gap-1 text-xs text-white/70 opacity-0 transition-opacity group-hover:opacity-100">
-                      Explore <ArrowRight className="h-3 w-3" />
+
+                  {/* Gradient Scrim */}
+                  <div className="absolute inset-0 bg-gradient-to-t from-navy-950 via-navy-950/40 to-transparent" />
+
+                  {/* Top Badge */}
+                  <div className="absolute top-3.5 left-3.5">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-white/90 backdrop-blur-xs px-2.5 py-1 text-[11px] font-semibold text-ink-800 shadow-xs">
+                      <MapPin className="h-3 w-3 text-brand-600" />
+                      <span>{d.name}</span>
                     </span>
                   </div>
-                </div>
-              </Link>
-            ))}
-          </div>
-        </section>
-      )}
 
-      {/* THEMED FEATURE BANNER — full-bleed photo band pointing at whichever
-          offer is currently active, matching the "Rejuvenating Kerala"
-          style band on travinco.com (full photo, dark overlay, left-aligned
-          text block). */}
-      {topOffer && (
-        <section className="relative overflow-hidden py-24 text-white">
-          <div className="absolute inset-0 bg-brand-900">
-            {topOffer.image_url && (
-              <Image src={topOffer.image_url} alt="" fill className="object-cover opacity-70" />
-            )}
-            <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/40 to-transparent" />
-          </div>
-          <div className="container-page relative max-w-xl">
-            <span className="badge-discount mb-3 inline-flex">Limited time</span>
-            <h2 className="font-display text-3xl font-bold uppercase leading-tight sm:text-4xl">
-              {topOffer.title}
-            </h2>
-            <div className="mt-4 h-[3px] w-12 bg-brand-400" />
-            <p className="mt-4 text-white/85">
-              {topOffer.discount_percent
-                ? `Save ${topOffer.discount_percent}% when you book before ${formatDate(topOffer.valid_to)}.`
-                : `Save ₹${topOffer.discount_flat} when you book before ${formatDate(topOffer.valid_to)}.`}
-            </p>
-            <Link href="/offers" className="btn-cta mt-6 inline-flex">
-              View this offer
-            </Link>
-          </div>
-        </section>
-      )}
-
-      {(offers ?? []).length > 0 && (
-        <section className="container-page py-16">
-          <SectionHeading eyebrow="More offers" title="Special offers" />
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
-            {(offers ?? []).map((o) => (
-              <Link key={o.id} href="/offers" className="card-hover group overflow-hidden">
-                <div className="relative aspect-video bg-ink-100">
-                  {o.image_url && <Image src={o.image_url} alt={o.title} fill className="object-cover transition-transform duration-300 group-hover:scale-105" />}
-                  <span className="badge-discount absolute left-3 top-3 shadow-sm">
-                    {o.discount_percent ? `${o.discount_percent}% off` : `₹${o.discount_flat} off`}
-                  </span>
-                </div>
-                <div className="p-4">
-                  <p className="font-medium text-ink-900 group-hover:text-brand-700">{o.title}</p>
-                  <p className="mt-1 text-xs text-ink-400">Until {formatDate(o.valid_to)}</p>
-                </div>
-              </Link>
-            ))}
-          </div>
-        </section>
-      )}
-
-      <section className="section-navy relative overflow-hidden py-16">
-        <div className="absolute -right-20 top-0 h-72 w-72 rounded-full bg-brand-500/10 blur-3xl" />
-        <div className="container-page relative">
-          <TranslatedSectionHeading eyebrowKey="home_why_us_eyebrow" titleKey="home_why_us_title" />
-          <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-4">
-            {whyChooseUs.map((w) => (
-              <div key={w.title}>
-                <w.icon className={`h-6 w-6 ${w.accent}`} />
-                <p className="mt-3 font-medium">{w.title}</p>
-                <p className="mt-1 text-sm text-white/70">{w.body}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* HOW IT WORKS — three-step overview of the booking process.
-          Original copy and structure. */}
-      <section className="container-page py-16">
-        <TranslatedSectionHeading eyebrowKey="home_how_it_works_eyebrow" titleKey="home_how_it_works_title" />
-        <div className="grid grid-cols-1 gap-8 sm:grid-cols-3">
-          {[
-            {
-              step: '01',
-              title: 'Tell us what you have in mind',
-              body: 'Share a destination, a rough budget, or just a feeling — a beach week, a family trip, a solo reset.',
-            },
-            {
-              step: '02',
-              title: 'Get a plan built around you',
-              body: 'We put together an itinerary and a real quote, not a generic package with your name pasted on top.',
-            },
-            {
-              step: '03',
-              title: 'Travel with backup on call',
-              body: 'Once you\u2019re on the ground, our team is a phone call away if plans need to change.',
-            },
-          ].map((s) => (
-            <div key={s.step} className="relative rounded-xl2 border border-ink-100 p-6">
-              <span className="font-display text-4xl font-semibold text-brand-100">{s.step}</span>
-              <p className="mt-3 font-medium text-ink-900">{s.title}</p>
-              <p className="mt-1.5 text-sm text-ink-500">{s.body}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="section-aqua py-16">
-        <div className="container-page">
-          <SectionHeading eyebrow="What travelers say" title="Recent trips" />
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
-            {testimonials.map((t, i) => {
-              const borders = ['border-t-brand-400', 'border-t-sand-400', 'border-t-coral-400', 'border-t-ocean-400'];
-              return (
-                <div key={t.name} className={`card border-t-4 p-5 ${borders[i % borders.length]}`}>
-                  <div className="flex items-center justify-between">
-                    <Quote className="h-5 w-5 text-ink-300" />
-                    <div className="flex gap-0.5" aria-label={`${t.rating} out of 5 stars`}>
-                      {Array.from({ length: 5 }).map((_, starIndex) => (
-                        <Star
-                          key={starIndex}
-                          className={`h-3.5 w-3.5 ${
-                            starIndex < t.rating ? 'fill-sand-400 text-sand-400' : 'text-ink-200'
-                          }`}
-                        />
-                      ))}
+                  {/* Bottom Content */}
+                  <div className="absolute bottom-0 inset-x-0 p-5 text-white">
+                    <h3 className="font-display text-xl font-bold tracking-tight text-white group-hover:text-sand-300 transition-colors">
+                      {d.name}
+                    </h3>
+                    {d.description && (
+                      <p className="mt-1.5 text-xs text-white/80 line-clamp-2 font-light">
+                        {d.description}
+                      </p>
+                    )}
+                    <div className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-sand-300 group-hover:translate-x-1 transition-transform">
+                      <span>Explore Itineraries</span>
+                      <ArrowRight className="h-3.5 w-3.5" />
                     </div>
                   </div>
-                  <p className="mt-3 text-sm text-ink-600">{t.quote}</p>
-                  <p className="mt-4 text-sm font-medium text-ink-800">{t.name}</p>
-                  <p className="text-xs text-ink-400">{t.trip}</p>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* ── 4. SNAPSHOT OF PACKAGES (ONLY FROM DB) ── */}
+      {(featuredPackages ?? []).length > 0 && (
+        <section className="section-sand py-16 sm:py-20 border-y border-sand-200/60">
+          <div className="container-page">
+            <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-10">
+              <SectionHeading
+                eyebrow="Curated Journeys"
+                title="Handcrafted Tour Packages"
+                description="Every itinerary is fully flexible — customize hotels, room categories, activities, and duration to match your preferences."
+              />
+              <Link
+                href="/packages"
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-700 hover:text-brand-900 transition whitespace-nowrap mb-8"
+              >
+                <span>Browse all packages</span>
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+              {(featuredPackages ?? []).slice(0, 4).map((pkg) => {
+                const destRaw = pkg.destinations as { name: string } | { name: string }[] | null;
+                const destinationName = Array.isArray(destRaw) ? destRaw[0]?.name : destRaw?.name;
+                return <PackageCard key={pkg.id} pkg={{ ...pkg, destinationName }} />;
+              })}
+            </div>
+
+            {/* Link to Package Page */}
+            <div className="mt-8 text-center">
+              <Link
+                href="/packages"
+                className="btn-outline inline-flex items-center gap-2 text-sm bg-white hover:bg-sand-50 shadow-2xs font-medium"
+              >
+                <span>View all packages in package page</span>
+                <ArrowRight className="h-4 w-4 text-brand-600" />
+              </Link>
+            </div>
+
+            {/* Custom plan callout */}
+            <div className="mt-12 rounded-2xl bg-gradient-to-r from-brand-800 to-navy-900 p-6 sm:p-8 text-white shadow-xl flex flex-col md:flex-row items-center justify-between gap-6">
+              <div className="space-y-1.5 text-center md:text-left">
+                <span className="inline-flex items-center text-xs font-semibold uppercase tracking-wider text-sand-300">
+                  Can&apos;t find your exact itinerary?
+                </span>
+                <h3 className="text-xl sm:text-2xl font-bold font-display">
+                  We design custom vacations from scratch
+                </h3>
+                <p className="text-sm text-white/80 max-w-xl">
+                  Tell us where you want to go, your dates, and budget. Our travel specialists will build a private, transparent plan within 24 hours.
+                </p>
+              </div>
+              <Link
+                href="/booking"
+                className="btn-cta px-6 py-3 text-sm font-semibold shrink-0 shadow-lg"
+              >
+                Build Custom Itinerary
+              </Link>
+            </div>
+          </div>
+        </section>
+      )}
+
+
+
+      {/* ── 5. THE TRAVINCO DIFFERENCE (WHY CHOOSE US) ── */}
+      <section className="section-navy relative overflow-hidden py-20 bg-navy-950 text-white">
+        <div className="absolute -right-20 top-0 h-96 w-96 rounded-full bg-brand-500/10 blur-3xl" />
+        <div className="absolute -left-20 bottom-0 h-96 w-96 rounded-full bg-ocean-400/10 blur-3xl" />
+
+        <div className="container-page relative">
+          <div className="text-center max-w-2xl mx-auto mb-16">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-sand-300">
+              {homeContent.experience.eyebrow}
+            </p>
+            <h2 className="font-display text-3xl sm:text-4xl font-bold text-white tracking-tight">
+              {homeContent.experience.title}
+            </h2>
+            <p className="mt-3 text-sm text-white/70">
+              {homeContent.experience.description}
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-4">
+            {homeContent.experience.cards.map((card) => {
+              const Icon = getExperienceIcon(card.icon_key);
+              return (
+                <div
+                  key={card.id || card.title}
+                  className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur-sm hover:border-white/20 transition-all hover:-translate-y-1"
+                >
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-brand-600/30 text-sand-300 border border-brand-500/20">
+                      <Icon className="h-6 w-6" />
+                    </div>
+                    <span className="rounded-full bg-white/10 px-2.5 py-0.5 text-[10px] font-semibold text-white/80">
+                      {card.badge}
+                    </span>
+                  </div>
+                  <h3 className="font-semibold text-base text-white">{card.title}</h3>
+                  <p className="mt-2 text-xs text-white/70 leading-relaxed">{card.body}</p>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Quick Stats Strip (Animated Count-Up) */}
+          {homeContent.experience.stats && homeContent.experience.stats.length > 0 && (
+            <ExperienceStats stats={homeContent.experience.stats} />
+          )}
+        </div>
+      </section>
+
+      {/* ── 6. REAL TRAVEL MOMENTS: CAPTURED ON THE ROAD (MANAGED IN THEME) ── */}
+      {roadImagesToDisplay.length > 0 && (
+        <section className="section-aqua py-16 sm:py-20 border-b border-ocean-100">
+          <div className="container-page">
+            <div className="mb-10 max-w-2xl">
+              <SectionHeading
+                eyebrow={homeContent.captured_road.eyebrow}
+                title={homeContent.captured_road.title}
+                description={homeContent.captured_road.description}
+              />
+            </div>
+
+            <ImageCarousel images={roadImagesToDisplay} />
+          </div>
+        </section>
+      )}
+
+      {/* ── 7. HOW IT WORKS: 3 SIMPLE STEPS ── */}
+      <section className="relative z-10 bg-white py-16 sm:py-20 border-b border-ink-100/60">
+        <div className="container-page">
+          <div className="text-center max-w-2xl mx-auto mb-14">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-brand-600">
+              {homeContent.how_it_works.eyebrow}
+            </p>
+            <h2 className="font-display text-3xl sm:text-4xl font-bold text-ink-900 tracking-tight">
+              {homeContent.how_it_works.title}
+            </h2>
+            <p className="mt-3 text-sm text-ink-500">
+              {homeContent.how_it_works.description}
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 gap-8 sm:grid-cols-3 relative">
+            {homeContent.how_it_works.steps.map((s, idx) => {
+              const icons = [Compass, Calendar, ShieldCheck];
+              const Icon = icons[idx % icons.length] || Compass;
+              return (
+                <div
+                  key={s.step || idx}
+                  className="relative rounded-2xl border border-ink-100 bg-white p-7 shadow-xs hover:shadow-md transition-shadow"
+                >
+                  <div className="flex items-center justify-between mb-5">
+                    <span className="font-display text-4xl font-bold text-sand-300">{s.step}</span>
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-50 text-brand-700">
+                      <Icon className="h-5 w-5" />
+                    </div>
+                  </div>
+                  <h3 className="text-base font-bold text-ink-900">{s.title}</h3>
+                  <p className="mt-2 text-xs sm:text-sm text-ink-500 leading-relaxed">{s.body}</p>
                 </div>
               );
             })}
@@ -361,45 +438,134 @@ export default async function HomePage() {
         </div>
       </section>
 
+      {/* ── 8. REJUVENATING KERALA AYURVEDA & WELLNESS PACKAGES (PARALLAX FIXED SECTION) ── */}
+      <section
+        className="relative w-full min-h-[580px] lg:min-h-[660px] bg-fixed bg-cover bg-center flex items-center py-20 sm:py-28 overflow-hidden"
+        style={{
+          backgroundImage: `url('${ayurvedaBgUrl}')`,
+          backgroundAttachment: 'fixed',
+          backgroundPosition: 'center',
+          backgroundSize: 'cover',
+          backgroundRepeat: 'no-repeat',
+        }}
+      >
+        {/* Soft atmospheric gradient scrim: subtle on left so lush retreat scenery is visible, deeper on right behind the text card */}
+        <div className="absolute inset-0 bg-gradient-to-r from-black/25 via-black/40 to-black/80 sm:from-black/15 sm:via-black/35 sm:to-black/80 pointer-events-none" />
+
+        <div className="container-page relative z-10 flex justify-end">
+          <div className="w-full sm:max-w-xl lg:max-w-xl xl:max-w-2xl rounded-3xl bg-black/60 backdrop-blur-md p-7 sm:p-9 lg:p-11 border border-white/15 shadow-2xl text-white">
+            <span className="inline-flex items-center rounded-full bg-emerald-500/25 border border-emerald-400/35 px-3.5 py-1 text-[11px] font-semibold uppercase tracking-wider text-emerald-300 mb-4">
+              <span>{homeContent.ayurveda?.eyebrow || 'Ayurveda & Traditional Yoga'}</span>
+            </span>
+
+            <h2 className="font-display text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight text-white uppercase leading-tight mb-4">
+              {homeContent.ayurveda?.title || 'REJUVENATING KERALA AYURVEDA & WELLNESS PACKAGES'}
+            </h2>
+
+            <p className="text-sm sm:text-base text-white/90 font-light leading-relaxed mb-8">
+              {homeContent.ayurveda?.description || 'Immerse yourself in authentic Kerala Ayurveda packages and traditional Yoga retreats. Experience holistic wellness programs, Panchakarma therapies, and mind-body rejuvenation at top-rated retreat resorts. Complete with customized wellness itineraries, resort bookings, and ground logistics by our local team in Kerala'}
+            </p>
+
+            <Link
+              href={homeContent.ayurveda?.button_link || '/packages'}
+              className="inline-flex items-center gap-2 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-8 py-3.5 text-sm sm:text-base shadow-xl hover:shadow-emerald-600/35 transition-all hover:-translate-y-0.5 active:translate-y-0"
+            >
+              <span>{homeContent.ayurveda?.button_text || 'Learn More'}</span>
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* ── 9. TRAVELER TESTIMONIALS (CAROUSEL) ── */}
+      <section className="section-sand py-16 sm:py-20 border-t border-sand-200/60 relative z-10 bg-sand-50 shadow-[0_-15px_30px_rgba(0,0,0,0.12)]">
+        <div className="container-page">
+          <div className="mb-10 max-w-2xl">
+            <SectionHeading
+              eyebrow={homeContent.testimonials.eyebrow}
+              title={homeContent.testimonials.title}
+              description={homeContent.testimonials.description}
+            />
+          </div>
+          <TestimonialsCarousel items={homeContent.testimonials.items} />
+        </div>
+      </section>
+
+      {/* ── 10. LATEST BLOG POSTS & TRAVEL GUIDES ── */}
       {(recentPosts ?? []).length > 0 && (
-        <section className="container-page py-16">
-          <TranslatedSectionHeading eyebrowKey="home_blog_eyebrow" titleKey="home_blog_title" />
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
-            {(recentPosts ?? []).map((post) => (
-              <Link key={post.id} href={`/blog/${post.slug}`} className="card-hover group overflow-hidden">
-                <div className="relative aspect-video bg-ink-100">
-                  {post.cover_image_url && (
-                    <Image
-                      src={post.cover_image_url}
-                      alt={post.title}
-                      fill
-                      className="object-cover transition-transform duration-300 group-hover:scale-105"
-                    />
-                  )}
-                </div>
-                <div className="p-4">
-                  <p className="text-xs text-ink-400">{formatDate(post.created_at)}</p>
-                  <p className="mt-1 font-medium text-ink-900 transition-colors group-hover:text-coral-600">
-                    {post.title}
-                  </p>
-                  {post.excerpt && (
-                    <p className="mt-1.5 text-sm text-ink-500 line-clamp-2">{post.excerpt}</p>
-                  )}
-                </div>
+        <section className="relative z-10 bg-white py-16 sm:py-20 border-t border-ink-100/60">
+          <div className="container-page">
+            <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-8">
+              <SectionHeading
+                eyebrow={homeContent.blog.eyebrow}
+                title={homeContent.blog.title}
+                description={homeContent.blog.description}
+              />
+              <Link
+                href="/blog"
+                className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-700 hover:text-brand-900 transition whitespace-nowrap mb-8"
+              >
+                <span>{homeContent.blog.cta_text || 'Read all articles'}</span>
+                <ArrowRight className="h-3.5 w-3.5" />
               </Link>
-            ))}
+            </div>
+
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+              {(recentPosts ?? []).map((post) => (
+                <Link key={post.id} href={`/blog/${post.slug}`} className="card-hover group overflow-hidden bg-white rounded-2xl border border-ink-100">
+                  <div className="relative aspect-video bg-ink-100">
+                    {post.cover_image_url && (
+                      <Image
+                        src={post.cover_image_url}
+                        alt={post.title}
+                        fill
+                        className="object-cover transition-transform duration-500 group-hover:scale-105"
+                      />
+                    )}
+                  </div>
+                  <div className="p-5">
+                    <p className="text-xs text-ink-400">{formatDate(post.created_at)}</p>
+                    <p className="mt-1.5 font-bold text-ink-900 transition-colors group-hover:text-coral-600 line-clamp-2">
+                      {post.title}
+                    </p>
+                    {post.excerpt && (
+                      <p className="mt-2 text-xs text-ink-500 line-clamp-2 leading-relaxed">
+                        {post.excerpt}
+                      </p>
+                    )}
+                    <span className="mt-4 inline-flex items-center gap-1 text-xs font-semibold text-brand-700 group-hover:translate-x-0.5 transition-transform">
+                      Read guide →
+                    </span>
+                  </div>
+                </Link>
+              ))}
+            </div>
           </div>
         </section>
       )}
 
-      <section className="relative overflow-hidden bg-gradient-to-br from-brand-700 via-brand-800 to-navy-900 py-16 text-white">
-        <div className="absolute -left-16 -top-16 h-64 w-64 rounded-full bg-ocean-300/10 blur-3xl" />
-        <div className="absolute -bottom-20 right-0 h-72 w-72 rounded-full bg-coral-400/10 blur-3xl" />
-        <div className="container-page relative text-center">
-          <TranslatedCta />
-          <Link href="/booking" className="btn-cta mt-6 inline-flex">
-            Plan my trip
-          </Link>
+      {/* ── 11. HIGH-IMPACT FINAL CALL TO ACTION ── */}
+      <section className="relative overflow-hidden bg-gradient-to-br from-brand-800 via-brand-900 to-navy-950 py-20 text-white">
+        <div className="absolute -left-16 -top-16 h-72 w-72 rounded-full bg-ocean-300/15 blur-3xl" />
+        <div className="absolute -bottom-20 right-0 h-80 w-80 rounded-full bg-coral-400/15 blur-3xl" />
+        <div className="container-page relative text-center max-w-3xl mx-auto space-y-6">
+          <span className="inline-flex items-center rounded-full bg-white/10 px-4 py-1.5 text-xs font-semibold text-sand-300 backdrop-blur-md">
+            {homeContent.final_cta.badge}
+          </span>
+          <h2 className="font-display text-3xl sm:text-5xl font-bold tracking-tight text-white leading-tight">
+            {homeContent.final_cta.title}
+          </h2>
+          <p className="text-base sm:text-lg text-white/85 max-w-xl mx-auto font-light leading-relaxed">
+            {homeContent.final_cta.description}
+          </p>
+          <div className="flex flex-wrap items-center justify-center gap-4 pt-2">
+            <Link
+              href={homeContent.final_cta.button_link || '/booking'}
+              className="btn-cta text-sm px-8 py-3.5 font-semibold shadow-xl"
+            >
+              {homeContent.final_cta.button_text || 'Plan My Trip'}
+            </Link>
+          </div>
         </div>
       </section>
     </div>

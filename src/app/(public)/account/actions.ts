@@ -1,8 +1,9 @@
 'use server';
 
-import { createClient } from '@/lib/supabase/server';
+import { createCustomerClient, CUSTOMER_AUTH_COOKIE } from '@/lib/supabase/server';
 import { requireCustomer } from '@/lib/supabase/customer-auth-helpers';
 import { redirect } from 'next/navigation';
+import { cookies } from 'next/headers';
 import { z } from 'zod';
 
 const signupSchema = z.object({
@@ -33,16 +34,17 @@ export async function signUpCustomer(raw: unknown) {
     return { error: parsed.error.issues[0]?.message ?? 'Please check the form.' };
   }
 
-  const supabase = await createClient();
-  const { error } = await supabase.auth.signUp({
+  const supabase = await createCustomerClient();
+  const { data: authData, error } = await supabase.auth.signUp({
     email: parsed.data.email,
     password: parsed.data.password,
     options: {
-      // This metadata flag triggers migration 021's logic:
+      // This metadata flag triggers migration 021/039 logic:
       // creates customer_accounts row and skips creating staff profiles row.
       data: {
         full_name: parsed.data.full_name,
         is_customer_signup: 'true',
+        role: 'customer',
       },
     },
   });
@@ -60,7 +62,37 @@ export async function signUpCustomer(raw: unknown) {
     return { error: 'Could not create your account. Please try again.' };
   }
 
-  return {};
+  if (authData?.user) {
+    try {
+      await supabase.from('customer_accounts').upsert({
+        id: authData.user.id,
+        full_name: parsed.data.full_name,
+        email: parsed.data.email,
+      }, { onConflict: 'id' });
+
+      // Ensure user also exists in customers table so admin/team can see them
+      const { data: existingCust } = await supabase
+        .from('customers')
+        .select('id')
+        .eq('email', parsed.data.email)
+        .maybeSingle();
+
+      if (!existingCust) {
+        await supabase.from('customers').insert({
+          full_name: parsed.data.full_name,
+          email: parsed.data.email,
+          phone: '',
+          source: 'website',
+          is_active: true,
+          is_deleted: false,
+        } as any);
+      }
+    } catch (upsertErr) {
+      console.warn('customer_accounts/customers upsert on signup:', upsertErr);
+    }
+  }
+
+  return { hasSession: Boolean(authData?.session) };
 }
 
 export async function logInCustomer(raw: unknown) {
@@ -69,7 +101,7 @@ export async function logInCustomer(raw: unknown) {
     return { error: parsed.error.issues[0]?.message ?? 'Please check the form.' };
   }
 
-  const supabase = await createClient();
+  const supabase = await createCustomerClient();
   const { data: authData, error } = await supabase.auth.signInWithPassword({
     email: parsed.data.email,
     password: parsed.data.password,
@@ -85,6 +117,27 @@ export async function logInCustomer(raw: unknown) {
     return { error: 'Incorrect email or password.' };
   }
 
+  // Check if this customer has been deactivated by admin/team
+  const { data: custRecord } = await supabase
+    .from('customers')
+    .select('id, is_active')
+    .eq('email', parsed.data.email)
+    .maybeSingle();
+
+  if (custRecord) {
+    const { data: statusSetting } = await supabase
+      .from('website_settings')
+      .select('value')
+      .eq('key', `customer_status_${custRecord.id}`)
+      .maybeSingle();
+
+    const isDeactivated = statusSetting?.value?.is_active === false || custRecord.is_active === false;
+    if (isDeactivated) {
+      await supabase.auth.signOut();
+      return { error: 'Your account has been deactivated. Please contact support.' };
+    }
+  }
+
   // Ensure this authenticated user has a corresponding customer_accounts record.
   // Prevents staff users from logging in through customer portal and vice versa.
   const { data: customerAccount } = await supabase
@@ -94,19 +147,65 @@ export async function logInCustomer(raw: unknown) {
     .maybeSingle();
 
   if (!customerAccount) {
-    await supabase.auth.signOut();
-    return {
-      error:
-        'This login is for customer accounts only. If you are a staff member, please use the staff portal at /login.',
-    };
+    // Check if this user is a staff member
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('id, role')
+      .eq('id', authData.user.id)
+      .maybeSingle();
+
+    if (profile?.role) {
+      await supabase.auth.signOut();
+      return {
+        error:
+          'This login is for customer accounts only. If you are a staff member, please use the staff portal at /travinco_admin_login.',
+      };
+    }
+
+    // Regular customer whose customer_accounts record was not populated yet by trigger
+    try {
+      const fullName = (authData.user.user_metadata?.full_name as string) || authData.user.email?.split('@')[0] || 'Customer';
+      await supabase.from('customer_accounts').upsert({
+        id: authData.user.id,
+        full_name: fullName,
+        email: authData.user.email!,
+      }, { onConflict: 'id' });
+
+      // Also ensure customer appears in public.customers
+      if (!custRecord) {
+        await supabase.from('customers').insert({
+          full_name: fullName,
+          email: authData.user.email!,
+          phone: '',
+          source: 'website',
+          is_active: true,
+          is_deleted: false,
+        } as any);
+      }
+    } catch (insertErr) {
+      console.error('Failed to create customer_accounts record:', insertErr);
+    }
   }
 
   return {};
 }
 
 export async function logOutCustomer() {
-  const supabase = await createClient();
-  await supabase.auth.signOut();
+  try {
+    const supabase = await createCustomerClient();
+    await Promise.race([
+      supabase.auth.signOut(),
+      new Promise((resolve) => setTimeout(resolve, 600)),
+    ]);
+
+    const cookieStore = await cookies();
+    cookieStore.delete(CUSTOMER_AUTH_COOKIE);
+    for (let i = 0; i <= 4; i++) {
+      cookieStore.delete(`${CUSTOMER_AUTH_COOKIE}.${i}`);
+    }
+  } catch (err) {
+    console.warn('Customer signOut error caught:', err);
+  }
   redirect('/account/login');
 }
 
@@ -129,7 +228,7 @@ export async function changeCustomerPassword(raw: unknown) {
     return { error: parsed.error.issues[0]?.message ?? 'Please check the form.' };
   }
 
-  const supabase = await createClient();
+  const supabase = await createCustomerClient();
   const { error } = await supabase.auth.updateUser({ password: parsed.data.password });
   if (error) return { error: 'Could not update your password. Please try again.' };
 
@@ -137,7 +236,7 @@ export async function changeCustomerPassword(raw: unknown) {
 }
 
 export async function requestPasswordReset(email: string) {
-  const supabase = await createClient();
+  const supabase = await createCustomerClient();
   const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
     redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL ?? ''}/account/reset-password`,
   });

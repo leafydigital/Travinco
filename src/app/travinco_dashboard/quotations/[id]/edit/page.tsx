@@ -14,11 +14,11 @@ export default async function EditQuotationPage({ params }: { params: { id: stri
   const supabase = await createClient();
   const [profile, { data: q }, m] = await Promise.all([
     requireProfile(),
-    supabase.from('quotations').select('id, quote_number, status, inputs').eq('id', params.id).maybeSingle(),
+    supabase.from('quotations').select('id, quote_number, status, inputs, is_deleted').eq('id', params.id).maybeSingle(),
     loadTourMasters(),
   ]);
   assertTourAccess(profile, 'quotations');
-  if (!q) notFound();
+  if (!q || (q as any).is_deleted === true) notFound();
   if (q.status === 'invoiced') redirect(`/admin/quotations/${q.id}?locked=1`);
   const inputs = normalizeInputs(q.inputs as Partial<QuoteInputs>, m);
   const rates = await loadRatesForStays(m, inputs.stays.map((s) => s.location_id));

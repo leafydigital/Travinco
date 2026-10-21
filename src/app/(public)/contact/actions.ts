@@ -67,6 +67,9 @@ export async function submitContactMessage(
     email: parsed.data.email || null,
     message: `[Contact form${parsed.data.subject ? ` — ${parsed.data.subject}` : ''}] ${parsed.data.message}`,
     source: 'other',
+    status: 'new',
+    priority: 'urgent',
+    is_deleted: false,
   });
 
   if (error) {
@@ -74,10 +77,10 @@ export async function submitContactMessage(
   }
 
   try {
-    const { notifyAdminOfContactMessage } = await import('@/lib/email/notify');
-    await notifyAdminOfContactMessage({ name: parsed.data.name, subject: parsed.data.subject || null });
+    const { revalidatePath } = await import('next/cache');
+    revalidatePath('/travinco_dashboard/enquiries');
   } catch {
-    // Best-effort only — never fail the submission over email delivery.
+    // Best-effort
   }
 
   return { success: true };

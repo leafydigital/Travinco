@@ -1,66 +1,71 @@
 import 'server-only';
+import { createClient } from '@/lib/supabase/server';
 
-const RESEND_API_URL = 'https://api.resend.com/emails';
+export const DEFAULT_ADMIN_NOTIFICATION_EMAIL = 'travinco2026@gmail.com';
 
 /**
- * Sends an admin notification email via Resend. If RESEND_API_KEY isn't
- * set, this is a no-op — email is an additive notification on top of the
- * database record, never the source of truth, so a missing key must never
- * block or fail the calling flow (enquiry/contact submission).
+ * Retrieves the admin notification email from website_settings.
+ * Defaults to 'travinco2026@gmail.com'.
  */
-export async function notifyAdminOfEnquiry(params: {
-  enquiryNumber: string;
-  customerName: string;
-  phone: string;
-}) {
-  const apiKey = process.env.RESEND_API_KEY;
-  const to = process.env.NOTIFICATION_EMAIL_TO;
-  const from = process.env.NOTIFICATION_EMAIL_FROM;
+export async function getAdminNotificationEmail(): Promise<string> {
+  try {
+    const supabase = await createClient();
+    const { data } = await supabase
+      .from('website_settings')
+      .select('value')
+      .eq('key', 'admin_notification_email')
+      .maybeSingle();
 
-  if (!apiKey || !to || !from) return;
+    if (data?.value) {
+      if (typeof data.value === 'string' && data.value.trim()) {
+        return data.value.trim();
+      }
+      if (typeof data.value === 'object' && (data.value as any)?.email) {
+        const val = String((data.value as any).email).trim();
+        if (val) return val;
+      }
+    }
+  } catch (err) {
+    console.warn('Could not read admin_notification_email from website_settings, using fallback:', err);
+  }
 
-  await fetch(RESEND_API_URL, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      from,
-      to,
-      subject: `New enquiry ${params.enquiryNumber} — ${params.customerName}`,
-      html: `<p>New website enquiry received.</p>
-             <p><strong>Enquiry #:</strong> ${params.enquiryNumber}<br/>
-             <strong>Name:</strong> ${params.customerName}<br/>
-             <strong>Phone:</strong> ${params.phone}</p>
-             <p>View it in the admin CRM to respond.</p>`,
-    }),
-  });
+  return process.env.NOTIFICATION_EMAIL_TO || DEFAULT_ADMIN_NOTIFICATION_EMAIL;
 }
 
-export async function notifyAdminOfContactMessage(params: {
+/**
+ * Disabled: Customer contact requests are saved directly to the database
+ * and displayed in Admin -> Enquiries without sending emails.
+ */
+export async function notifyAdminOfContactMessage(_params: {
   name: string;
-  subject: string | null;
+  email?: string | null;
+  phone?: string | null;
+  whatsapp_number?: string | null;
+  subject?: string | null;
+  message?: string | null;
 }) {
-  const apiKey = process.env.RESEND_API_KEY;
-  const to = process.env.NOTIFICATION_EMAIL_TO;
-  const from = process.env.NOTIFICATION_EMAIL_FROM;
+  // Email sending removed per user requirement
+  return;
+}
 
-  if (!apiKey || !to || !from) return;
-
-  await fetch(RESEND_API_URL, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      from,
-      to,
-      subject: `New contact message — ${params.name}`,
-      html: `<p>New contact form submission from <strong>${params.name}</strong>.</p>
-             ${params.subject ? `<p>Subject: ${params.subject}</p>` : ''}
-             <p>View it in the admin panel to respond.</p>`,
-    }),
-  });
+/**
+ * Disabled: Customer booking / "Book with us" enquiries are saved directly
+ * to the database and displayed in Admin -> Enquiries without sending emails.
+ */
+export async function notifyAdminOfEnquiry(_params: {
+  enquiryNumber?: string;
+  customerName: string;
+  phone: string;
+  email?: string | null;
+  whatsapp_number?: string | null;
+  destination?: string | null;
+  travel_date?: string | null;
+  adults?: number;
+  children?: number;
+  infants?: number;
+  budget?: string | null;
+  message?: string | null;
+}) {
+  // Email sending removed per user requirement
+  return;
 }

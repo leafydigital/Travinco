@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Plus, Search, Pencil, Trash2, X } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
+import { ConfirmDeleteDialog } from '@/components/admin/confirm-delete-dialog';
 
 /**
  * Generic table + dialog form for simple master-data tables
@@ -53,6 +54,7 @@ export function EntityManager({
   fields,
   columns,
   canEdit,
+  canDelete = false,
   saveAction,
   deleteAction,
   searchKeys,
@@ -62,11 +64,13 @@ export function EntityManager({
   emptyText = 'Nothing here yet.',
   defaults = {},
   pageSize = 50,
+  headerActions,
 }: {
   rows: Row[];
   fields: FieldDef[];
   columns: ColumnDef[];
   canEdit: boolean;
+  canDelete?: boolean;
   saveAction: (id: number | string | null, data: Record<string, unknown>) => Promise<ActionResult>;
   deleteAction?: (id: number | string) => Promise<ActionResult>;
   searchKeys: string[];
@@ -76,6 +80,7 @@ export function EntityManager({
   emptyText?: string;
   defaults?: Record<string, unknown>;
   pageSize?: number;
+  headerActions?: React.ReactNode;
 }) {
   const router = useRouter();
   const [q, setQ] = useState('');
@@ -203,15 +208,18 @@ export function EntityManager({
         ))}
         <span className="text-sm text-ink-400">{filtered.length} shown</span>
         {canEdit && (
-          <button type="button" className="btn-primary ml-auto" onClick={openNew}>
-            <Plus className="h-4 w-4" /> {newLabel}
-          </button>
+          <div className="ml-auto flex items-center gap-2">
+            {headerActions}
+            <button type="button" className="btn-primary" onClick={openNew}>
+              <Plus className="h-4 w-4" /> {newLabel}
+            </button>
+          </div>
         )}
       </div>
 
       <div className="card overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[650px] text-sm">
             <thead>
               <tr className="border-b border-ink-100 text-left text-xs uppercase tracking-wide text-ink-400">
                 {columns.map((c) => (
@@ -257,7 +265,7 @@ export function EntityManager({
                       >
                         <Pencil className="h-4 w-4" />
                       </button>
-                      {deleteAction && (
+                      {canDelete && deleteAction && (
                         <button
                           type="button"
                           className="rounded-lg p-1.5 text-ink-500 hover:bg-red-50 hover:text-red-600"
@@ -297,21 +305,37 @@ export function EntityManager({
         </Dialog>
       )}
 
-      {confirmDelete && (
-        <Dialog title={`Delete ${entityName}?`} onClose={() => setConfirmDelete(null)}>
-          <p className="text-sm text-ink-600">
-            This permanently deletes <b>{String(confirmDelete[columns[0]?.key ?? 'id'] ?? '')}</b>. This cannot be undone.
-          </p>
-          <div className="mt-5 flex justify-end gap-2">
-            <button className="btn-outline" onClick={() => setConfirmDelete(null)}>
-              Cancel
-            </button>
-            <button className="btn-danger" disabled={pending} onClick={doDelete}>
-              {pending ? 'Deleting…' : 'Delete'}
-            </button>
-          </div>
-        </Dialog>
-      )}
+      <ConfirmDeleteDialog
+        isOpen={Boolean(confirmDelete)}
+        title={`Delete ${capital(entityName)}`}
+        description={
+          confirmDelete ? (
+            <div className="space-y-3 text-left">
+              <p className="text-sm text-ink-700 leading-normal">
+                Are you sure you want to permanently delete this {entityName.toLowerCase()}?
+              </p>
+              <div className="rounded-xl border border-ink-200/90 bg-ink-50/80 p-3 flex items-center gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-coral-100 text-coral-700">
+                  <Trash2 className="h-4 w-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-ink-400">Target Item</p>
+                  <p className="text-sm font-bold text-ink-900 truncate">
+                    {String(confirmDelete[columns[0]?.key ?? 'id'] ?? '')}
+                  </p>
+                </div>
+              </div>
+              <p className="text-xs text-ink-500 leading-relaxed">
+                This action cannot be undone.
+              </p>
+            </div>
+          ) : null
+        }
+        confirmLabel="Delete"
+        isPending={pending}
+        onConfirm={doDelete}
+        onClose={() => setConfirmDelete(null)}
+      />
     </div>
   );
 }

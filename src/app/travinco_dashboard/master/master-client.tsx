@@ -7,12 +7,14 @@ import {
   uploadMasterExcelAction,
   getMasterRatesAction,
   deleteMasterRateAction,
+  updateMasterRateAction,
 } from './actions';
 import {
   Upload,
   Search,
   X,
   Trash2,
+  Pencil,
   FileSpreadsheet,
   AlertTriangle,
   ChevronLeft,
@@ -30,86 +32,50 @@ import { toast } from 'sonner';
 interface MasterClientProps {
   initialData: RateMasterQueryResult;
   filterOptions: MasterFilterOptions;
+  isAdmin?: boolean;
 }
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 
-function TableSkeletonRows({ count = 8 }: { count?: number }) {
+function TableSkeletonRows({ count = 8, isAdmin = false }: { count?: number; isAdmin?: boolean }) {
   return (
     <>
       {Array.from({ length: count }).map((_, idx) => (
-        <tr key={idx} className="animate-pulse">
-          {/* Location */}
-          <td className="py-3 px-3 whitespace-nowrap">
-            <div className="h-4 w-20 rounded-md bg-ink-200/60" />
-          </td>
-          {/* Hotel Name */}
-          <td className="py-3 px-3 whitespace-nowrap">
+        <tr key={idx} className="animate-pulse border-b border-ink-50">
+          <td className="py-3 px-3.5">
             <div className="h-4 w-36 rounded-md bg-ink-200/60" />
+            <div className="h-3 w-20 rounded-md bg-ink-100 mt-1" />
           </td>
-          {/* Category */}
-          <td className="py-3 px-3 whitespace-nowrap">
-            <div className="h-4 w-16 rounded-md bg-ink-100" />
+          <td className="py-3 px-3.5">
+            <div className="h-4 w-20 rounded-md bg-ink-100" />
+            <div className="h-3 w-24 rounded-md bg-ink-100 mt-1" />
           </td>
-          {/* Season */}
-          <td className="py-3 px-3 whitespace-nowrap">
-            <div className="h-4 w-24 rounded-md bg-ink-100" />
+          <td className="py-3 px-3.5">
+            <div className="h-4 w-20 rounded-md bg-ink-100" />
           </td>
-          {/* Date Range */}
-          <td className="py-3 px-3 whitespace-nowrap">
-            <div className="h-4 w-32 rounded-md bg-ink-100" />
+          <td className="py-3 px-3.5 text-right">
+            <div className="h-4 w-16 rounded-md bg-ink-200/60 ml-auto" />
+            <div className="h-4 w-16 rounded-md bg-ink-200/60 ml-auto mt-1" />
           </td>
-          {/* Room Category */}
-          <td className="py-3 px-3 whitespace-nowrap">
+          <td className="py-3 px-3.5 text-right">
+            <div className="h-3 w-24 rounded-md bg-ink-100 ml-auto" />
+            <div className="h-3 w-24 rounded-md bg-ink-100 ml-auto mt-1" />
+          </td>
+          <td className="py-3 px-3.5">
             <div className="h-4 w-28 rounded-md bg-ink-100" />
           </td>
-          {/* CP Cost */}
-          <td className="py-3 px-3 text-right whitespace-nowrap">
-            <div className="h-4 w-16 rounded-md bg-ink-200/60 ml-auto" />
-          </td>
-          {/* MAP Cost */}
-          <td className="py-3 px-3 text-right whitespace-nowrap">
-            <div className="h-4 w-16 rounded-md bg-ink-200/60 ml-auto" />
-          </td>
-          {/* Extra Adult CP */}
-          <td className="py-3 px-3 text-right whitespace-nowrap">
-            <div className="h-4 w-14 rounded-md bg-ink-100 ml-auto" />
-          </td>
-          {/* Extra Adult MAP */}
-          <td className="py-3 px-3 text-right whitespace-nowrap">
-            <div className="h-4 w-14 rounded-md bg-ink-100 ml-auto" />
-          </td>
-          {/* Child Bed */}
-          <td className="py-3 px-3 text-right whitespace-nowrap">
-            <div className="h-4 w-14 rounded-md bg-ink-100 ml-auto" />
-          </td>
-          {/* Child No Bed */}
-          <td className="py-3 px-3 text-right whitespace-nowrap">
-            <div className="h-4 w-14 rounded-md bg-ink-100 ml-auto" />
-          </td>
-          {/* Infant Policy */}
-          <td className="py-3 px-3">
-            <div className="h-4 w-20 rounded-md bg-ink-100" />
-          </td>
-          {/* Mandatory Surcharges */}
-          <td className="py-3 px-3">
-            <div className="h-4 w-24 rounded-md bg-ink-100" />
-          </td>
-          {/* Notes */}
-          <td className="py-3 px-3">
-            <div className="h-4 w-20 rounded-md bg-ink-100" />
-          </td>
-          {/* Action */}
-          <td className="py-3 px-3 text-center whitespace-nowrap">
-            <div className="h-6 w-6 rounded-lg bg-ink-100 mx-auto" />
-          </td>
+          {isAdmin && (
+            <td className="py-3 px-3.5 text-center">
+              <div className="h-6 w-14 rounded-lg bg-ink-100 mx-auto" />
+            </td>
+          )}
         </tr>
       ))}
     </>
   );
 }
 
-export function MasterClient({ initialData, filterOptions }: MasterClientProps) {
+export function MasterClient({ initialData, filterOptions, isAdmin = false }: MasterClientProps) {
   const [rates, setRates] = useState<MasterHotelRateItem[]>(initialData.data);
   const [totalCount, setTotalCount] = useState<number>(initialData.total);
   const [totalPages, setTotalPages] = useState<number>(initialData.totalPages);
@@ -123,6 +89,19 @@ export function MasterClient({ initialData, filterOptions }: MasterClientProps) 
 
   // Row Delete Confirmation Modal state
   const [itemToDelete, setItemToDelete] = useState<MasterHotelRateItem | null>(null);
+
+  // Row Edit Modal state
+  const [itemToEdit, setItemToEdit] = useState<MasterHotelRateItem | null>(null);
+  const [editForm, setEditForm] = useState({
+    cpCost: '',
+    mapCost: '',
+    extraAdultCP: '',
+    extraAdultMAP: '',
+    childBedCost: '',
+    childNoBedCost: '',
+    notes: '',
+  });
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
 
   // Search & Filter states
   const [globalSearch, setGlobalSearch] = useState('');
@@ -314,38 +293,101 @@ export function MasterClient({ initialData, filterOptions }: MasterClientProps) 
     });
   };
 
+  // Open Edit Modal
+  const handleOpenEdit = (item: MasterHotelRateItem) => {
+    setItemToEdit(item);
+    setEditForm({
+      cpCost: item.cpCost != null ? String(item.cpCost) : '',
+      mapCost: item.mapCost != null ? String(item.mapCost) : '',
+      extraAdultCP: item.extraAdultCP != null ? String(item.extraAdultCP) : '',
+      extraAdultMAP: item.extraAdultMAP != null ? String(item.extraAdultMAP) : '',
+      childBedCost: item.childBedCost != null ? String(item.childBedCost) : '',
+      childNoBedCost: item.childNoBedCost != null ? String(item.childNoBedCost) : '',
+      notes: item.notes || '',
+    });
+  };
+
+  // Save Edit
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!itemToEdit || !itemToEdit.id) return;
+    setIsSavingEdit(true);
+
+    try {
+      const res = await updateMasterRateAction(itemToEdit.id, {
+        cpCost: editForm.cpCost.trim() ? Number(editForm.cpCost) : null,
+        mapCost: editForm.mapCost.trim() ? Number(editForm.mapCost) : null,
+        extraAdultCP: editForm.extraAdultCP.trim() ? Number(editForm.extraAdultCP) : null,
+        extraAdultMAP: editForm.extraAdultMAP.trim() ? Number(editForm.extraAdultMAP) : null,
+        childBedCost: editForm.childBedCost.trim() ? Number(editForm.childBedCost) : null,
+        childNoBedCost: editForm.childNoBedCost.trim() ? Number(editForm.childNoBedCost) : null,
+        notes: editForm.notes.trim() || null,
+      });
+
+      if (!res.success) {
+        toast.error(res.error || 'Failed to update rate');
+        return;
+      }
+
+      toast.success('Rate updated successfully');
+      setRates((prev) =>
+        prev.map((r) =>
+          r.id === itemToEdit.id
+            ? {
+                ...r,
+                cpCost: editForm.cpCost.trim() ? Number(editForm.cpCost) : null,
+                mapCost: editForm.mapCost.trim() ? Number(editForm.mapCost) : null,
+                extraAdultCP: editForm.extraAdultCP.trim() ? Number(editForm.extraAdultCP) : null,
+                extraAdultMAP: editForm.extraAdultMAP.trim() ? Number(editForm.extraAdultMAP) : null,
+                childBedCost: editForm.childBedCost.trim() ? Number(editForm.childBedCost) : null,
+                childNoBedCost: editForm.childNoBedCost.trim() ? Number(editForm.childNoBedCost) : null,
+                notes: editForm.notes.trim() || null,
+              }
+            : r
+        )
+      );
+      setItemToEdit(null);
+    } catch {
+      toast.error('An unexpected error occurred while saving.');
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
+
   return (
     <div className="font-sans space-y-6 antialiased text-ink-900">
       {/* Page Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-ink-100 pb-5">
-        <div>
-          <div className="flex items-center gap-2.5">
-            <h1 className="text-2xl font-bold tracking-tight text-ink-950">
-              Master Data
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-ink-100/80 pb-5">
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold tracking-tight text-ink-950 sm:text-3xl">
+              Rate Master
             </h1>
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-brand-50 border border-brand-200/60 px-3 py-0.5 text-xs font-semibold text-brand-800 shadow-xs">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-brand-50 border border-brand-200/80 px-3 py-1 text-xs font-semibold text-brand-800 shadow-xs">
               <Database className="h-3.5 w-3.5 text-brand-600" />
               {totalCount.toLocaleString('en-IN')} {totalCount === 1 ? 'Rate' : 'Rates'}
             </span>
           </div>
-          <p className="mt-1 text-sm text-ink-500 font-normal">
+          <p className="text-sm text-ink-500 font-normal max-w-2xl leading-relaxed">
             Hotel tariffs, seasonal meal plans, room categories, and contract rates.
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5">
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedFile(null);
-              setIsUploadOpen(true);
-            }}
-            className="btn-primary inline-flex items-center gap-2 text-sm font-medium px-4 py-2.5 shadow-sm hover:shadow-md transition-all rounded-xl"
-          >
-            <Upload className="h-4 w-4" />
-            Upload Excel
-          </button>
-        </div>
+        {isAdmin && (
+          <div className="flex items-center gap-2.5">
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedFile(null);
+                setIsUploadOpen(true);
+              }}
+              className="btn-primary inline-flex items-center gap-2 text-sm font-medium px-4 py-2.5 shadow-sm hover:shadow-md transition-all rounded-xl"
+            >
+              <Upload className="h-4 w-4" />
+              Upload Excel
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Upload Excel Modal */}
@@ -690,42 +732,31 @@ export function MasterClient({ initialData, filterOptions }: MasterClientProps) 
             )}
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1400px] border-collapse text-left text-xs">
+          <div className="w-full overflow-hidden">
+            <table className="w-full border-collapse text-left text-xs">
               <thead className="sticky top-0 z-10 border-b border-ink-200 bg-sand-50/90 font-semibold text-ink-700 backdrop-blur-xs">
                 <tr>
                   <th
-                    onClick={() => handleSort('location')}
-                    className="py-3 px-3 cursor-pointer select-none hover:text-brand-700 transition-colors"
-                  >
-                    <div className="flex items-center gap-1">
-                      Location
-                      <ArrowUpDown className="h-3 w-3 text-ink-400" />
-                    </div>
-                  </th>
-                  <th
                     onClick={() => handleSort('hotelName')}
-                    className="py-3 px-3 cursor-pointer select-none hover:text-brand-700 transition-colors"
+                    className="py-3 px-3.5 cursor-pointer select-none hover:text-brand-700 transition-colors"
                   >
                     <div className="flex items-center gap-1">
-                      Hotel Name
+                      Hotel & Location
                       <ArrowUpDown className="h-3 w-3 text-ink-400" />
                     </div>
                   </th>
                   <th
-                    onClick={() => handleSort('hotelCategory')}
-                    className="py-3 px-3 cursor-pointer select-none hover:text-brand-700 transition-colors"
+                    onClick={() => handleSort('season')}
+                    className="py-3 px-3.5 cursor-pointer select-none hover:text-brand-700 transition-colors"
                   >
                     <div className="flex items-center gap-1">
-                      Category
+                      Season & Dates
                       <ArrowUpDown className="h-3 w-3 text-ink-400" />
                     </div>
                   </th>
-                  <th className="py-3 px-3">Season</th>
-                  <th className="py-3 px-3">Date Range</th>
                   <th
                     onClick={() => handleSort('roomCategory')}
-                    className="py-3 px-3 cursor-pointer select-none hover:text-brand-700 transition-colors"
+                    className="py-3 px-3.5 cursor-pointer select-none hover:text-brand-700 transition-colors"
                   >
                     <div className="flex items-center gap-1">
                       Room Category
@@ -734,159 +765,150 @@ export function MasterClient({ initialData, filterOptions }: MasterClientProps) 
                   </th>
                   <th
                     onClick={() => handleSort('cpCost')}
-                    className="py-3 px-3 text-right cursor-pointer select-none hover:text-brand-700 transition-colors"
+                    className="py-3 px-3.5 text-right cursor-pointer select-none hover:text-brand-700 transition-colors"
                   >
                     <div className="flex items-center justify-end gap-1">
-                      CP Cost
+                      Tariff (CP / MAP)
                       <ArrowUpDown className="h-3 w-3 text-ink-400" />
                     </div>
                   </th>
-                  <th
-                    onClick={() => handleSort('mapCost')}
-                    className="py-3 px-3 text-right cursor-pointer select-none hover:text-brand-700 transition-colors"
-                  >
-                    <div className="flex items-center justify-end gap-1">
-                      MAP Cost
-                      <ArrowUpDown className="h-3 w-3 text-ink-400" />
-                    </div>
+                  <th className="hidden sm:table-cell py-3 px-3.5 text-right">
+                    Extra Guests
                   </th>
-                  <th className="py-3 px-3 text-right">Extra Adult (CP)</th>
-                  <th className="py-3 px-3 text-right">Extra Adult (MAP)</th>
-                  <th className="py-3 px-3 text-right">Child Bed</th>
-                  <th className="py-3 px-3 text-right">Child No Bed</th>
-                  <th className="py-3 px-3">Infant Policy</th>
-                  <th className="py-3 px-3">Mandatory Surcharges</th>
-                  <th className="py-3 px-3">Notes</th>
-                  <th className="py-3 px-3 text-center">Action</th>
+                  <th className="hidden md:table-cell py-3 px-3.5">
+                    Notes & Policies
+                  </th>
+                  {isAdmin && <th className="py-3 px-3.5 text-center whitespace-nowrap">Actions</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-ink-100 bg-white">
                 {isLoading ? (
-                  <TableSkeletonRows count={Math.min(pageSize, 10)} />
+                  <TableSkeletonRows count={Math.min(pageSize, 10)} isAdmin={isAdmin} />
                 ) : (
                   rates.map((item, idx) => (
-                  <tr
-                    key={item.id || idx}
-                    className="transition-colors hover:bg-sand-50/60"
-                  >
-                    {/* Location */}
-                    <td className="py-2.5 px-3 font-medium text-ink-900 whitespace-nowrap">
-                      <span className="inline-flex items-center gap-1.5">
-                        <MapPin className="h-3.5 w-3.5 text-brand-600 shrink-0" />
-                        {item.location || '—'}
-                      </span>
-                    </td>
+                    <tr
+                      key={item.id || idx}
+                      className="transition-colors hover:bg-sand-50/60 border-b border-ink-50"
+                    >
+                      {/* Hotel & Location */}
+                      <td className="py-2.5 px-3.5">
+                        <div className="font-semibold text-brand-900 leading-snug">
+                          {item.hotelName || '—'}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1.5 mt-0.5 text-[11px] text-ink-500">
+                          <span className="inline-flex items-center gap-1">
+                            <MapPin className="h-3 w-3 text-brand-600 shrink-0" />
+                            <span>{item.location || '—'}</span>
+                          </span>
+                          {item.hotelCategory && (
+                            <span className="inline-flex items-center rounded bg-sand-100 px-1.5 py-0.2 text-[10px] font-medium text-sand-800">
+                              {item.hotelCategory}
+                            </span>
+                          )}
+                        </div>
+                      </td>
 
-                    {/* Hotel Name */}
-                    <td className="py-2.5 px-3 font-semibold text-brand-900 whitespace-nowrap">
-                      {item.hotelName || '—'}
-                    </td>
-
-                    {/* Hotel Category */}
-                    <td className="py-2.5 px-3 whitespace-nowrap">
-                      {item.hotelCategory ? (
-                        <span className="inline-flex items-center rounded-lg bg-sand-100 px-2 py-0.5 text-[11px] font-medium text-sand-800">
-                          {item.hotelCategory}
-                        </span>
-                      ) : (
-                        '—'
-                      )}
-                    </td>
-
-                    {/* Season */}
-                    <td className="py-2.5 px-3 whitespace-nowrap">
-                      {item.season ? (
-                        <span
-                          className={`inline-flex items-center rounded-lg px-2 py-0.5 text-[11px] font-semibold ${String(item.season).toLowerCase().includes('surge')
-                            ? 'bg-purple-50 text-purple-700 border border-purple-200/60'
-                            : String(item.season).toLowerCase().includes('peak')
-                              ? 'bg-coral-50 text-coral-700 border border-coral-200/60'
-                              : 'bg-ocean-50 text-ocean-700 border border-ocean-200/60'
+                      {/* Season & Dates */}
+                      <td className="py-2.5 px-3.5">
+                        {item.season ? (
+                          <span
+                            className={`inline-flex items-center rounded px-2 py-0.5 text-[10px] font-semibold ${
+                              String(item.season).toLowerCase().includes('surge')
+                                ? 'bg-purple-50 text-purple-700 border border-purple-200/60'
+                                : String(item.season).toLowerCase().includes('peak')
+                                ? 'bg-coral-50 text-coral-700 border border-coral-200/60'
+                                : 'bg-ocean-50 text-ocean-700 border border-ocean-200/60'
                             }`}
-                        >
-                          {item.season}
-                        </span>
-                      ) : (
-                        '—'
+                          >
+                            {item.season}
+                          </span>
+                        ) : (
+                          '—'
+                        )}
+                        {item.dateRange && (
+                          <div className="flex items-center gap-1 mt-1 text-[11px] text-ink-500">
+                            <Calendar className="h-3 w-3 text-ink-400 shrink-0" />
+                            <span className="truncate max-w-[150px]">{item.dateRange}</span>
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Room Category */}
+                      <td className="py-2.5 px-3.5 text-ink-800 font-medium">
+                        {item.roomCategory || '—'}
+                      </td>
+
+                      {/* CP & MAP Cost */}
+                      <td className="py-2.5 px-3.5 text-right whitespace-nowrap">
+                        <div className="font-semibold text-ink-950">
+                          <span className="text-[10px] text-ink-400 font-normal mr-1">CP:</span>
+                          {formatCost(item.cpCost ?? null)}
+                        </div>
+                        <div className="font-semibold text-brand-700 mt-0.5">
+                          <span className="text-[10px] text-ink-400 font-normal mr-1">MAP:</span>
+                          {formatCost(item.mapCost ?? null)}
+                        </div>
+                      </td>
+
+                      {/* Extra Rates */}
+                      <td className="hidden sm:table-cell py-2.5 px-3.5 text-right text-[11px] text-ink-600 whitespace-nowrap">
+                        <div>
+                          <span className="text-ink-400">Adult: </span>
+                          <span>{formatCost(item.extraAdultCP ?? null)}</span>
+                          <span className="text-ink-300"> / </span>
+                          <span>{formatCost(item.extraAdultMAP ?? null)}</span>
+                        </div>
+                        <div className="mt-0.5">
+                          <span className="text-ink-400">Child: </span>
+                          <span>{formatCost(item.childBedCost ?? null)}</span>
+                          <span className="text-ink-300"> / </span>
+                          <span>{formatCost(item.childNoBedCost ?? null)}</span>
+                        </div>
+                      </td>
+
+                      {/* Notes & Policies */}
+                      <td className="hidden md:table-cell py-2.5 px-3.5 text-[11px] text-ink-600 max-w-[180px]">
+                        {item.notes ? (
+                          <p className="truncate" title={item.notes}>
+                            {item.notes}
+                          </p>
+                        ) : item.mandatorySurcharges ? (
+                          <p className="truncate text-amber-700" title={item.mandatorySurcharges}>
+                            {item.mandatorySurcharges}
+                          </p>
+                        ) : (
+                          <span className="text-ink-300">—</span>
+                        )}
+                      </td>
+
+                      {/* Actions */}
+                      {isAdmin && (
+                        <td className="py-2.5 px-3.5 text-center whitespace-nowrap">
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEdit(item)}
+                              disabled={isPending || isLoading}
+                              className="rounded-lg p-1.5 text-ink-500 hover:bg-brand-50 hover:text-brand-700 transition-colors"
+                              title="Edit this rate"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setItemToDelete(item)}
+                              disabled={isPending || isLoading}
+                              className="rounded-lg p-1.5 text-ink-400 hover:bg-red-50 hover:text-red-600 transition-colors"
+                              title="Delete this record"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </td>
                       )}
-                    </td>
-
-                    {/* Date Range */}
-                    <td className="py-2.5 px-3 text-ink-600 whitespace-nowrap">
-                      {item.dateRange ? (
-                        <span className="inline-flex items-center gap-1.5 text-[11px]">
-                          <Calendar className="h-3.5 w-3.5 text-ink-400 shrink-0" />
-                          {item.dateRange}
-                        </span>
-                      ) : (
-                        '—'
-                      )}
-                    </td>
-
-                    {/* Room Category */}
-                    <td className="py-2.5 px-3 text-ink-800 font-medium whitespace-nowrap">
-                      {item.roomCategory || '—'}
-                    </td>
-
-                    {/* CP Cost */}
-                    <td className="py-2.5 px-3 text-right font-semibold text-ink-950 whitespace-nowrap">
-                      {formatCost(item.cpCost ?? null)}
-                    </td>
-
-                    {/* MAP Cost */}
-                    <td className="py-2.5 px-3 text-right font-semibold text-brand-700 whitespace-nowrap">
-                      {formatCost(item.mapCost ?? null)}
-                    </td>
-
-                    {/* Extra Adult CP */}
-                    <td className="py-2.5 px-3 text-right text-ink-700 whitespace-nowrap">
-                      {formatCost(item.extraAdultCP ?? null)}
-                    </td>
-
-                    {/* Extra Adult MAP */}
-                    <td className="py-2.5 px-3 text-right text-ink-700 whitespace-nowrap">
-                      {formatCost(item.extraAdultMAP ?? null)}
-                    </td>
-
-                    {/* Child Bed Cost */}
-                    <td className="py-2.5 px-3 text-right text-ink-700 whitespace-nowrap">
-                      {formatCost(item.childBedCost ?? null)}
-                    </td>
-
-                    {/* Child No Bed Cost */}
-                    <td className="py-2.5 px-3 text-right text-ink-700 whitespace-nowrap">
-                      {formatCost(item.childNoBedCost ?? null)}
-                    </td>
-
-                    {/* Infant Policy */}
-                    <td className="py-2.5 px-3 text-ink-600 max-w-xs truncate" title={item.infantPolicy || ''}>
-                      {item.infantPolicy || '—'}
-                    </td>
-
-                    {/* Mandatory Surcharges */}
-                    <td className="py-2.5 px-3 text-ink-600 max-w-xs truncate" title={item.mandatorySurcharges || ''}>
-                      {item.mandatorySurcharges || '—'}
-                    </td>
-
-                    {/* Notes */}
-                    <td className="py-2.5 px-3 text-ink-600 max-w-xs truncate" title={item.notes || ''}>
-                      {item.notes || '—'}
-                    </td>
-
-                    {/* Actions */}
-                    <td className="py-2.5 px-3 text-center whitespace-nowrap">
-                      <button
-                        type="button"
-                        onClick={() => setItemToDelete(item)}
-                        disabled={isPending || isLoading}
-                        className="rounded-lg p-1.5 text-ink-400 hover:bg-red-50 hover:text-red-600 transition-colors"
-                        title="Delete this record"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </td>
-                  </tr>
-                )))}
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -922,6 +944,139 @@ export function MasterClient({ initialData, filterOptions }: MasterClientProps) 
           </div>
         )}
       </div>
+
+      {/* Edit Rate Modal */}
+      {itemToEdit && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-ink-950/60 backdrop-blur-xs p-4"
+        >
+          <div className="card w-full max-w-xl bg-white p-6 shadow-2xl rounded-2xl animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-start justify-between border-b border-ink-100 pb-4">
+              <div>
+                <h3 className="text-base font-bold text-ink-900">Edit Hotel Rate</h3>
+                <p className="text-xs text-ink-500 mt-0.5">
+                  {itemToEdit.hotelName} ({itemToEdit.location}) · {itemToEdit.roomCategory} · {itemToEdit.season}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setItemToEdit(null)}
+                className="rounded-lg p-1 text-ink-400 hover:bg-ink-100 hover:text-ink-700 transition cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEdit} className="space-y-4 pt-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div>
+                  <label className="label">CP Cost (₹)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={editForm.cpCost}
+                    onChange={(e) => setEditForm((f) => ({ ...f, cpCost: e.target.value }))}
+                    placeholder="e.g. 3500"
+                    className="input"
+                  />
+                </div>
+                <div>
+                  <label className="label">MAP Cost (₹)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={editForm.mapCost}
+                    onChange={(e) => setEditForm((f) => ({ ...f, mapCost: e.target.value }))}
+                    placeholder="e.g. 4500"
+                    className="input"
+                  />
+                </div>
+                <div>
+                  <label className="label">Extra Adult CP (₹)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={editForm.extraAdultCP}
+                    onChange={(e) => setEditForm((f) => ({ ...f, extraAdultCP: e.target.value }))}
+                    placeholder="e.g. 1000"
+                    className="input"
+                  />
+                </div>
+                <div>
+                  <label className="label">Extra Adult MAP (₹)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={editForm.extraAdultMAP}
+                    onChange={(e) => setEditForm((f) => ({ ...f, extraAdultMAP: e.target.value }))}
+                    placeholder="e.g. 1500"
+                    className="input"
+                  />
+                </div>
+                <div>
+                  <label className="label">Child Bed Cost (₹)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={editForm.childBedCost}
+                    onChange={(e) => setEditForm((f) => ({ ...f, childBedCost: e.target.value }))}
+                    placeholder="e.g. 700"
+                    className="input"
+                  />
+                </div>
+                <div>
+                  <label className="label">Child No Bed Cost (₹)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={editForm.childNoBedCost}
+                    onChange={(e) => setEditForm((f) => ({ ...f, childNoBedCost: e.target.value }))}
+                    placeholder="e.g. 400"
+                    className="input"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="label">Notes / Policy Details</label>
+                <input
+                  type="text"
+                  value={editForm.notes}
+                  onChange={(e) => setEditForm((f) => ({ ...f, notes: e.target.value }))}
+                  placeholder="Additional rate notes, validity or policies..."
+                  className="input"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-ink-100">
+                <button
+                  type="button"
+                  onClick={() => setItemToEdit(null)}
+                  disabled={isSavingEdit}
+                  className="btn-outline cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingEdit}
+                  className="btn-primary cursor-pointer"
+                >
+                  {isSavingEdit ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

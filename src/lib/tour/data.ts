@@ -2,7 +2,8 @@ import 'server-only';
 import { createClient } from '@/lib/supabase/server';
 import { parseSeasonDates } from '@/lib/excel/season-dates';
 import { rateLocationIds } from './engine';
-import type { RateRow, TourMasters, TourSettings } from './types';
+import type { RateRow, TourMasters, TourSettings, QuotationLogosConfig, InvoiceSettings } from './types';
+import { DEFAULT_QUOTATION_LOGOS, DEFAULT_INVOICE_SETTINGS } from './types';
 
 export const DEFAULT_SETTINGS: TourSettings = {
   markup_pct: 15,
@@ -11,10 +12,10 @@ export const DEFAULT_SETTINGS: TourSettings = {
   quote_valid_days: 7,
   sightseeing_km_per_day: 40,
   company_name: 'Travinco Travel Solutions',
-  company_address: null,
-  company_phone: '+91-6235892269',
+  company_address: '1st Floor, Muthassi Building,\nMannamoola, Peroorkada\nTrivandrum, Kerala - 695005',
+  company_phone: '+91-7025549224',
   company_email: 'info@travinco.com',
-  company_website: null,
+  company_website: 'www.travinco.com',
   company_gstin: null,
   company_state: 'Kerala',
   sac_code: '998555',
@@ -24,17 +25,42 @@ export const DEFAULT_SETTINGS: TourSettings = {
   exclusions: [],
   cancellation: [],
   important_notes: [],
+  logos_config: DEFAULT_QUOTATION_LOGOS,
+  invoice_settings: DEFAULT_INVOICE_SETTINGS,
 };
 
 const n = (v: unknown) => (v == null ? v : Number(v)) as number;
 
 export async function getTourSettings(client?: any): Promise<TourSettings> {
   const supabase = client ?? (await createClient());
-  const { data } = await supabase.from('tour_settings').select('*').eq('id', 1).maybeSingle();
-  if (!data) return DEFAULT_SETTINGS;
+  const [{ data }, { data: wsLogos }, { data: wsInvoice }] = await Promise.all([
+    supabase.from('tour_settings').select('*').eq('id', 1).maybeSingle(),
+    supabase.from('website_settings').select('value').eq('key', 'quotation_logos').maybeSingle(),
+    supabase.from('website_settings').select('value').eq('key', 'invoice_settings').maybeSingle(),
+  ]);
+
+  const rawLogos = wsLogos?.value as QuotationLogosConfig | null;
+  const logos_config: QuotationLogosConfig = rawLogos && Array.isArray(rawLogos.logos)
+    ? {
+        header_logo_url: rawLogos.header_logo_url || DEFAULT_QUOTATION_LOGOS.header_logo_url,
+        tour_logo_url: rawLogos.tour_logo_url || DEFAULT_QUOTATION_LOGOS.tour_logo_url,
+        registered_title: rawLogos.registered_title || DEFAULT_QUOTATION_LOGOS.registered_title,
+        partners_title: rawLogos.partners_title || DEFAULT_QUOTATION_LOGOS.partners_title,
+        logos: rawLogos.logos,
+      }
+    : DEFAULT_QUOTATION_LOGOS;
+
+  const rawInvoice = wsInvoice?.value as InvoiceSettings | null;
+  const invoice_settings: InvoiceSettings = rawInvoice
+    ? { ...DEFAULT_INVOICE_SETTINGS, ...rawInvoice }
+    : DEFAULT_INVOICE_SETTINGS;
+
+  if (!data) return { ...DEFAULT_SETTINGS, logos_config, invoice_settings };
   return {
     ...DEFAULT_SETTINGS,
     ...data,
+    logos_config,
+    invoice_settings,
     markup_pct: n(data.markup_pct),
     gst_pct: n(data.gst_pct),
     round_to: n(data.round_to),
@@ -64,7 +90,7 @@ export async function loadTourMasters(opts: { activeOnly?: boolean; forceFresh?:
     if (active) q = q.eq('is_active', true);
     return q;
   };
-  const [locs, cats, points, vehicles, acts, dists, plans, tpls, settings] = await Promise.all([
+  const [locs, cats, points, vehicles, acts, dists, plans, tpls, settings, dests] = await Promise.all([
     supabase.from('locations').select('id, name, display_name, state, description, parent_id, is_houseboat, is_active, sort_order').order('sort_order').order('name'),
     supabase.from('hotel_categories').select('id, name, sort_order').order('sort_order').order('id'),
     sel('pickup_drop_points', 'sort_order'),
@@ -74,31 +100,47 @@ export async function loadTourMasters(opts: { activeOnly?: boolean; forceFresh?:
     sel('day_plans', 'sort_order'),
     sel('quotation_templates', 'sort_order'),
     getTourSettings(supabase),
+    supabase.from('destinations').select('id, name').order('sort_order').order('name'),
   ]);
 
   const result: TourMasters = {
-    locations: (locs.data ?? []) as TourMasters['locations'],
+    locations: ((locs.data ?? []) as TourMasters['locations']).filter(
+      (l: any) => l && l.is_deleted !== true && l.is_deleted !== 'true' && l.is_deleted !== 1
+    ),
     categories: (cats.data ?? []) as TourMasters['categories'],
-    points: (points.data ?? []).map((p) => ({ ...p, km_from_location: Number(p.km_from_location ?? 0) })),
-    vehicles: (vehicles.data ?? []).map((v) => ({
-      ...v,
-      amount: Number(v.amount ?? 0),
-      extra_per_km: Number(v.extra_per_km ?? 0),
-      driver_bata_per_day: Number(v.driver_bata_per_day ?? 0),
-    })),
-    activities: (acts.data ?? []).map((a) => ({
-      ...a,
-      entry_fee_adult: a.entry_fee_adult == null ? null : Number(a.entry_fee_adult),
-      entry_fee_child: a.entry_fee_child == null ? null : Number(a.entry_fee_child),
-    })),
-    distances: (dists.data ?? []).map((d) => ({ ...d, distance_km: Number(d.distance_km) })),
-    plans: (plans.data ?? []).map((p) => ({ ...p, items: Array.isArray(p.items) ? p.items : [] })),
+    points: (points.data ?? [])
+      .filter((p: any) => p && p.is_deleted !== true && p.is_deleted !== 'true' && p.is_deleted !== 1)
+      .map((p) => ({ ...p, km_from_location: Number(p.km_from_location ?? 0) })),
+    vehicles: (vehicles.data ?? [])
+      .filter((v: any) => v && v.is_deleted !== true && v.is_deleted !== 'true' && v.is_deleted !== 1)
+      .map((v) => ({
+        ...v,
+        amount: Number(v.amount ?? 0),
+        extra_per_km: Number(v.extra_per_km ?? 0),
+        driver_bata_per_day: Number(v.driver_bata_per_day ?? 0),
+      })),
+    activities: (acts.data ?? [])
+      .filter((a: any) => a && a.is_deleted !== true && a.is_deleted !== 'true' && a.is_deleted !== 1)
+      .map((a) => ({
+        ...a,
+        entry_fee_adult: a.entry_fee_adult == null ? null : Number(a.entry_fee_adult),
+        entry_fee_child: a.entry_fee_child == null ? null : Number(a.entry_fee_child),
+      })),
+    distances: (dists.data ?? [])
+      .filter((d: any) => d && d.is_deleted !== true && d.is_deleted !== 'true' && d.is_deleted !== 1)
+      .map((d) => ({ ...d, distance_km: Number(d.distance_km) })),
+    plans: (plans.data ?? [])
+      .filter((p: any) => p && p.is_deleted !== true && p.is_deleted !== 'true' && p.is_deleted !== 1)
+      .map((p) => ({ ...p, items: Array.isArray(p.items) ? p.items : [] })),
     templates: (tpls.data ?? []).map((t) => ({
       ...t,
       stays: Array.isArray(t.stays) ? t.stays : [],
       plan_picks: Array.isArray(t.plan_picks) ? t.plan_picks : [],
     })),
     settings,
+    destinations: ((dests?.data ?? []) as { id: string; name: string }[]).filter(
+      (d: any) => d && d.is_deleted !== true && d.is_deleted !== 'true' && d.is_deleted !== 1
+    ),
   };
 
   if (active) {

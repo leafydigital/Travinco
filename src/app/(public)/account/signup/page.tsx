@@ -42,8 +42,14 @@ export default function SignupPage() {
         toast.error(result.error);
         return;
       }
-      toast.success('Account created! Check your email to confirm, then log in.');
-      router.push('/account/login');
+      if (result.hasSession) {
+        toast.success('Account created! Welcome to Travinco.');
+        router.push('/account/bookings');
+      } else {
+        toast.success('Account created! Check your email to confirm, then log in.');
+        router.push('/account/login');
+      }
+      router.refresh();
     });
   }
 

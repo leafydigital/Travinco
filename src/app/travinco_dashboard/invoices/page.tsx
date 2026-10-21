@@ -70,7 +70,7 @@ async function InvoicesTableContent({
   let query = supabase
     .from('invoices')
     .select(
-      'id, invoice_number, status, bill_to_name, bill_to_phone, invoice_date, due_date, travel_start, total_amount, amount_paid, balance_amount, quotations(quote_number)',
+      'id, invoice_number, status, bill_to_name, bill_to_phone, invoice_date, due_date, travel_start, total_amount, amount_paid, balance_amount, is_deleted, quotations(quote_number)',
       { count: 'exact' }
     )
     .order('invoice_date', { ascending: false })
@@ -85,8 +85,46 @@ async function InvoicesTableContent({
     query = query.eq('status', searchParams.status);
   }
 
-  const { data: rows, count } = await query;
-  const visibleRows = (rows ?? []).filter((r: any) => r.is_deleted !== true);
+  const [{ data: rows, count, error: queryError }, { data: deletedSettingsData }] = await Promise.all([
+    query,
+    supabase.from('website_settings').select('key').like('key', 'deleted_invoice_%'),
+  ]);
+
+  let invoiceRows: any[] | null = rows;
+  if (queryError && queryError.message?.includes('is_deleted')) {
+    let fallbackQuery = supabase
+      .from('invoices')
+      .select(
+        'id, invoice_number, status, bill_to_name, bill_to_phone, invoice_date, due_date, travel_start, total_amount, amount_paid, balance_amount, quotations(quote_number)',
+        { count: 'exact' }
+      )
+      .order('invoice_date', { ascending: false })
+      .order('created_at', { ascending: false })
+      .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
+
+    if (term) {
+      fallbackQuery = fallbackQuery.or(
+        `invoice_number.ilike.%${term}%,bill_to_name.ilike.%${term}%,bill_to_phone.ilike.%${term}%`
+      );
+    }
+    if (searchParams.status && STATUSES.includes(searchParams.status)) {
+      fallbackQuery = fallbackQuery.eq('status', searchParams.status);
+    }
+    const fallbackRes = await fallbackQuery;
+    invoiceRows = fallbackRes.data;
+  }
+
+  const deletedKeys = new Set(
+    (deletedSettingsData || []).map((s: { key: string }) => s.key.replace('deleted_invoice_', ''))
+  );
+  const visibleRows = (invoiceRows ?? []).filter(
+    (r: any) =>
+      r &&
+      r.is_deleted !== true &&
+      r.is_deleted !== 'true' &&
+      r.is_deleted !== 1 &&
+      !deletedKeys.has(r.id)
+  );
   const totalPages = Math.max(1, Math.ceil((count ?? 0) / PAGE_SIZE));
   const today = new Date().toISOString().slice(0, 10);
 
@@ -99,7 +137,7 @@ async function InvoicesTableContent({
   return (
     <>
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full min-w-[820px] text-sm">
           <thead>
             <tr className="border-b border-ink-100 text-left text-xs uppercase tracking-wide text-ink-400">
               <th className="px-5 py-3">Invoice</th>
@@ -221,18 +259,18 @@ export default async function InvoicesPage({
       </div>
 
       {/* 3. Search Bar (Renders Instantly) */}
-      <form method="get" className="flex items-center gap-3">
+      <form method="get" className="flex flex-wrap sm:flex-nowrap items-center gap-3">
         {searchParams.status && <input type="hidden" name="status" value={searchParams.status} />}
-        <div className="relative min-w-[220px] max-w-md flex-1">
+        <div className="relative min-w-[200px] sm:min-w-[220px] max-w-md flex-1 w-full">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" />
           <input
             name="q"
             defaultValue={searchParams.q}
             placeholder="Search invoice number, guest, phone…"
-            className="input pl-9"
+            className="input pl-9 w-full"
           />
         </div>
-        <button type="submit" className="btn-outline">
+        <button type="submit" className="btn-outline w-full sm:w-auto">
           Search
         </button>
       </form>

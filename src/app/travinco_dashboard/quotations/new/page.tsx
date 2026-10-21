@@ -59,8 +59,9 @@ function QuotationBuilderSkeleton() {
 async function NewQuotationLoader({
   searchParams,
 }: {
-  searchParams: { enquiry?: string; customer?: string; template?: string };
+  searchParams?: { enquiry?: string; customer?: string; template?: string };
 }) {
+  const sp = searchParams ?? {};
   const [profile, m] = await Promise.all([
     requireProfile(),
     loadTourMasters(),
@@ -70,14 +71,14 @@ async function NewQuotationLoader({
   const supabase = await createClient();
   let inputs = blankInputs(m);
 
-  const tpl = searchParams.template ? m.templates.find((t) => String(t.id) === searchParams.template) : undefined;
+  const tpl = sp.template ? m.templates.find((t) => String(t.id) === sp.template) : undefined;
   if (tpl) inputs = inputsFromTemplate(m, inputs, tpl);
 
-  if (searchParams.enquiry) {
+  if (sp.enquiry) {
     const { data: e } = await supabase
       .from('enquiries')
       .select('id, customer_id, customer_name, phone, email, travel_date, number_of_adults, number_of_children')
-      .eq('id', searchParams.enquiry)
+      .eq('id', sp.enquiry)
       .maybeSingle();
     if (e) {
       inputs = {
@@ -93,8 +94,8 @@ async function NewQuotationLoader({
         start_date: e.travel_date && e.travel_date >= new Date().toISOString().slice(0, 10) ? e.travel_date : inputs.start_date,
       };
     }
-  } else if (searchParams.customer) {
-    const { data: c } = await supabase.from('customers').select('id, full_name, phone, email').eq('id', searchParams.customer).maybeSingle();
+  } else if (sp.customer) {
+    const { data: c } = await supabase.from('customers').select('id, full_name, phone, email').eq('id', sp.customer).maybeSingle();
     if (c) inputs = { ...inputs, customer_id: c.id, guest_name: c.full_name, guest_phone: c.phone ?? '', guest_email: c.email ?? '' };
   }
 

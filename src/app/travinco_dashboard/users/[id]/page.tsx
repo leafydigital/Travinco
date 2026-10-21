@@ -8,21 +8,32 @@ import { ArrowLeft } from 'lucide-react';
 export default async function EditUserPage({ params }: { params: { id: string } }) {
   const profile = await requireProfile();
   if (profile.role !== 'admin' && profile.role !== 'super_admin') {
-    const supabase = await createClient();
-    await supabase.auth.signOut();
-    redirect('/travinco_admin_login?reason=forbidden');
+    redirect('/travinco_dashboard?error=unauthorized');
   }
 
   const supabase = await createClient();
-  const [{ data: user }, { data: permissions }, { data: customRoleSetting }] = await Promise.all([
+  const [{ data: user }, { data: permissions }, { data: customRoleSetting }, { data: permSetting }] = await Promise.all([
     supabase.from('profiles').select('*').eq('id', params.id).single(),
     supabase.from('staff_permissions').select('*').eq('profile_id', params.id),
     supabase.from('website_settings').select('value').eq('key', `custom_role_${params.id}`).maybeSingle(),
+    supabase.from('website_settings').select('value').eq('key', `staff_perms_${params.id}`).maybeSingle(),
   ]);
 
   if (!user) notFound();
 
   const customRole = user.role_title || (customRoleSetting?.value as any)?.role_title || null;
+
+  let effectivePermissions = permissions ?? [];
+  if (permSetting?.value && Array.isArray((permSetting.value as any).pages)) {
+    effectivePermissions = (permSetting.value as any).pages.map((pageKey: string) => ({
+      id: `virtual_${params.id}_${pageKey}`,
+      profile_id: params.id,
+      module: pageKey as any,
+      can_view: true,
+      can_edit: true,
+      created_at: new Date().toISOString(),
+    }));
+  }
 
   return (
     <div className="max-w-5xl space-y-6 pb-12">
@@ -51,7 +62,7 @@ export default async function EditUserPage({ params }: { params: { id: string } 
         currentRole={customRole || (user.role === 'admin' ? 'Admin' : 'Staff')}
         isActive={user.is_active}
         isSelf={user.id === profile.id}
-        existingPermissions={permissions ?? []}
+        existingPermissions={effectivePermissions}
       />
     </div>
   );

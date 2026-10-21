@@ -1,6 +1,7 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 import { sanitizeCookies } from '@/lib/supabase/cookie-sanitizer';
+import { ADMIN_AUTH_COOKIE, CUSTOMER_AUTH_COOKIE } from '@/lib/supabase/server';
 
 /** Sanitizes and validates a redirect path to prevent open redirect vulnerabilities. */
 function getSafeRedirectPath(rawPath: string | null | undefined, fallback: string): string {
@@ -12,17 +13,35 @@ function getSafeRedirectPath(rawPath: string | null | undefined, fallback: strin
 
 /**
  * Runs on every request. Jobs:
- * 1. Refresh the Supabase SSR auth session cookie so it does not expire.
- * 2. Gate /admin/** — unauthenticated visitors are redirected to /travinco_admin_login with safe return URL.
- * 3. Gate protected /account/** routes — unauthenticated visitors are redirected to /account/login with safe return URL.
+ * 1. Refresh Supabase SSR auth session cookies (admin and customer isolated).
+ * 2. Gate /travinco_dashboard/** — unauthenticated visitors redirected to /travinco_admin_login.
+ * 3. Gate customer routes (/account/**, /booking) — unauthenticated visitors redirected to /account/login.
  * 4. Separate customer sessions from staff access:
- *    - Customers are strictly denied from /admin/** and redirected to /travinco_admin_login?reason=not_staff.
- *    - Authenticated staff visiting /travinco_admin_login are redirected to /admin.
- *    - Authenticated customers visiting /account/login or /account/signup are redirected to /account/bookings.
- *    - Authenticated customers visiting /login are redirected to /account/bookings.
- * 5. Role and module-based authorization is further strictly enforced inside Server Components and Actions.
+ *    - Customers are strictly denied from /travinco_dashboard/** and redirected to /travinco_admin_login?reason=not_staff.
+ *    - Authenticated staff visiting /travinco_admin_login redirected to dashboard.
+ *    - Authenticated customers visiting /account/login redirected to /account/bookings.
+ *    - Admin session alone NEVER counts as customer authentication; customer login page remains accessible.
+ *    - Both sessions can safely coexist in the same browser.
  */
 export async function middleware(request: NextRequest) {
+  const pathname = request.nextUrl.pathname;
+  const isAdminRoute = pathname.startsWith('/travinco_dashboard');
+  const isStaffLoginRoute = pathname === '/travinco_admin_login' || pathname.startsWith('/travinco_admin_login/');
+  const isCustomerAuthRoute =
+    pathname === '/account/login' ||
+    pathname === '/account/signup' ||
+    pathname === '/account/reset-password';
+  const isProtectedCustomerRoute =
+    pathname.startsWith('/account') && !isCustomerAuthRoute;
+  const isBookingRoute = pathname === '/booking' || pathname.startsWith('/booking/');
+
+  // Forward request headers with context hints for downstream Server Components
+  request.headers.set('x-pathname', pathname);
+  request.headers.set(
+    'x-travinco-area',
+    isAdminRoute || isStaffLoginRoute ? 'admin' : 'customer'
+  );
+
   let response = NextResponse.next({
     request: {
       headers: request.headers,
@@ -39,38 +58,6 @@ export async function middleware(request: NextRequest) {
     return response;
   }
 
-  const supabase = createServerClient(
-    supabaseUrl,
-    supabaseAnonKey,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll();
-        },
-        setAll(cookiesToSet: { name: string; value: string; options?: CookieOptions }[]) {
-          const sanitized = sanitizeCookies(cookiesToSet);
-          sanitized.forEach(({ name, value }) =>
-            request.cookies.set(name, value)
-          );
-          response = NextResponse.next({
-            request: {
-              headers: request.headers,
-            },
-          });
-          sanitized.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options)
-          );
-        },
-      },
-    }
-  );
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  const pathname = request.nextUrl.pathname;
-
   // Helper to create redirect response while preserving any refreshed session cookies
   function createRedirect(url: URL | string) {
     const redirectRes = NextResponse.redirect(url);
@@ -86,23 +73,137 @@ export async function middleware(request: NextRequest) {
     return createRedirect(new URL(target, request.url));
   }
 
-  const isAdminRoute = pathname.startsWith('/travinco_dashboard');
-  const isStaffLoginRoute = pathname === '/travinco_admin_login' || pathname.startsWith('/travinco_admin_login/');
-  const isCustomerAuthRoute =
-    pathname === '/account/login' ||
-    pathname === '/account/signup' ||
-    pathname === '/account/reset-password';
-  const isProtectedCustomerRoute =
-    pathname.startsWith('/account') && !isCustomerAuthRoute;
+  // Redirect legacy /login routes to /account/login
+  if (pathname === '/login' || pathname.startsWith('/login/')) {
+    const target = '/account/login' + request.nextUrl.search;
+    return createRedirect(new URL(target, request.url));
+  }
 
-  const isCustomer = user?.user_metadata?.is_customer_signup === 'true';
-
-  // 1. Unauthenticated Visitor Handling
-  if (!user) {
-    if (isAdminRoute) {
-      if (pathname === '/travinco_dashboard/login') {
-        return createRedirect(new URL('/travinco_admin_login', request.url));
+  // Factory for scoped Supabase SSR clients
+  function createScopedMiddlewareClient(cookieName: string) {
+    return createServerClient(
+      supabaseUrl!,
+      supabaseAnonKey!,
+      {
+        cookieOptions: {
+          name: cookieName,
+          path: '/',
+          sameSite: 'lax',
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+        },
+        cookies: {
+          getAll() {
+            return request.cookies.getAll();
+          },
+          setAll(cookiesToSet: { name: string; value: string; options?: CookieOptions }[]) {
+            const sanitized = sanitizeCookies(cookiesToSet);
+            sanitized.forEach(({ name, value }) =>
+              request.cookies.set(name, value)
+            );
+            response = NextResponse.next({
+              request: {
+                headers: request.headers,
+              },
+            });
+            sanitized.forEach(({ name, value, options }) =>
+              response.cookies.set(name, value, options)
+            );
+          },
+        },
       }
+    );
+  }
+
+  const adminSupabase = createScopedMiddlewareClient(ADMIN_AUTH_COOKIE);
+  const customerSupabase = createScopedMiddlewareClient(CUSTOMER_AUTH_COOKIE);
+
+  const hasAdminCookie =
+    request.cookies.has(ADMIN_AUTH_COOKIE) ||
+    request.cookies.has(`${ADMIN_AUTH_COOKIE}.0`);
+
+  const hasCustomerCookie =
+    request.cookies.has(CUSTOMER_AUTH_COOKIE) ||
+    request.cookies.has(`${CUSTOMER_AUTH_COOKIE}.0`);
+
+  // Retrieve admin user if on admin/staff-login routes or if admin cookie is present
+  let adminUser = null;
+  let isStaff = false;
+
+  if (isAdminRoute || isStaffLoginRoute || hasAdminCookie) {
+    try {
+      const { data: { user } } = await adminSupabase.auth.getUser();
+      if (user) {
+        // Confirm staff role in public.profiles
+        const { data: profile } = await adminSupabase
+          .from('profiles')
+          .select('role, is_active')
+          .eq('id', user.id)
+          .maybeSingle();
+
+        if (
+          profile &&
+          profile.is_active &&
+          ['super_admin', 'admin', 'sales_staff', 'accounts_staff'].includes(profile.role)
+        ) {
+          const { data: custAccount } = await adminSupabase
+            .from('customer_accounts')
+            .select('id')
+            .eq('id', user.id)
+            .maybeSingle();
+
+          if (!custAccount) {
+            adminUser = user;
+            isStaff = true;
+          }
+        }
+      }
+    } catch {}
+  }
+
+  // Retrieve customer user if on customer routes or if customer cookie is present
+  let customerUser = null;
+  let isCustomer = false;
+
+  if (isCustomerAuthRoute || isProtectedCustomerRoute || isBookingRoute || hasCustomerCookie) {
+    try {
+      const { data: { user } } = await customerSupabase.auth.getUser();
+      if (user) {
+        const { data: custAccount } = await customerSupabase
+          .from('customer_accounts')
+          .select('id')
+          .eq('id', user.id)
+          .maybeSingle();
+
+        if (custAccount) {
+          customerUser = user;
+          isCustomer = true;
+        } else {
+          const isCustomerMeta =
+            user.user_metadata?.is_customer_signup === 'true' ||
+            user.user_metadata?.is_customer_signup === true ||
+            user.user_metadata?.role === 'customer';
+          if (isCustomerMeta) {
+            customerUser = user;
+            isCustomer = true;
+          }
+        }
+      }
+    } catch {}
+  }
+
+  // 1. Admin Routes Gate (/travinco_dashboard/**)
+  if (isAdminRoute) {
+    if (pathname === '/travinco_dashboard/login') {
+      return createRedirect(new URL('/travinco_admin_login', request.url));
+    }
+
+    if (!isStaff) {
+      // If customer attempts to access admin dashboard, strictly deny access
+      if (isCustomer) {
+        return createRedirect(new URL('/travinco_admin_login?reason=not_staff', request.url));
+      }
+      // Unauthenticated visitor
       const redirectUrl = new URL('/travinco_admin_login', request.url);
       if (pathname !== '/travinco_dashboard') {
         redirectUrl.searchParams.set('redirectTo', pathname);
@@ -110,60 +211,58 @@ export async function middleware(request: NextRequest) {
       return createRedirect(redirectUrl);
     }
 
-    if (isProtectedCustomerRoute) {
-      const redirectUrl = new URL('/account/login', request.url);
-      redirectUrl.searchParams.set('redirectTo', pathname);
-      return createRedirect(redirectUrl);
-    }
-
+    // Authenticated staff allowed
     return response;
   }
 
-  // 2. Authenticated Customer Handling
-  if (isCustomer) {
-    // Customers must NEVER access /admin/**
-    if (isAdminRoute) {
-      return createRedirect(new URL('/travinco_admin_login?reason=not_staff', request.url));
+  // 2. Staff Login Route Gate (/travinco_admin_login)
+  if (isStaffLoginRoute) {
+    if (isStaff) {
+      if (
+        pathname.startsWith('/travinco_admin_login/reset-password') ||
+        request.nextUrl.searchParams.has('reason')
+      ) {
+        return response;
+      }
+      const redirectTo = request.nextUrl.searchParams.get('redirectTo');
+      const safePath = getSafeRedirectPath(redirectTo, '/travinco_dashboard');
+      return createRedirect(new URL(safePath, request.url));
     }
+    return response;
+  }
 
-    // Customer visiting staff login should go to their account bookings
-    if (isStaffLoginRoute) {
-      return createRedirect(new URL('/account/bookings', request.url));
-    }
-
-    // Customer visiting customer login/signup should be sent to their account
-    if (isCustomerAuthRoute) {
+  // 3. Customer Auth Routes (/account/login, /account/signup)
+  if (isCustomerAuthRoute) {
+    // If user is already authenticated as customer, redirect to customer account
+    if (isCustomer) {
       const redirectTo = request.nextUrl.searchParams.get('redirectTo');
       const safePath = getSafeRedirectPath(redirectTo, '/account/bookings');
       return createRedirect(new URL(safePath, request.url));
     }
 
+    // Admin session alone does NOT redirect away from customer login. Display login form!
     return response;
   }
 
-  // 3. Authenticated Staff Handling
-  if (pathname === '/travinco_dashboard/login') {
-    return createRedirect(new URL('/travinco_dashboard', request.url));
-  }
-
-  // Staff visiting staff login should go to admin or redirectTo (unless explicitly signed out / forbidden reason)
-  if (isStaffLoginRoute) {
-    if (request.nextUrl.searchParams.has('reason')) {
-      return response;
-    }
-    const redirectTo = request.nextUrl.searchParams.get('redirectTo');
-    const safePath = getSafeRedirectPath(redirectTo, '/travinco_dashboard');
-    return createRedirect(new URL(safePath, request.url));
-  }
-
-  // Staff visiting customer auth routes (e.g. /account/login) should go to admin
-  if (isCustomerAuthRoute) {
-    return createRedirect(new URL('/travinco_dashboard', request.url));
-  }
-
-  // Staff visiting customer-only protected routes (e.g. /account/bookings)
+  // 4. Protected Customer Routes (/account/** except auth)
   if (isProtectedCustomerRoute) {
-    return createRedirect(new URL('/travinco_dashboard', request.url));
+    if (!isCustomer) {
+      const redirectUrl = new URL('/account/login', request.url);
+      redirectUrl.searchParams.set('redirectTo', pathname);
+      return createRedirect(redirectUrl);
+    }
+    return response;
+  }
+
+  // 5. Booking Flow (/booking)
+  if (isBookingRoute) {
+    if (!isCustomer) {
+      // Admin session alone does not bypass customer auth: redirect to customer login
+      const redirectUrl = new URL('/account/login', request.url);
+      redirectUrl.searchParams.set('redirectTo', '/booking');
+      return createRedirect(redirectUrl);
+    }
+    return response;
   }
 
   return response;

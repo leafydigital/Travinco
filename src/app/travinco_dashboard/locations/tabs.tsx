@@ -8,7 +8,6 @@ const TABS = [
   { href: '/travinco_dashboard/locations', label: 'Locations' },
   { href: '/travinco_dashboard/locations/activities', label: 'Sightseeing & activities' },
   { href: '/travinco_dashboard/locations/distances', label: 'Distances' },
-  { href: '/travinco_dashboard/locations/day-plans', label: 'Day plans' },
 ];
 
 export function LocationTabs() {

@@ -18,16 +18,30 @@ const TYPES = [
 ];
 
 /* ── data (streamed) ──────────────────────────────────────── */
-async function PickupPointsContent({ canEdit }: { canEdit: boolean }) {
+async function PickupPointsContent({ canEdit, canDelete }: { canEdit: boolean; canDelete: boolean }) {
   const supabase = await createClient();
-  const [{ data: points }, { data: locs }] = await Promise.all([
+  const [{ data: points }, { data: locs }, { data: deletedSettingsData }] = await Promise.all([
     supabase.from('pickup_drop_points').select('*').order('sort_order').order('name'),
     supabase.from('locations').select('id, name, display_name').order('sort_order').order('name'),
+    supabase.from('website_settings').select('key').like('key', 'deleted_pickup_point_%'),
   ]);
+
+  const deletedKeys = new Set(
+    (deletedSettingsData || []).map((s: { key: string }) => s.key.replace('deleted_pickup_point_', ''))
+  );
+
+  const activePoints = (points ?? []).filter(
+    (p: any) =>
+      p &&
+      p.is_deleted !== true &&
+      p.is_deleted !== 'true' &&
+      p.is_deleted !== 1 &&
+      !deletedKeys.has(String(p.id))
+  );
 
   const locLookup = Object.fromEntries((locs ?? []).map((l) => [String(l.id), l.display_name || l.name]));
   const typeLookup = Object.fromEntries(TYPES.map((t) => [t.value, t.label]));
-  const rows = (points ?? []).map((p) => ({
+  const rows = activePoints.map((p) => ({
     ...p,
     used_for: [p.use_for_pickup && 'Pickup', p.use_for_drop && 'Drop'].filter(Boolean).join(' & ') || '—',
   }));
@@ -68,6 +82,7 @@ async function PickupPointsContent({ canEdit }: { canEdit: boolean }) {
       fields={fields}
       columns={columns}
       canEdit={canEdit}
+      canDelete={canDelete}
       saveAction={savePickupPoint}
       deleteAction={deletePickupPoint}
       searchKeys={['name', 'code', 'address']}
@@ -85,6 +100,7 @@ export default async function PickupPointsPage() {
   await assertPageAccess(profile, 'pickup_points');
   assertTourAccess(profile, 'masters');
   const editable = canEditMasters(profile);
+  const isAdmin = profile.role === 'admin' || profile.role === 'super_admin';
 
   return (
     <div className="space-y-5">
@@ -101,7 +117,7 @@ export default async function PickupPointsPage() {
           </div>
         </div>
       }>
-        <PickupPointsContent canEdit={editable} />
+        <PickupPointsContent canEdit={editable} canDelete={isAdmin} />
       </Suspense>
     </div>
   );

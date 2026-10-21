@@ -11,7 +11,7 @@ export type PackageCategory =
   | 'honeymoon' | 'family' | 'adventure' | 'group' | 'luxury' | 'budget' | 'pilgrimage' | 'other';
 export type EnquiryStatus =
   | 'new' | 'contacted' | 'follow_up' | 'quotation_sent' | 'negotiation'
-  | 'confirmed' | 'lost' | 'closed';
+  | 'confirmed' | 'booked' | 'lost' | 'closed';
 export type EnquiryPriority = 'low' | 'medium' | 'high' | 'urgent';
 export type EnquirySource =
   | 'website' | 'whatsapp' | 'phone' | 'walk_in' | 'referral' | 'social_media' | 'other';
@@ -33,7 +33,7 @@ export type IncomeCategory =
 export type NotificationType =
   | 'new_enquiry' | 'new_booking' | 'payment_received' | 'followup_due'
   | 'followup_overdue' | 'contact_message' | 'low_availability';
-export type LeadStatus = 'fresh_lead' | 'follow_up' | 'interested' | 'not_interested' | 'enquired';
+export type LeadStatus = 'fresh_lead' | 'follow_up' | 'interested' | 'not_interested' | 'enquired' | 'converted';
 
 export interface Database {
   public: {
@@ -370,6 +370,9 @@ export interface Database {
           notes: string | null;
           created_at: string;
           updated_at: string;
+          is_deleted?: boolean;
+          deleted_at?: string | null;
+          deleted_by?: string | null;
         };
         Insert: Partial<Database['public']['Tables']['enquiries']['Row']> & {
           customer_name: string;
@@ -529,6 +532,41 @@ export interface Database {
           valid_to: string;
         };
         Update: Partial<Database['public']['Tables']['offers']['Row']>;
+      };
+      theme_images: {
+        Row: {
+          id: string;
+          page: string;
+          placement: string;
+          image_url: string;
+          title: string | null;
+          subtitle: string | null;
+          badge: string | null;
+          button_text: string | null;
+          link_url: string | null;
+          sort_order: number;
+          is_active: boolean;
+          is_deleted: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          page?: string;
+          placement?: string;
+          image_url: string;
+          title?: string | null;
+          subtitle?: string | null;
+          badge?: string | null;
+          button_text?: string | null;
+          link_url?: string | null;
+          sort_order?: number;
+          is_active?: boolean;
+          is_deleted?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['theme_images']['Row']>;
       };
       whatsapp_contacts: {
         Row: {

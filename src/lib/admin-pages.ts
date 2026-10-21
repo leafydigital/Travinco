@@ -59,15 +59,6 @@ export const PAGE_CATALOG: PageDefinition[] = [
     defaultRoles: ['super_admin', 'admin', 'sales_staff'],
   },
   {
-    key: 'bookings',
-    label: 'Bookings',
-    href: '/travinco_dashboard/bookings',
-    icon: 'CalendarCheck',
-    category: 'Core Operations',
-    description: 'Confirmed customer bookings, payment schedules, and traveler details',
-    defaultRoles: ['super_admin', 'admin', 'sales_staff', 'accounts_staff'],
-  },
-  {
     key: 'customers',
     label: 'Customers',
     href: '/travinco_dashboard/customers',
@@ -152,6 +143,15 @@ export const PAGE_CATALOG: PageDefinition[] = [
     description: 'Travel articles, destination guides, and SEO blog posts',
     defaultRoles: ['super_admin', 'admin', 'sales_staff'],
   },
+  {
+    key: 'theme',
+    label: 'Theme',
+    href: '/travinco_dashboard/theme',
+    icon: 'Palette',
+    category: 'Content & Marketing',
+    description: 'Customize website appearance, customer-side page banners, and theme images',
+    defaultRoles: ['super_admin', 'admin', 'sales_staff'],
+  },
 
   // --- Finance & Master ---
   {
@@ -165,12 +165,12 @@ export const PAGE_CATALOG: PageDefinition[] = [
   },
   {
     key: 'master',
-    label: 'Master Data',
+    label: 'Rate Master',
     href: '/travinco_dashboard/master',
     icon: 'Database',
     category: 'Finance & Master',
-    description: 'Master rate cards, batch imports, and system tariffs',
-    defaultRoles: ['super_admin', 'admin'],
+    description: 'Hotel rate cards, seasonal meal plans, room categories, and contract rates',
+    defaultRoles: ['super_admin', 'admin', 'sales_staff', 'accounts_staff'],
   },
 
   // --- Role Management ---
@@ -203,7 +203,6 @@ export const PAGE_CATALOG: PageDefinition[] = [
     icon: 'Settings',
     category: 'System',
     description: 'Global site configuration, company info, and booking terms',
-    adminOnly: true,
     defaultRoles: ['super_admin', 'admin'],
   },
 ];

@@ -22,7 +22,7 @@ export type IncomeFormValues = z.infer<typeof incomeSchema>;
 
 export const expenseSchema = z.object({
   expense_date: z.string().min(1, 'Date is required'),
-  category_id: z.string().uuid('Select a category'),
+  category_id: z.string().min(1, 'Category is required'),
   supplier: z.string().max(200).optional().nullable(),
   description: z.string().max(500).optional().nullable(),
   booking_id: z.string().uuid().optional().nullable().or(z.literal('')),

@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { Search, X, MapPin, SlidersHorizontal, RotateCcw } from 'lucide-react';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { DestinationRowActions } from './destination-row-actions';
@@ -152,11 +153,13 @@ export function DestinationsTable({
                   <td className="w-14 px-3 sm:px-4 py-3">
                     <div className="relative h-10 w-12 overflow-hidden rounded-lg bg-ink-100 shadow-2xs">
                       {d.cover_image_url ? (
-                        <img
+                        <Image
                           src={d.cover_image_url}
                           alt={d.name}
-                          className="h-full w-full object-cover"
-                          loading="lazy"
+                          fill
+                          className="object-cover"
+                          sizes="48px"
+                          unoptimized
                         />
                       ) : (
                         <div className="flex h-full items-center justify-center text-ink-300">

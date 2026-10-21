@@ -1,7 +1,7 @@
 import { requireProfile, getStaffPermissions } from '@/lib/supabase/auth-helpers';
 import { navForProfile } from '@/lib/admin-nav';
-import { AdminSidebar } from '@/components/admin/admin-sidebar';
-import { AdminNavProgress } from '@/components/admin/admin-nav-progress';
+import { SaveConfirmationProvider } from '@/components/admin/save-confirmation-provider';
+import { AdminDashboardLayout } from '@/components/admin/admin-dashboard-layout';
 
 export default async function AdminRootLayout({
   children,
@@ -18,18 +18,15 @@ export default async function AdminRootLayout({
   const sections = navForProfile(profile, permissions);
 
   return (
-    <div className="flex min-h-screen flex-col lg:flex-row bg-ink-50 print:block print:bg-white">
-      <AdminNavProgress />
-      <AdminSidebar
+    <SaveConfirmationProvider>
+      <AdminDashboardLayout
         sections={sections}
         userName={profile.full_name}
         userRole={profile.role}
-      />
-      <div className="flex-1 min-w-0 overflow-x-hidden">
-        <main className="mx-auto max-w-7xl px-3.5 py-4 sm:px-6 sm:py-6 lg:px-8 print:max-w-none print:p-0">
-          {children}
-        </main>
-      </div>
-    </div>
+        userEmail={profile.email}
+      >
+        {children}
+      </AdminDashboardLayout>
+    </SaveConfirmationProvider>
   );
 }

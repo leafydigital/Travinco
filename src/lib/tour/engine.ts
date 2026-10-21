@@ -62,7 +62,7 @@ export const uid = () => Math.random().toString(36).slice(2, 9);
 export const totalNights = (inputs: Pick<QuoteInputs, 'stays'>) =>
   inputs.stays.reduce((a, s) => a + Math.max(0, s.nights | 0), 0);
 
-export const emptyPick = (): HotelPick => ({ hotel_id: null, room_type_id: null, manual_rate: null });
+export const emptyPick = (): HotelPick => ({ hotel_id: null, room_type_id: null, manual_rate: null, additional_cost: null });
 export const newStay = (location_id: number, nights = 1): StayInput => ({
   uid: uid(),
   location_id,
@@ -347,15 +347,18 @@ export function priceStay(ctx: EngineCtx, inputs: QuoteInputs, si: number, which
   const hb = isHB(ctx, st.location_id);
   const out: StayPrice = { choice, nights: [], total: 0, warn: [] };
   const catId = which === 2 ? inputs.category2_id : inputs.category_id;
+  const pick = which === 2 ? st.opt2 : st.opt1;
+  const additionalCost = Math.max(0, num(pick?.additional_cost));
+
   if (!choice.H) {
-    const pick = which === 2 ? st.opt2 : st.opt1;
-    const m = num(pick.manual_rate);
+    const m = num(pick?.manual_rate);
     const units = hb ? 1 : Math.max(1, inputs.rooms | 0);
     for (const dt of dates) {
       out.nights.push({ date: dt, row: null, exact: true, base: m, units, extraAdults: 0, extras: 0, total: m * units, manual: m, warn: [] });
       out.total += m * units;
     }
-    if (!m) {
+    out.total += additionalCost;
+    if (!m && !additionalCost) {
       const catName = ctx.m.categories.find((c) => c.id === catId)?.name;
       out.warn.push(
         `${label}: no hotel in the Rate Master${choice.none && catName ? ' for ' + catName : ''} – pick a hotel or enter a manual rate.`
@@ -377,6 +380,7 @@ export function priceStay(ctx: EngineCtx, inputs: QuoteInputs, si: number, which
       out.warn.push(`${label} ${fmtDay(dt)}: no rate row covers this date – used ${c.row.season} (${c.row.date_range_label}). Please confirm.`);
     for (const w of c.warn) out.warn.push(`${label} ${fmtDay(dt)}: ${w}.`);
   }
+  out.total += additionalCost;
   return out;
 }
 
@@ -482,7 +486,7 @@ export function quote(ctx: EngineCtx, inputs: QuoteInputs, which: 1 | 2): QuoteC
   const net = hotels + vehicle.total + other;
   const mp = markupPct(ctx, inputs);
   const markup = (net * mp) / 100;
-  const gstPct = inputs.gst_enabled === false ? 0 : num(ctx.m.settings.gst_pct);
+  const gstPct = inputs.gst_enabled ? num(ctx.m.settings.gst_pct) : 0;
   const gst = ((net + markup) * gstPct) / 100;
   const rnd = num(ctx.m.settings.round_to) || 1;
   const total = Math.round((net + markup + gst) / rnd) * rnd;
@@ -710,11 +714,34 @@ export function computeDays(ctx: EngineCtx, inputs: QuoteInputs): DayOut[] {
         lines.push({ kind: 'text', text: 'Breakfast at the hotel and check out.' });
       }
     }
+    const textBefore: DayLine[] = [];
+    const textAfter: DayLine[] = [];
+    const sightItems: DayLine[] = [];
+
     plan.items.forEach((it, ix) => {
-      if (it.kind === 'sight') lines.push({ kind: 'sight', name: it.name, desc: it.desc ?? sightDesc(ctx, it.name, d.to), ix, off: off.has(ix) });
-      else lines.push({ kind: 'text', text: it.text });
+      if (it.kind === 'sight') {
+        sightItems.push({ kind: 'sight', name: it.name, desc: it.desc ?? sightDesc(ctx, it.name, d.to), ix, off: off.has(ix) });
+      } else {
+        if (sightItems.length === 0) textBefore.push({ kind: 'text', text: it.text });
+        else textAfter.push({ kind: 'text', text: it.text });
+      }
     });
-    for (const name of ed.add || []) lines.push({ kind: 'sight', name, desc: sightDesc(ctx, name, d.to), added: true });
+
+    for (const name of ed.add || []) {
+      sightItems.push({ kind: 'sight', name, desc: sightDesc(ctx, name, d.to), added: true });
+    }
+
+    if (ed.sight_order && ed.sight_order.length > 0) {
+      const orderMap = new Map(ed.sight_order.map((name, idx) => [name, idx]));
+      sightItems.sort((a, b) => {
+        if (a.kind !== 'sight' || b.kind !== 'sight') return 0;
+        const ordA = orderMap.has(a.name) ? orderMap.get(a.name)! : 999;
+        const ordB = orderMap.has(b.name) ? orderMap.get(b.name)! : 999;
+        return ordA - ordB;
+      });
+    }
+
+    lines.push(...textBefore, ...sightItems, ...textAfter);
     if (d.kind === 'departure') {
       lines.push({
         kind: 'text',
@@ -834,7 +861,7 @@ export function buildSnapshot(ctx: EngineCtx, inputs: QuoteInputs, q1: QuoteCalc
     '1 litre water bottle per person every day.',
     'Meet & greet assistance at arrival and departure points.',
     '24-hour on-call assistance during your stay.',
-    ...(inputs.gst_enabled !== false ? [`${num(S.gst_pct)}% GST included in the package.`] : []),
+    ...(inputs.gst_enabled ? [`${num(S.gst_pct)}% GST included in the package.`] : []),
     ...inputs.extra_inclusions.split('\n').map((s) => s.trim()).filter(Boolean),
   ];
 
@@ -890,6 +917,7 @@ export function buildSnapshot(ctx: EngineCtx, inputs: QuoteInputs, q1: QuoteCalc
       website: S.company_website || '',
       address: S.company_address || '',
     },
+    logos_config: S.logos_config,
     warnings: Array.from(new Set([...q1.warn, ...(q2 ? q2.warn : [])])),
     generated_at: new Date().toISOString(),
   };
@@ -945,11 +973,11 @@ export function blankInputs(m: TourMasters): QuoteInputs {
   return {
     customer_id: null, enquiry_id: null, guest_name: '', guest_phone: '', guest_email: '', title: '', trip_type: 'Tour',
     start_date: start, adults: 2, cwb: 0, cnb: 0, child_ages: '', rooms: 1, meal: 'CP',
-    category_id: m.categories[1]?.id ?? m.categories[0]?.id ?? null, category2_id: null,
-    pickup_point_id: m.points.find((p) => p.use_for_pickup)?.id ?? null,
-    drop_point_id: m.points.find((p) => p.use_for_drop)?.id ?? null,
+    category_id: null, category2_id: null,
+    pickup_point_id: null,
+    drop_point_id: null,
     vehicle_id: null, vehicle_days: null, vehicle_km: null, vehicle_extra: 0, others: [], markup_pct: null,
-    gst_enabled: true,
+    gst_enabled: false,
     extra_inclusions: '', stays: [], days: {}, day_order: undefined, plan_picks: [], template_id: null, valid_until: null, notes: '',
   };
 }
@@ -1000,12 +1028,13 @@ export function normalizeInputs(raw: Partial<QuoteInputs>, m: TourMasters): Quot
   i.vehicle_km = i.vehicle_km == null || (i.vehicle_km as unknown) === '' ? null : Math.max(0, num(i.vehicle_km));
   i.vehicle_extra = Math.max(0, num(i.vehicle_extra));
   i.markup_pct = i.markup_pct == null || (i.markup_pct as unknown) === '' ? null : Math.min(100, Math.max(0, num(i.markup_pct)));
-  i.gst_enabled = raw.gst_enabled !== false;
+  i.gst_enabled = raw.gst_enabled === true;
   i.others = (Array.isArray(i.others) ? i.others : []).map((o) => ({ label: String(o?.label ?? '').slice(0, 120), amount: num(o?.amount) })).filter((o) => o.label || o.amount);
   const pickNorm = (p: Partial<HotelPick> | undefined): HotelPick => ({
     hotel_id: p?.hotel_id === 'tbc' ? 'tbc' : idOrNull(p?.hotel_id),
     room_type_id: idOrNull(p?.room_type_id),
     manual_rate: p?.manual_rate == null || (p.manual_rate as unknown) === '' ? null : Math.max(0, num(p.manual_rate)),
+    additional_cost: p?.additional_cost == null || (p.additional_cost as unknown) === '' ? null : Math.max(0, num(p.additional_cost)),
   });
   i.stays = (Array.isArray(i.stays) ? i.stays : [])
     .filter((s) => s && m.locations.some((l) => l.id === Number(s.location_id)))

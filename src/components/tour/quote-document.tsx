@@ -1,5 +1,6 @@
 /* eslint-disable @next/next/no-img-element */
-import type { QuoteSnapshot } from '@/lib/tour/types';
+import type { QuoteSnapshot, QuotationLogosConfig } from '@/lib/tour/types';
+import { DEFAULT_QUOTATION_LOGOS } from '@/lib/tour/types';
 import { fmtDay, inr } from '@/lib/tour/engine';
 
 /**
@@ -47,16 +48,91 @@ function SectionHeader({ icon, title }: { icon?: string; title: string }) {
   );
 }
 
+export function QuotationFooterLogos({ cfg }: { cfg: QuotationLogosConfig }) {
+  const registeredLogos = (cfg.logos || []).filter((l) => l.is_active && l.category === 'registered');
+  const partnerLogos = (cfg.logos || []).filter((l) => l.is_active && l.category === 'partner');
+  const otherLogos = (cfg.logos || []).filter((l) => l.is_active && l.category === 'other');
+
+  if (registeredLogos.length === 0 && partnerLogos.length === 0 && otherLogos.length === 0) {
+    return null;
+  }
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 20 }}>
+      {registeredLogos.length > 0 && (
+        <div style={{ flex: 1, textAlign: 'center' }}>
+          <div style={{ fontSize: 12, color: '#374151', fontWeight: 700, marginBottom: 8 }}>
+            {cfg.registered_title || 'Registered with'}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, flexWrap: 'wrap' }}>
+            {registeredLogos.map((logo) => (
+              <div key={logo.id} style={{ textAlign: 'center' }}>
+                <img
+                  src={logo.image_url}
+                  alt={logo.name}
+                  crossOrigin="anonymous"
+                  style={{ height: 38, maxWidth: 95, objectFit: 'contain' }}
+                />
+                {logo.subtitle && (
+                  <div style={{ fontSize: 9.5, color: '#4b5563', marginTop: 2, fontWeight: 600, whiteSpace: 'nowrap' }}>
+                    {logo.subtitle}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {registeredLogos.length > 0 && partnerLogos.length > 0 && (
+        <div style={{ width: 1, height: 60, background: '#d1d5db' }} />
+      )}
+
+      {partnerLogos.length > 0 && (
+        <div style={{ flex: 1, textAlign: 'center' }}>
+          <div style={{ fontSize: 12, color: '#374151', fontWeight: 700, marginBottom: 8 }}>
+            {cfg.partners_title || 'Proud Booking partners of'}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, flexWrap: 'wrap' }}>
+            {partnerLogos.map((logo) => (
+              <div key={logo.id} style={{ textAlign: 'center' }}>
+                <img
+                  src={logo.image_url}
+                  alt={logo.name}
+                  crossOrigin="anonymous"
+                  style={{ height: 40, maxWidth: 110, objectFit: 'contain' }}
+                />
+                {logo.subtitle && (
+                  <div style={{ fontSize: 9.5, color: '#4b5563', marginTop: 2, fontWeight: 600, whiteSpace: 'nowrap' }}>
+                    {logo.subtitle}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function QuoteDocument({
   s,
   quoteNumber,
-  logoUrl = '/brand/travinco-logo.png',
+  logoUrl,
+  tourismLogoUrl,
+  logosConfig,
 }: {
   s: QuoteSnapshot;
   quoteNumber?: string;
   logoUrl?: string;
   tourismLogoUrl?: string;
+  logosConfig?: QuotationLogosConfig;
 }) {
+  const cfg: QuotationLogosConfig = logosConfig || s.logos_config || DEFAULT_QUOTATION_LOGOS;
+  const headerLogo = logoUrl || cfg.header_logo_url || '/brand/travinco-logo.png';
+  const tourLogo = tourismLogoUrl || cfg.tour_logo_url || '/brand/Tour_logo.jpg';
+
   const kv: [string, string][] = [
     ['Travel Dates', s.dates || 'TBC'],
     ['Duration', s.duration],
@@ -77,7 +153,7 @@ export function QuoteDocument({
       <header style={{ paddingBottom: 10, borderBottom: '1px solid #d1d5db', marginBottom: 14 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
           <img
-            src={logoUrl}
+            src={headerLogo}
             alt={s.company?.name || 'Travinco'}
             style={{ height: 46, maxWidth: 220, objectFit: 'contain' }}
           />
@@ -95,7 +171,7 @@ export function QuoteDocument({
           {/* Left: Tour Logo below header line */}
           <div style={{ width: 130, display: 'flex', justifyContent: 'flex-start' }}>
             <img
-              src="/brand/Tour_logo.jpg"
+              src={tourLogo}
               alt="Tourism Logo"
               style={{ height: 90, maxWidth: 130, objectFit: 'contain' }}
             />
@@ -434,37 +510,36 @@ export function QuoteDocument({
         </div>
       </div>
 
-      {/* Trust & Partnership Footer (Exact PDF logos) */}
-      <footer style={{ marginTop: 22, paddingTop: 16, borderTop: '1px solid #d1d5db', breakInside: 'avoid' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 20 }}>
-          {/* Left: Registered with */}
-          <div style={{ flex: 1, textAlign: 'center' }}>
-            <div style={{ fontSize: 12, color: '#374151', fontWeight: 700, marginBottom: 8 }}>Registered with</div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, flexWrap: 'wrap' }}>
-              <div style={{ textAlign: 'center' }}>
-                <img src="/brand/msme_logo.jpg" alt="MSME" style={{ height: 38, maxWidth: 85, objectFit: 'contain' }} />
-                <div style={{ fontSize: 9.5, color: '#4b5563', marginTop: 2, fontWeight: 600, whiteSpace: 'nowrap' }}>Kerala Toursim</div>
-              </div>
-              <img src="/brand/ktdc_logo.jpg" alt="KTDC" style={{ height: 40, maxWidth: 95, objectFit: 'contain' }} />
-              <div style={{ fontSize: 9.5, color: '#4b5563', marginTop: 2, fontWeight: 600, whiteSpace: 'nowrap' }}>Reg: KL-12-0120111</div>
-            </div>
-          </div>
-
-          {/* Vertical Divider */}
-          <div style={{ width: 1, height: 60, background: '#d1d5db' }} />
-
-          {/* Right: Proud Booking Partners */}
-          <div style={{ flex: 1, textAlign: 'center' }}>
-            <div style={{ fontSize: 12, color: '#374151', fontWeight: 700, marginBottom: 8 }}>Proud Booking partners of</div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, flexWrap: 'wrap' }}>
-              <img src="/brand/abad_logo.jpg" alt="ABAD Hotels" style={{ height: 40, maxWidth: 85, objectFit: 'contain' }} />
-              <img src="/brand/cghearth_logo.jpg" alt="CGH Earth" style={{ height: 40, maxWidth: 110, objectFit: 'contain' }} />
-              <img src="/brand/greenroutes_logo.jpg" alt="Green Routes" style={{ height: 40, maxWidth: 120, objectFit: 'contain' }} />
-              <img src="/brand/green_router.jpg" alt="Green Router" style={{ height: 40, maxWidth: 110, objectFit: 'contain' }} />
-            </div>
-          </div>
-        </div>
+      {/* Trust & Partnership Footer (Screen Preview bottom) */}
+      <footer
+        id="quote-footer-logos"
+        style={{
+          marginTop: 22,
+          paddingTop: 16,
+          borderTop: '1px solid #d1d5db',
+          breakInside: 'avoid',
+          backgroundColor: '#ffffff',
+        }}
+      >
+        <QuotationFooterLogos cfg={cfg} />
       </footer>
+
+      {/* Print-only fixed footer for window.print() (repeats on each printed page) */}
+      <div
+        id="quote-print-fixed-footer"
+        className="quote-print-page-footer print:block hidden"
+        style={{
+          position: 'fixed',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          backgroundColor: '#ffffff',
+          paddingTop: 8,
+          borderTop: '1px solid #d1d5db',
+        }}
+      >
+        <QuotationFooterLogos cfg={cfg} />
+      </div>
     </article>
   );
 }

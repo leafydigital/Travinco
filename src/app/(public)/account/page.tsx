@@ -1,7 +1,7 @@
 import { requireCustomer } from '@/lib/supabase/customer-auth-helpers';
 import { LogOutButton } from './logout-button';
 import Link from 'next/link';
-import { Package, KeyRound, ArrowRight } from 'lucide-react';
+import { Package, KeyRound, ArrowRight, Compass } from 'lucide-react';
 
 export default async function AccountPage() {
   const account = await requireCustomer();
@@ -18,7 +18,7 @@ export default async function AccountPage() {
         <LogOutButton />
       </div>
 
-      <div className="mt-10 grid gap-4 sm:grid-cols-2">
+      <div className="mt-10 grid gap-4 sm:grid-cols-3">
         <Link href="/account/bookings" className="card-hover flex items-center justify-between p-5">
           <div className="flex items-center gap-3">
             <div className="rounded-full bg-brand-50 p-2.5 text-brand-600">
@@ -26,7 +26,20 @@ export default async function AccountPage() {
             </div>
             <div>
               <p className="font-medium text-ink-900">My bookings</p>
-              <p className="text-sm text-ink-500">See your trip history</p>
+              <p className="text-sm text-ink-500">Trip &amp; quote history</p>
+            </div>
+          </div>
+          <ArrowRight className="h-4 w-4 text-ink-400" />
+        </Link>
+
+        <Link href="/booking" className="card-hover flex items-center justify-between p-5">
+          <div className="flex items-center gap-3">
+            <div className="rounded-full bg-emerald-50 p-2.5 text-emerald-600">
+              <Compass className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="font-medium text-ink-900">Request quote</p>
+              <p className="text-sm text-ink-500">Plan a custom trip</p>
             </div>
           </div>
           <ArrowRight className="h-4 w-4 text-ink-400" />
@@ -39,7 +52,7 @@ export default async function AccountPage() {
             </div>
             <div>
               <p className="font-medium text-ink-900">Change password</p>
-              <p className="text-sm text-ink-500">Update your login password</p>
+              <p className="text-sm text-ink-500">Update login password</p>
             </div>
           </div>
           <ArrowRight className="h-4 w-4 text-ink-400" />

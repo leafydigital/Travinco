@@ -10,6 +10,7 @@ const REASON_MESSAGES: Record<string, string> = {
   not_staff: 'That account is a customer account, not a staff account — please sign in with your staff email.',
   deactivated: 'This staff account has been deactivated. Contact your administrator.',
   forbidden: 'Access denied: You do not have permission to access that page. Please sign in with an authorized account.',
+  reset_success: 'Your password has been reset successfully! Please sign in with your new password.',
 };
 
 export default function LoginPage({
@@ -18,6 +19,7 @@ export default function LoginPage({
   searchParams: { reason?: string; redirectTo?: string };
 }) {
   const reasonMessage = searchParams.reason ? REASON_MESSAGES[searchParams.reason] : null;
+  const isSuccess = searchParams.reason === 'reset_success';
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-ink-50 px-4">
@@ -35,7 +37,13 @@ export default function LoginPage({
           Staff access only. Contact your administrator if you need an account.
         </p>
         {reasonMessage && (
-          <p className="mt-4 rounded-lg border border-sand-200 bg-sand-50 px-3 py-2 text-sm text-sand-800">
+          <p
+            className={`mt-4 rounded-lg border px-3 py-2 text-sm ${
+              isSuccess
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-800 font-medium'
+                : 'border-sand-200 bg-sand-50 text-sand-800'
+            }`}
+          >
             {reasonMessage}
           </p>
         )}

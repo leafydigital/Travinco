@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import Image from 'next/image';
-import { MapPin, Clock, Sparkles } from 'lucide-react';
+import { MapPin, Clock } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils/format';
 
 export type PackageCardData = {
@@ -42,8 +42,8 @@ export function PackageCard({ pkg }: { pkg: PackageCardData }) {
             </span>
           )}
           {pkg.hasActiveOffer && (
-            <span className="badge-discount shadow-sm">
-              <Sparkles className="mr-1 h-3 w-3" /> Special offer
+            <span className="badge-discount shadow-sm font-semibold">
+              Special offer
             </span>
           )}
         </div>

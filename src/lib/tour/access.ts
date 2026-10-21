@@ -25,5 +25,5 @@ export function canAccess(p: Pick<CurrentProfile, 'role'>, area: TourArea) {
 
 /** Page guard (Server Components). */
 export function assertTourAccess(p: CurrentProfile, area: TourArea) {
-  if (!canAccess(p, area)) redirect('/login?reason=forbidden');
+  if (!canAccess(p, area)) redirect('/travinco_dashboard?error=unauthorized');
 }

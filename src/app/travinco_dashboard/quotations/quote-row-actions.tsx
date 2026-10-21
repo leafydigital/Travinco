@@ -77,7 +77,7 @@ export function QuoteRowActions({
           <>
             Are you sure you want to delete quotation{' '}
             <strong className="text-ink-900">{quoteNumber}</strong>? This action
-            will permanently remove it from the database and cannot be undone.
+            will remove it from the active quotations list.
           </>
         }
         onConfirm={handleDelete}

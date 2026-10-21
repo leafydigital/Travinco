@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { Search, X, SlidersHorizontal, RotateCcw, Package } from 'lucide-react';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { formatCurrency } from '@/lib/utils/format';
@@ -23,9 +24,12 @@ export interface PackageItem {
   is_deleted?: boolean;
 }
 
+import type { DestinationOption } from './bulk-create-modal';
+
 interface Props {
   initialPackages: PackageItem[];
   destinationsMap: Record<string, string>;
+  destinations?: DestinationOption[];
   isAdmin: boolean;
 }
 
@@ -34,6 +38,7 @@ const PAGE_SIZE = 15;
 export function PackagesTable({
   initialPackages,
   destinationsMap,
+  destinations = [],
   isAdmin,
 }: Props) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -142,8 +147,8 @@ export function PackagesTable({
 
       {/* 2. Packages Table */}
       <div className="card overflow-hidden">
-        <div className="w-full overflow-x-auto lg:overflow-x-visible">
-          <table className="w-full text-sm table-auto">
+        <div className="w-full overflow-x-auto">
+          <table className="w-full min-w-[720px] text-sm table-auto">
             <thead>
               <tr className="border-b border-ink-100 text-left text-xs uppercase tracking-wide text-ink-400">
                 <th className="w-14 px-3 sm:px-4 py-3 font-semibold">Image</th>
@@ -175,11 +180,13 @@ export function PackagesTable({
                   <td className="w-14 px-3 sm:px-4 py-3">
                     <div className="relative h-10 w-12 overflow-hidden rounded-lg bg-ink-100 shadow-2xs">
                       {pkg.cover_image_url ? (
-                        <img
+                        <Image
                           src={pkg.cover_image_url}
                           alt={pkg.title}
-                          className="h-full w-full object-cover"
-                          loading="lazy"
+                          fill
+                          className="object-cover"
+                          sizes="48px"
+                          unoptimized
                         />
                       ) : (
                         <div className="flex h-full items-center justify-center text-[10px] text-ink-300">

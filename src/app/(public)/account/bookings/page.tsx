@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server';
 import { requireCustomer } from '@/lib/supabase/customer-auth-helpers';
 import { formatCurrency, formatDate } from '@/lib/utils/format';
 import Link from 'next/link';
-import { Calendar, Package, ArrowLeft, Clock, CheckCircle2, XCircle, Loader } from 'lucide-react';
+import { Calendar, Package, ArrowLeft, Clock, CheckCircle2, XCircle, Loader, Plus, Compass } from 'lucide-react';
 
 /** Maps the raw database status to a plain-language label and a visual
  * treatment a customer can understand at a glance, without needing to
@@ -76,19 +76,30 @@ export default async function BookingsPage() {
 
   return (
     <div className="container-page max-w-3xl pt-32 pb-16">
-      <Link href="/account" className="mb-4 flex items-center gap-1.5 text-sm text-ink-500 hover:text-brand-700">
-        <ArrowLeft className="h-4 w-4" /> Back to account
-      </Link>
-
-      <h1 className="font-display text-2xl font-semibold text-ink-900">My bookings</h1>
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <Link href="/account" className="mb-2 flex items-center gap-1.5 text-sm text-ink-500 hover:text-brand-700">
+            <ArrowLeft className="h-4 w-4" /> Back to account
+          </Link>
+          <h1 className="font-display text-2xl font-semibold text-ink-900">My Bookings &amp; Quotes</h1>
+        </div>
+        <Link href="/booking" className="btn-primary flex items-center gap-1.5 text-sm">
+          <Plus className="h-4 w-4" /> Request a Quote
+        </Link>
+      </div>
 
       {hasNothing ? (
         <div className="mt-6 rounded-xl2 border border-dashed border-ink-200 py-12 text-center">
-          <Package className="mx-auto h-6 w-6 text-ink-300" />
-          <p className="mt-3 text-sm text-ink-500">
-            No bookings found yet under this email. If you&apos;ve booked with us before, make
-            sure you signed up with the same email you gave us at the time.
+          <Package className="mx-auto h-8 w-8 text-ink-300" />
+          <p className="mt-3 font-semibold text-ink-800">No bookings or quotes yet</p>
+          <p className="mx-auto mt-1 max-w-md text-sm text-ink-500">
+            You don&apos;t have any active bookings or quote requests yet under this email. Start planning your custom trip today!
           </p>
+          <div className="mt-5">
+            <Link href="/booking" className="btn-primary inline-flex items-center gap-2 text-sm">
+              <Compass className="h-4 w-4" /> Request a Quote
+            </Link>
+          </div>
         </div>
       ) : (
         <div className="mt-6 space-y-3">

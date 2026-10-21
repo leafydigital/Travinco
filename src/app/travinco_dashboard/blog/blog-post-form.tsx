@@ -54,7 +54,7 @@ export function BlogPostForm({
       }
       toast.success(postId ? 'Post updated' : 'Post created as draft');
       if (!postId && 'id' in result && result.id) {
-        router.push(`/admin/blog/${result.id}`);
+        router.push(`/travinco_dashboard/blog/${result.id}`);
       } else {
         router.refresh();
       }

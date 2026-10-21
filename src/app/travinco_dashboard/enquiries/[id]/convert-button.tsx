@@ -34,7 +34,7 @@ export function ConvertToBookingButton({
         return;
       }
       toast.success('Booking created');
-      if (result.bookingId) router.push(`/admin/bookings/${result.bookingId}`);
+      if (result.bookingId) router.push(`/travinco_dashboard/bookings/${result.bookingId}`);
     });
   }
 

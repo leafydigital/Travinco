@@ -30,7 +30,20 @@ export async function uploadImageToBucket(
     .upload(path, file, { contentType: file.type, upsert: false });
 
   if (uploadError) {
-    return { error: 'Could not upload the image. Please try again.' };
+    console.warn(`Supabase storage upload to bucket "${bucket}" failed, saving to local disk fallback:`, uploadError);
+    try {
+      const fs = await import('node:fs/promises');
+      const nodePath = await import('node:path');
+      const uploadsDir = nodePath.join(process.cwd(), 'public', 'uploads', bucket);
+      await fs.mkdir(uploadsDir, { recursive: true });
+      const filePath = nodePath.join(uploadsDir, path);
+      const buffer = Buffer.from(await file.arrayBuffer());
+      await fs.writeFile(filePath, buffer);
+      return { url: `/uploads/${bucket}/${path}` };
+    } catch (diskErr) {
+      console.error('Local disk write fallback failed:', diskErr);
+      return { error: 'Could not upload the image. Please try again.' };
+    }
   }
 
   const { data } = supabase.storage.from(bucket).getPublicUrl(path);

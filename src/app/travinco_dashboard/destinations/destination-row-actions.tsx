@@ -160,7 +160,6 @@ export function DestinationRowActions({
       <ConfirmDeleteDialog
         isOpen={isDeleteOpen}
         title="Delete Destination"
-        maxWidth="max-w-[420px]"
         description={
           <div className="space-y-3 text-left">
             <p className="text-sm text-ink-700 leading-normal">

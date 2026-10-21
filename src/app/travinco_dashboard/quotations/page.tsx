@@ -80,7 +80,7 @@ async function QuotationsTableContent({
   let query = supabase
     .from('quotations')
     .select(
-      'id, quote_number, status, guest_name, guest_phone, title, start_date, nights, adults, total_amount, total_amount2, valid_until, created_at, profiles:created_by(full_name)',
+      'id, quote_number, status, guest_name, guest_phone, title, start_date, nights, adults, total_amount, total_amount2, valid_until, created_at, is_deleted, profiles:created_by(full_name)',
       { count: 'exact' }
     )
     .order('created_at', { ascending: false })
@@ -96,11 +96,45 @@ async function QuotationsTableContent({
     query = query.eq('status', searchParams.status);
   }
 
-  const [{ data: rows, count }] = await Promise.all([
+  const [{ data: rows, count, error: queryError }, { data: deletedSettingsData }] = await Promise.all([
     query,
+    supabase.from('website_settings').select('key').like('key', 'deleted_quotation_%'),
     loadTourMasters().catch(() => null), // Pre-warm tour masters into memory
   ]);
-  const visibleRows = (rows ?? []).filter((r: any) => r.is_deleted !== true);
+
+  let quotationRows: any[] | null = rows;
+  if (queryError && queryError.message?.includes('is_deleted')) {
+    let fallbackQuery = supabase
+      .from('quotations')
+      .select(
+        'id, quote_number, status, guest_name, guest_phone, title, start_date, nights, adults, total_amount, total_amount2, valid_until, created_at, profiles:created_by(full_name)',
+        { count: 'exact' }
+      )
+      .order('created_at', { ascending: false })
+      .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
+    if (term) {
+      fallbackQuery = fallbackQuery.or(
+        `quote_number.ilike.%${term}%,guest_name.ilike.%${term}%,guest_phone.ilike.%${term}%`
+      );
+    }
+    if (searchParams.status && STATUSES.includes(searchParams.status)) {
+      fallbackQuery = fallbackQuery.eq('status', searchParams.status);
+    }
+    const fallbackRes = await fallbackQuery;
+    quotationRows = fallbackRes.data;
+  }
+
+  const deletedKeys = new Set(
+    (deletedSettingsData || []).map((s: { key: string }) => s.key.replace('deleted_quotation_', ''))
+  );
+  const visibleRows = (quotationRows ?? []).filter(
+    (r: any) =>
+      r &&
+      r.is_deleted !== true &&
+      r.is_deleted !== 'true' &&
+      r.is_deleted !== 1 &&
+      !deletedKeys.has(r.id)
+  );
   const totalPages = Math.max(1, Math.ceil((count ?? 0) / PAGE_SIZE));
   const today = new Date().toISOString().slice(0, 10);
 
@@ -113,7 +147,7 @@ async function QuotationsTableContent({
   return (
     <>
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full min-w-[760px] text-sm">
           <thead>
             <tr className="border-b border-ink-100 text-left text-xs uppercase tracking-wide text-ink-400">
               <th className="px-5 py-3">Quotation</th>
@@ -263,7 +297,7 @@ export default async function QuotationsPage({
         <div className="flex gap-2">
           {isAdminRole(profile) && (
             <Link
-              href="/admin/quotations/settings"
+              href="/travinco_dashboard/quotations/settings"
               prefetch={true}
               className="btn-outline"
             >
@@ -294,20 +328,20 @@ export default async function QuotationsPage({
       </div>
 
       {/* 3. Search Bar (Renders Instantly) */}
-      <form method="get" className="flex items-center gap-3">
+      <form method="get" className="flex flex-wrap sm:flex-nowrap items-center gap-3">
         {searchParams.status && (
           <input type="hidden" name="status" value={searchParams.status} />
         )}
-        <div className="relative min-w-[220px] max-w-md flex-1">
+        <div className="relative min-w-[200px] sm:min-w-[220px] max-w-md flex-1 w-full">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" />
           <input
             name="q"
             defaultValue={searchParams.q}
             placeholder="Search number, guest, phone…"
-            className="input pl-9"
+            className="input pl-9 w-full"
           />
         </div>
-        <button type="submit" className="btn-outline">
+        <button type="submit" className="btn-outline w-full sm:w-auto">
           Search
         </button>
       </form>

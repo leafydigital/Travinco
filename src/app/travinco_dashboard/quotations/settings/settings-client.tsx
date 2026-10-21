@@ -60,6 +60,8 @@ export function SettingsClient({ settings }: { settings: TourSettings }) {
 
       <div className="card p-5">
         <h2 className="mb-4 font-semibold text-ink-900">Company details (quotation &amp; invoice header)</h2>
+        <input type="hidden" name="bank_details" value={val('bank_details')} />
+        <input type="hidden" name="invoice_terms" value={val('invoice_terms')} />
         <div className="grid gap-4 sm:grid-cols-2">
           {TEXTS.map(([k, label]) => (
             <div key={k}>
@@ -70,14 +72,6 @@ export function SettingsClient({ settings }: { settings: TourSettings }) {
           <div className="sm:col-span-2">
             <label className="label" htmlFor="s-addr">Address</label>
             <textarea id="s-addr" name="company_address" rows={2} defaultValue={val('company_address')} className="input" />
-          </div>
-          <div className="sm:col-span-2">
-            <label className="label" htmlFor="s-bank">Bank details (printed on invoices)</label>
-            <textarea id="s-bank" name="bank_details" rows={3} defaultValue={val('bank_details')} className="input" placeholder={'A/c name: …\nA/c no: …\nIFSC: …\nUPI: …'} />
-          </div>
-          <div className="sm:col-span-2">
-            <label className="label" htmlFor="s-terms">Invoice terms</label>
-            <textarea id="s-terms" name="invoice_terms" rows={3} defaultValue={val('invoice_terms')} className="input" />
           </div>
         </div>
       </div>

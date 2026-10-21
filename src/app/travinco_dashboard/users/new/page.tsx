@@ -7,7 +7,7 @@ import { ArrowLeft } from 'lucide-react';
 export default async function NewUserPage() {
   const profile = await requireProfile();
   if (profile.role !== 'admin' && profile.role !== 'super_admin') {
-    redirect('/travinco_admin_login?reason=forbidden');
+    redirect('/travinco_dashboard?error=unauthorized');
   }
 
   return (

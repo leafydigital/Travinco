@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server';
 import type { Metadata } from 'next';
 import { EnquiryForm } from '@/components/public/enquiry-form';
+import { requireCustomer } from '@/lib/supabase/customer-auth-helpers';
 
 export const metadata: Metadata = {
   title: 'Plan your trip',
@@ -8,11 +9,15 @@ export const metadata: Metadata = {
 };
 
 export default async function BookingPage() {
+  // Enforces valid customer session; redirects unauthenticated visitors or admin-only sessions to customer login
+  const customer = await requireCustomer('/booking');
+
   const supabase = await createClient();
-  const [{ data: packages }, { data: { user } }] = await Promise.all([
-    supabase.from('travel_packages').select('id, title').eq('status', 'published').order('title'),
-    supabase.auth.getUser(),
-  ]);
+  const { data: packages } = await supabase
+    .from('travel_packages')
+    .select('id, title')
+    .eq('status', 'published')
+    .order('title');
 
   return (
     <div className="container-page pt-32 pb-14">
@@ -37,7 +42,12 @@ export default async function BookingPage() {
               first.
             </p>
           )}
-          <EnquiryForm buttonLabel="Request a quote" isLoggedIn={Boolean(user)} />
+          <EnquiryForm
+            buttonLabel="Request a quote"
+            isLoggedIn={true}
+            defaultName={customer.full_name || ''}
+            defaultEmail={customer.email || ''}
+          />
         </div>
       </div>
     </div>

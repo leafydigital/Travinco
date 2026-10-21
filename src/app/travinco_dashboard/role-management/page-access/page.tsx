@@ -13,7 +13,7 @@ export default async function PageAccessManagementPage() {
 
   // Strict Server Guard: Only admins & super_admin can enter Role Management
   if (profile.role !== 'admin' && profile.role !== 'super_admin') {
-    redirect('/login?reason=forbidden');
+    redirect('/travinco_dashboard?error=unauthorized');
   }
 
   const supabase = await createClient();

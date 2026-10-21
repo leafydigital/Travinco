@@ -49,10 +49,19 @@ export async function updateEnquiryStatus(
     .eq('id', enquiryId)
     .single();
 
-  const { error } = await supabase
+  let { error } = await supabase
     .from('enquiries')
     .update({ status, last_contacted_at: new Date().toISOString() })
     .eq('id', enquiryId);
+
+  // If database enum hasn't had 'booked' added yet, fall back to 'confirmed'
+  if (error && status === 'booked' && (error.message?.includes('enquiry_status') || error.message?.includes('enum') || error.message?.includes('invalid input'))) {
+    const fallback = await supabase
+      .from('enquiries')
+      .update({ status: 'confirmed', last_contacted_at: new Date().toISOString() })
+      .eq('id', enquiryId);
+    error = fallback.error;
+  }
 
   if (error) return { error: 'Could not update status.' };
 
@@ -63,7 +72,7 @@ export async function updateEnquiryStatus(
     { from_status: before?.status, to_status: status }
   );
 
-  revalidatePath(`/admin/enquiries/${enquiryId}`);
+  revalidatePath(`/travinco_dashboard/enquiries/${enquiryId}`);
   revalidatePath('/travinco_dashboard/enquiries');
   return {};
 }
@@ -168,7 +177,7 @@ export async function assignEnquiry(enquiryId: string, staffId: string | null) {
     { staff_id: staffId }
   );
 
-  revalidatePath(`/admin/enquiries/${enquiryId}`);
+  revalidatePath(`/travinco_dashboard/enquiries/${enquiryId}`);
   revalidatePath('/travinco_dashboard/enquiries');
   return {};
 }
@@ -228,7 +237,7 @@ export async function updateEnquiryDetails(enquiryId: string, raw: unknown) {
 
   await logEnquiryActivity(enquiryId, 'details_edited', 'Trip details updated by staff');
 
-  revalidatePath(`/admin/enquiries/${enquiryId}`);
+  revalidatePath(`/travinco_dashboard/enquiries/${enquiryId}`);
   revalidatePath('/travinco_dashboard/enquiries');
   return {};
 }
@@ -242,7 +251,36 @@ export async function updateEnquiryPriority(
   const supabase = await createClient();
   const { error } = await supabase.from('enquiries').update({ priority }).eq('id', enquiryId);
   if (error) return { error: 'Could not update priority.' };
-  revalidatePath(`/admin/enquiries/${enquiryId}`);
+  await logEnquiryActivity(enquiryId, 'priority_changed', `Priority changed to ${priority}`);
+  revalidatePath(`/travinco_dashboard/enquiries/${enquiryId}`);
+  revalidatePath('/travinco_dashboard/enquiries');
+  return {};
+}
+
+export async function updateEnquiryFollowupDate(
+  enquiryId: string,
+  followupDate: string | null
+): Promise<{ error?: string }> {
+  const permCheck = await checkEnquiryEditPermission();
+  if (permCheck.error) return { error: permCheck.error };
+  const supabase = await createClient();
+
+  const { error } = await supabase
+    .from('enquiries')
+    .update({ next_followup_date: followupDate || null })
+    .eq('id', enquiryId);
+
+  if (error) return { error: 'Could not update follow-up date.' };
+
+  await logEnquiryActivity(
+    enquiryId,
+    'followup_date_updated',
+    followupDate ? `Follow-up date set to ${followupDate}` : 'Follow-up date cleared',
+    { next_followup_date: followupDate }
+  );
+
+  revalidatePath(`/travinco_dashboard/enquiries/${enquiryId}`);
+  revalidatePath('/travinco_dashboard/enquiries');
   return {};
 }
 
@@ -275,7 +313,8 @@ export async function addEnquiryNote(enquiryId: string, raw: unknown) {
 
   await logEnquiryActivity(enquiryId, 'note_added', parsed.data.note);
 
-  revalidatePath(`/admin/enquiries/${enquiryId}`);
+  revalidatePath(`/travinco_dashboard/enquiries/${enquiryId}`);
+  revalidatePath('/travinco_dashboard/enquiries');
   return {};
 }
 
@@ -319,7 +358,7 @@ export async function scheduleFollowup(enquiryId: string, raw: unknown) {
     `Follow-up scheduled for ${parsed.data.followup_date}`
   );
 
-  revalidatePath(`/admin/enquiries/${enquiryId}`);
+  revalidatePath(`/travinco_dashboard/enquiries/${enquiryId}`);
   revalidatePath('/travinco_dashboard/enquiries');
   return {};
 }
@@ -337,7 +376,8 @@ export async function completeFollowup(enquiryId: string, followupId: string) {
   if (error) return { error: 'Could not mark follow-up complete.' };
 
   await logEnquiryActivity(enquiryId, 'followup_completed', 'Follow-up marked complete');
-  revalidatePath(`/admin/enquiries/${enquiryId}`);
+  revalidatePath(`/travinco_dashboard/enquiries/${enquiryId}`);
+  revalidatePath('/travinco_dashboard/enquiries');
   return {};
 }
 
@@ -483,13 +523,31 @@ export async function deleteEnquiry(enquiryId: string) {
   }
 
   const supabase = await createClient();
-  let { error } = await supabase.from('enquiries').update({ is_deleted: true } as any).eq('id', enquiryId);
-  if (error && error.message?.includes('is_deleted')) {
-    const fallback = await supabase.from('enquiries').update({ status: 'closed' } as any).eq('id', enquiryId);
-    if (fallback.error) return { error: fallback.error.message };
-  } else if (error) {
-    return { error: 'Could not delete this enquiry.' };
+
+  // 1. Try security-definer RPC function first
+  const { error: rpcError } = await supabase.rpc('soft_delete_enquiry', {
+    enquiry_id: enquiryId,
+    admin_id: profile.id,
+  });
+
+  // 2. Fallback to direct update if RPC is pending migration
+  if (rpcError) {
+    const { error: updateError } = await supabase
+      .from('enquiries')
+      .update({
+        is_deleted: true,
+        deleted_at: new Date().toISOString(),
+        deleted_by: profile.id,
+      } as any)
+      .eq('id', enquiryId);
+
+    if (updateError) {
+      console.error('deleteEnquiry failed:', updateError.message);
+      return { error: updateError.message || 'Could not delete this enquiry.' };
+    }
   }
+
+  await logEnquiryActivity(enquiryId, 'soft_deleted', 'Enquiry moved to trash (soft-deleted)');
 
   revalidatePath('/travinco_dashboard/enquiries');
   return {};

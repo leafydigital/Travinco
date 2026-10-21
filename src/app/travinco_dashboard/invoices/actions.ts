@@ -84,42 +84,73 @@ export async function convertQuotationToInvoice(quotationId: string, option: 1 |
   ];
 
   const today = new Date().toISOString().slice(0, 10);
-  const { data: inv, error } = await supabase
+  const markupPct = Number(q.markup_pct ?? 15);
+  const markupAmount =
+    option === 2 && q.markup_amount2 != null
+      ? Number(q.markup_amount2)
+      : q.markup_amount != null && Number(q.markup_amount) > 0
+      ? Number(q.markup_amount)
+      : r2((taxable * markupPct) / (100 + markupPct));
+
+  const invoicePayload: Record<string, any> = {
+    quotation_id: q.id,
+    quote_option: option,
+    customer_id: customerId,
+    bill_to_name: q.guest_name,
+    bill_to_phone: q.guest_phone,
+    bill_to_email: q.guest_email,
+    place_of_supply: settings.company_state || 'Kerala',
+    invoice_date: today,
+    due_date: settings.invoice_due_days ? addDays(today, settings.invoice_due_days) : q.start_date,
+    travel_start: q.start_date,
+    travel_end: q.end_date,
+    items,
+    subtotal: taxable,
+    discount: 0,
+    taxable_amount: taxable,
+    gst_pct: gstPct,
+    tax_mode: mode,
+    cgst_amount: t.cgst,
+    sgst_amount: t.sgst,
+    igst_amount: t.igst,
+    gst_amount: t.gst,
+    round_off: roundOff,
+    total_amount: total,
+    status: 'issued',
+    terms: settings.invoice_terms,
+    created_by: profile.id,
+    markup_pct: markupPct,
+    markup_amount: markupAmount,
+  };
+
+  let { data: inv, error } = await supabase
     .from('invoices')
-    .insert({
-      quotation_id: q.id,
-      quote_option: option,
-      customer_id: customerId,
-      bill_to_name: q.guest_name,
-      bill_to_phone: q.guest_phone,
-      bill_to_email: q.guest_email,
-      place_of_supply: settings.company_state || 'Kerala',
-      invoice_date: today,
-      due_date: settings.invoice_due_days ? addDays(today, settings.invoice_due_days) : q.start_date,
-      travel_start: q.start_date,
-      travel_end: q.end_date,
-      items,
-      subtotal: taxable,
-      discount: 0,
-      taxable_amount: taxable,
-      gst_pct: gstPct,
-      tax_mode: mode,
-      cgst_amount: t.cgst,
-      sgst_amount: t.sgst,
-      igst_amount: t.igst,
-      gst_amount: t.gst,
-      round_off: roundOff,
-      total_amount: total,
-      status: 'issued',
-      terms: settings.invoice_terms,
-      created_by: profile.id,
-    })
+    .insert(invoicePayload)
     .select('id')
     .single();
+
+  if (error && (error.message?.includes('markup') || error.code === '42703')) {
+    delete invoicePayload.markup_pct;
+    delete invoicePayload.markup_amount;
+    const retry = await supabase
+      .from('invoices')
+      .insert(invoicePayload)
+      .select('id')
+      .single();
+    inv = retry.data;
+    error = retry.error;
+  }
+
   if (error || !inv) {
     console.error('convertQuotationToInvoice', error?.message);
     return { error: 'Could not create the invoice.' };
   }
+
+  // Persist markup metadata to website_settings fallback
+  await supabase.from('website_settings').upsert({
+    key: `invoice_markup_${inv.id}`,
+    value: { markup_pct: markupPct, markup_amount: markupAmount },
+  });
 
   await supabase.from('quotations').update({ status: 'invoiced', customer_id: customerId }).eq('id', q.id);
   if (q.enquiry_id) await supabase.from('enquiries').update({ status: 'confirmed' }).eq('id', q.enquiry_id);
@@ -150,6 +181,8 @@ const invoiceSchema = z.object({
   tax_mode: z.enum(['cgst_sgst', 'igst']),
   notes: optStr(4000),
   terms: optStr(4000),
+  markup_pct: num.optional(),
+  markup_amount: num.optional(),
   items: z
     .array(
       z.object({
@@ -162,7 +195,7 @@ const invoiceSchema = z.object({
     .min(1, 'Add at least one line item'),
 });
 
-/** Updates an invoice and recomputes its GST and totals on the server. */
+/** Updates an invoice and recomputes its GST, totals, and markup on the server. */
 export async function updateInvoice(id: string, raw: unknown): Promise<{ error?: string }> {
   const s = await staff();
   if (!s) return { error: 'You do not have access to invoices.' };
@@ -182,28 +215,58 @@ export async function updateInvoice(id: string, raw: unknown): Promise<{ error?:
   const amountPaid = Number(cur.amount_paid);
   const status = amountPaid <= 0 ? 'issued' : amountPaid >= total ? 'paid' : 'partially_paid';
 
-  const { error } = await s.supabase
+  const markupPct = d.markup_pct != null && !isNaN(d.markup_pct) ? Number(d.markup_pct) : 15;
+  const markupAmount =
+    d.markup_amount != null && Number(d.markup_amount) > 0
+      ? r2(Number(d.markup_amount))
+      : r2((taxable * markupPct) / (100 + markupPct));
+
+  const updateData: Record<string, any> = {
+    ...d,
+    items,
+    subtotal,
+    taxable_amount: taxable,
+    cgst_amount: t.cgst,
+    sgst_amount: t.sgst,
+    igst_amount: t.igst,
+    gst_amount: t.gst,
+    round_off: r2(total - exact),
+    total_amount: total,
+    status: cur.status === 'draft' ? 'draft' : status,
+    markup_pct: markupPct,
+    markup_amount: markupAmount,
+  };
+
+  let { error } = await s.supabase
     .from('invoices')
-    .update({
-      ...d,
-      items,
-      subtotal,
-      taxable_amount: taxable,
-      cgst_amount: t.cgst,
-      sgst_amount: t.sgst,
-      igst_amount: t.igst,
-      gst_amount: t.gst,
-      round_off: r2(total - exact),
-      total_amount: total,
-      status: cur.status === 'draft' ? 'draft' : status,
-    })
+    .update(updateData)
     .eq('id', id);
+
+  if (error && (error.message?.includes('markup') || error.code === '42703')) {
+    delete updateData.markup_pct;
+    delete updateData.markup_amount;
+    const retry = await s.supabase
+      .from('invoices')
+      .update(updateData)
+      .eq('id', id);
+    error = retry.error;
+  }
+
   if (error) {
     console.error('updateInvoice', error.message);
     return { error: 'Could not save the invoice.' };
   }
+
+  // Persist markup metadata to website_settings fallback
+  await s.supabase.from('website_settings').upsert({
+    key: `invoice_markup_${id}`,
+    value: { markup_pct: markupPct, markup_amount: markupAmount },
+  });
+
   revalidatePath(`/admin/invoices/${id}`);
+  revalidatePath(`/travinco_dashboard/invoices/${id}`);
   revalidatePath('/travinco_dashboard/invoices');
+  revalidatePath('/travinco_dashboard');
   return {};
 }
 
@@ -216,20 +279,29 @@ const paymentSchema = z.object({
 });
 
 /** Records a payment; finance staff also get it booked in Income automatically. */
-export async function addInvoicePayment(invoiceId: string, raw: unknown): Promise<{ error?: string; info?: string }> {
+export async function addInvoicePayment(
+  invoiceId: string,
+  raw: unknown
+): Promise<{ error?: string; info?: string; payment?: any }> {
   const s = await staff();
   if (!s) return { error: 'You do not have access to invoices.' };
   const p = paymentSchema.safeParse(raw);
   if (!p.success) return { error: p.error.issues[0]?.message ?? 'Please check the payment.' };
+
+  // 1. Fetch only essential invoice fields in one fast query
   const { data: inv } = await s.supabase
     .from('invoices')
-    .select('id, invoice_number, status, balance_amount, customer_id')
+    .select('id, invoice_number, status, balance_amount, total_amount, amount_paid, customer_id')
     .eq('id', invoiceId)
     .maybeSingle();
+
   if (!inv) return { error: 'Invoice not found.' };
   if (inv.status === 'cancelled') return { error: 'This invoice is cancelled.' };
-  if (p.data.amount > Number(inv.balance_amount) + 0.5) return { error: `Amount is more than the balance (₹${Number(inv.balance_amount).toLocaleString('en-IN')}).` };
+  if (p.data.amount > Number(inv.balance_amount) + 0.5) {
+    return { error: `Amount is more than the balance (₹${Number(inv.balance_amount).toLocaleString('en-IN')}).` };
+  }
 
+  // 2. Book into income if finance role
   let incomeId: string | null = null;
   let info: string | undefined;
   if (isFinanceRole(s.profile)) {
@@ -249,72 +321,81 @@ export async function addInvoicePayment(invoiceId: string, raw: unknown): Promis
       .select('id')
       .single();
     incomeId = income?.id ?? null;
-  } else info = 'Payment recorded. Ask accounts to add it under Income.';
+  } else {
+    info = 'Payment recorded. Ask accounts to add it under Income.';
+  }
 
-  const { error } = await s.supabase.from('invoice_payments').insert({ invoice_id: invoiceId, ...p.data, income_id: incomeId, created_by: s.profile.id });
-  if (error) {
+  // 3. Insert payment record and return it directly
+  const { data: paymentRow, error } = await s.supabase
+    .from('invoice_payments')
+    .insert({
+      invoice_id: invoiceId,
+      ...p.data,
+      income_id: incomeId,
+      created_by: s.profile.id,
+    })
+    .select('id, paid_on, amount, method, reference, notes, income_id')
+    .single();
+
+  if (error || !paymentRow) {
     if (incomeId) await s.supabase.from('income').delete().eq('id', incomeId);
     return { error: 'Could not record the payment.' };
   }
 
-  // Recalculate total amount paid & ensure invoice amount_paid and status are synced in DB
-  const { data: allPayments } = await s.supabase
-    .from('invoice_payments')
-    .select('amount')
-    .eq('invoice_id', invoiceId);
-  const totalPaid = (allPayments || []).reduce((sum, item) => sum + Number(item.amount || 0), 0);
-  const { data: invRow } = await s.supabase
-    .from('invoices')
-    .select('total_amount, status')
-    .eq('id', invoiceId)
-    .single();
-  if (invRow) {
-    const totalAmount = Number(invRow.total_amount || 0);
-    const newStatus =
-      invRow.status === 'cancelled' || invRow.status === 'draft'
-        ? invRow.status
-        : totalPaid >= totalAmount
-        ? 'paid'
-        : totalPaid > 0
-        ? 'partially_paid'
-        : 'issued';
-    await s.supabase
-      .from('invoices')
-      .update({
-        amount_paid: totalPaid,
-        status: newStatus,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', invoiceId);
-  }
+  // 4. Update invoice amount_paid and status directly (reusing known totals, avoiding redundant SELECTs)
+  const newTotalPaid = Math.round(((Number(inv.amount_paid) || 0) + p.data.amount) * 100) / 100;
+  const totalAmount = Number(inv.total_amount || 0);
+  const newStatus =
+    inv.status === 'cancelled' || inv.status === 'draft'
+      ? inv.status
+      : newTotalPaid >= totalAmount
+      ? 'paid'
+      : newTotalPaid > 0
+      ? 'partially_paid'
+      : 'issued';
 
+  await s.supabase
+    .from('invoices')
+    .update({
+      amount_paid: newTotalPaid,
+      status: newStatus,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', invoiceId);
+
+  revalidatePath(`/travinco_dashboard/invoices/${invoiceId}`);
   revalidatePath(`/admin/invoices/${invoiceId}`);
   revalidatePath('/travinco_dashboard/invoices');
   revalidatePath('/travinco_dashboard/income');
-  return { info };
+  return { info, payment: paymentRow };
 }
 
 export async function deleteInvoicePayment(invoiceId: string, paymentId: string) {
   const profile = await requireProfile();
   if (!isAdminRole(profile)) return { error: 'Only admins can delete payments.' };
   const supabase = await createClient();
-  const { data: pay } = await supabase.from('invoice_payments').select('income_id').eq('id', paymentId).maybeSingle();
-  const { error } = await supabase.from('invoice_payments').delete().eq('id', paymentId);
-  if (error) return { error: 'Could not delete the payment.' };
-  if (pay?.income_id) await supabase.from('income').delete().eq('id', pay.income_id);
 
-  // Recalculate total amount paid & update invoice in DB
-  const { data: allPayments } = await supabase
+  // 1. Delete payment and retrieve income_id in a single database round-trip
+  const { data: pay, error } = await supabase
     .from('invoice_payments')
-    .select('amount')
-    .eq('invoice_id', invoiceId);
-  const totalPaid = (allPayments || []).reduce((sum, item) => sum + Number(item.amount || 0), 0);
-  const { data: invRow } = await supabase
-    .from('invoices')
-    .select('total_amount, status')
-    .eq('id', invoiceId)
-    .single();
+    .delete()
+    .eq('id', paymentId)
+    .select('income_id')
+    .maybeSingle();
+
+  if (error) return { error: 'Could not delete the payment.' };
+
+  // 2. Concurrently clean up associated income record and fetch remaining payments + invoice info
+  const [paymentsRes, invRes] = await Promise.all([
+    supabase.from('invoice_payments').select('amount').eq('invoice_id', invoiceId),
+    supabase.from('invoices').select('total_amount, status').eq('id', invoiceId).maybeSingle(),
+    pay?.income_id ? supabase.from('income').delete().eq('id', pay.income_id) : Promise.resolve(null),
+  ]);
+  const allPayments = paymentsRes?.data || [];
+  const invRow = invRes?.data;
+
   if (invRow) {
+    const totalPaid = allPayments.reduce((sum: number, item: any) => sum + Number(item.amount || 0), 0);
     const totalAmount = Number(invRow.total_amount || 0);
     const newStatus =
       invRow.status === 'cancelled' || invRow.status === 'draft'
@@ -324,6 +405,7 @@ export async function deleteInvoicePayment(invoiceId: string, paymentId: string)
         : totalPaid > 0
         ? 'partially_paid'
         : 'issued';
+
     await supabase
       .from('invoices')
       .update({
@@ -334,8 +416,10 @@ export async function deleteInvoicePayment(invoiceId: string, paymentId: string)
       .eq('id', invoiceId);
   }
 
+  revalidatePath(`/travinco_dashboard/invoices/${invoiceId}`);
   revalidatePath(`/admin/invoices/${invoiceId}`);
   revalidatePath('/travinco_dashboard/invoices');
+  revalidatePath('/travinco_dashboard/income');
   return {};
 }
 
@@ -355,7 +439,7 @@ export async function cancelInvoice(id: string) {
   return {};
 }
 
-/** Permanently deletes an invoice and cleans up associated income and payment records. */
+/** Soft deletes an invoice and cleans up associated income and payment records. */
 export async function deleteInvoice(id: string): Promise<{ error?: string }> {
   const profile = await requireProfile();
   if (!isAdminRole(profile)) return { error: 'Only admins can delete invoices.' };
@@ -382,22 +466,42 @@ export async function deleteInvoice(id: string): Promise<{ error?: string }> {
   // 2. Soft-delete any income record directly tagged with this invoice_id
   await supabase.from('income').update({ is_deleted: true } as any).eq('invoice_id', id);
 
-  // 3. Soft-delete invoice itself (status cancelled + is_deleted true)
-  let { error } = await supabase.from('invoices').update({ is_deleted: true, status: 'cancelled' } as any).eq('id', id);
-  if (error && error.message?.includes('is_deleted')) {
-    await supabase.from('invoices').update({ status: 'cancelled' } as any).eq('id', id);
-  } else if (error) {
-    console.error('deleteInvoice error:', error.message);
-    return { error: 'Could not delete the invoice: ' + error.message };
+  // 3. Try RPC soft_delete_invoice
+  const { error: rpcError } = await supabase.rpc('soft_delete_invoice', {
+    inv_id: id,
+  });
+
+  // 4. Direct update fallback if RPC is not yet created
+  if (rpcError) {
+    let { error } = await supabase.from('invoices').update({ is_deleted: true, status: 'cancelled' } as any).eq('id', id);
+    if (error && error.message?.includes('is_deleted')) {
+      console.warn('Column is_deleted missing from invoices table. Using website_settings marker.');
+      await supabase.from('invoices').update({ status: 'cancelled' } as any).eq('id', id);
+    } else if (error) {
+      console.error('deleteInvoice error:', error.message);
+      return { error: 'Could not delete the invoice: ' + error.message };
+    }
   }
 
-  // 5. If quotation was marked as invoiced, revert quotation status to accepted
+  // 5. Fallback tracking in website_settings so it is always filtered out
+  try {
+    await supabase.from('website_settings').upsert({
+      key: `deleted_invoice_${id}`,
+      value: { is_deleted: true, deleted_at: new Date().toISOString() },
+    });
+  } catch (err) {
+    console.warn('Failed to record deleted_invoice marker:', err);
+  }
+
+  // 6. If quotation was marked as invoiced, revert quotation status to accepted
   if (inv.quotation_id) {
     await supabase.from('quotations').update({ status: 'accepted' }).eq('id', inv.quotation_id);
     revalidatePath(`/admin/quotations/${inv.quotation_id}`);
   }
 
   revalidatePath('/travinco_dashboard/invoices');
+  revalidatePath('/admin/invoices');
+  revalidatePath(`/admin/invoices/${id}`);
   revalidatePath('/travinco_dashboard/quotations');
   revalidatePath('/travinco_dashboard/income');
   return {};

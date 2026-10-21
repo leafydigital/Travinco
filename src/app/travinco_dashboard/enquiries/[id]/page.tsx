@@ -1,19 +1,28 @@
 import { createClient } from '@/lib/supabase/server';
-import { requireProfile, assertModulePermission } from '@/lib/supabase/auth-helpers';
+import { requireProfile, assertModulePermission, checkModulePermission } from '@/lib/supabase/auth-helpers';
 import { notFound } from 'next/navigation';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { formatCurrency, formatDate, formatDateTime } from '@/lib/utils/format';
 import { EnquiryControls } from './enquiry-controls';
 import { NotesPanel, FollowupsPanel } from './notes-followups';
-import { ConvertToBookingButton } from './convert-button';
 import { AcceptRejectButtons } from './accept-reject-buttons';
 import { EnquiryDetailsEditForm } from './enquiry-details-edit-form';
+import { EnquiryStatusSelector } from '../enquiry-status-selector';
 import { Phone, Mail, MessageCircle } from 'lucide-react';
 import Link from 'next/link';
 
-export default async function EnquiryDetailPage({ params }: { params: { id: string } }) {
+export default async function EnquiryDetailPage({
+  params,
+  searchParams,
+}: {
+  params: { id: string };
+  searchParams?: { edit?: string };
+}) {
   const profile = await requireProfile();
   await assertModulePermission(profile, 'enquiries', 'view');
+  const isAdmin = profile.role === 'admin' || profile.role === 'super_admin';
+  const canEdit = isAdmin || (await checkModulePermission(profile, 'enquiries', 'edit')).allowed;
+  const isEditing = searchParams?.edit === 'true' && canEdit;
   const supabase = await createClient();
 
   const [{ data: enquiry }, { data: staff }, { data: followups }, { data: activities }] =
@@ -36,7 +45,7 @@ export default async function EnquiryDetailPage({ params }: { params: { id: stri
         .order('created_at', { ascending: false }),
     ]);
 
-  if (!enquiry) notFound();
+  if (!enquiry || enquiry.is_deleted) notFound();
 
   const pkgRaw = enquiry.travel_packages as
     | { title: string; slug: string; base_price: number | null; discount_price: number | null }
@@ -54,27 +63,30 @@ export default async function EnquiryDetailPage({ params }: { params: { id: stri
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-semibold text-ink-900">{enquiry.enquiry_number}</h1>
-            <StatusBadge status={enquiry.status} />
+            <EnquiryStatusSelector
+              enquiryId={enquiry.id}
+              currentStatus={enquiry.status}
+              canEdit={canEdit}
+            />
           </div>
           <p className="text-sm text-ink-500">{enquiry.customer_name}</p>
         </div>
         <div className="flex gap-2">
-          <AcceptRejectButtons enquiryId={enquiry.id} currentStatus={enquiry.status} />
-          <Link href={`/admin/quotations/new?enquiry=${enquiry.id}`} className="btn-outline">
+          {canEdit && <AcceptRejectButtons enquiryId={enquiry.id} currentStatus={enquiry.status} />}
+          <Link href={`/travinco_dashboard/quotations/new?enquiry=${enquiry.id}`} className="btn-outline">
             Create quotation
           </Link>
-          <ConvertToBookingButton
-            enquiryId={enquiry.id}
-            hasPackage={Boolean(enquiry.package_id)}
-            computedAmount={computedAmount}
-          />
-          <Link href="/admin/enquiries" className="btn-outline">
+          <Link href="/travinco_dashboard/enquiries" className="btn-outline">
             Back to enquiries
           </Link>
         </div>
       </div>
 
-      <EnquiryDetailsEditForm enquiry={enquiry} />
+      <EnquiryDetailsEditForm
+        enquiry={enquiry}
+        canEdit={canEdit}
+        initialEditing={isEditing}
+      />
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
@@ -85,7 +97,9 @@ export default async function EnquiryDetailPage({ params }: { params: { id: stri
               currentStatus={enquiry.status}
               currentPriority={enquiry.priority}
               currentAssignee={enquiry.assigned_staff}
+              currentFollowupDate={enquiry.next_followup_date}
               staff={staff ?? []}
+              canEdit={canEdit}
             />
 
             <dl className="grid grid-cols-2 gap-4 border-t border-ink-100 pt-4 text-sm sm:grid-cols-3">

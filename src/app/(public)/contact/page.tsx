@@ -8,6 +8,9 @@ export const metadata: Metadata = {
   description: 'Get in touch to plan your next trip — phone, WhatsApp, email, or the form below.',
 };
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export default async function ContactPage() {
   const settings = await getGeneralSettings();
 

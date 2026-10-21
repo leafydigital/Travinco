@@ -1,0 +1,37 @@
+{
+  "hero": {
+    "background_image_url": "https://images.unsplash.com/photo-1488646953014-85cb44e25828?auto=format&fit=crop&w=2000&q=80",
+    "badge": "Traveler Journals & Destination Guides",
+    "title": "BLOG & STORIES",
+    "subtitle": "Inspirational itineraries, hidden cultural gems, insider wellness secrets, and travel wisdom curated by our local specialists on the ground.",
+    "pillars": [
+      {
+        "label": "Local Travel Insights",
+        "icon_key": "compass"
+      },
+      {
+        "label": "Authentic Experiences",
+        "icon_key": "sparkles"
+      },
+      {
+        "label": "Practical Trip Advice",
+        "icon_key": "book"
+      }
+    ]
+  },
+  "search": {
+    "placeholder": "Search travel stories, destinations, or tips (e.g. Kerala, Ayurveda, Monsoon)..."
+  },
+  "empty_state": {
+    "title": "No articles found",
+    "description": "We couldn’t find any blog articles matching your search. Try another topic or browse all stories.",
+    "button_text": "Show All Articles"
+  },
+  "bottom_cta": {
+    "badge": "Inspired by our stories?",
+    "title": "Turn these travel stories into your own reality",
+    "description": "Let our trip planners craft a private, customized tour featuring any of the destinations and stays covered in our travel journal.",
+    "button_text": "Plan My Journey",
+    "button_link": "/booking"
+  }
+}

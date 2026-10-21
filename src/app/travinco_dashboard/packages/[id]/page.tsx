@@ -12,6 +12,7 @@ import { PackageImagesManager } from './package-images-manager';
 import { PackageVideosManager } from './package-videos-manager';
 import { StatusBadge } from '@/components/ui/status-badge';
 import Link from 'next/link';
+import { ArrowLeft } from 'lucide-react';
 
 export default async function EditPackagePage({ params }: { params: { id: string } }) {
   const profile = await requireProfile();
@@ -68,8 +69,9 @@ export default async function EditPackagePage({ params }: { params: { id: string
           </div>
           <p className="text-sm text-ink-500">/packages/{pkg.slug}</p>
         </div>
-        <Link href="/admin/packages" className="btn-outline">
-          Back to packages
+        <Link href="/travinco_dashboard/packages" className="btn-outline inline-flex items-center gap-1.5">
+          <ArrowLeft className="h-4 w-4" />
+          <span>Back to packages</span>
         </Link>
       </div>
 
