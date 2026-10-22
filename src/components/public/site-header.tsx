@@ -5,8 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { Menu, X, ChevronDown, User, LogOut } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
-import { logOutCustomer as headerLogOutCustomer } from '@/app/(public)/account/actions';
-import { LanguagePicker } from './language-picker';
+import { fastCustomerLogOut } from '@/lib/supabase/customer-signout';
 import { useTranslation } from '@/lib/i18n/use-translation';
 import type { NavbarContent } from '@/lib/navbar-footer-content-types';
 import { DEFAULT_NAVBAR_FOOTER_CONTENT } from '@/lib/navbar-footer-content-types';
@@ -18,6 +17,25 @@ type Destination = { id: string; name: string; slug: string };
  * until you scroll), solid white on every other page where there's no
  * dark hero behind it.
  */
+function normalizePathOrUrl(url?: string): string {
+  if (!url) return '';
+  const trimmed = url.trim();
+  if (!trimmed) return '';
+  if (
+    trimmed.startsWith('http://') ||
+    trimmed.startsWith('https://') ||
+    trimmed.startsWith('//') ||
+    trimmed.startsWith('/') ||
+    trimmed.startsWith('data:') ||
+    trimmed.startsWith('tel:') ||
+    trimmed.startsWith('mailto:') ||
+    trimmed.startsWith('#')
+  ) {
+    return trimmed;
+  }
+  return '/' + trimmed;
+}
+
 export function SiteHeader({
   whatsappNumber,
   destinations,
@@ -39,14 +57,14 @@ export function SiteHeader({
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
 
   const effectiveNavbar = navbarContent || DEFAULT_NAVBAR_FOOTER_CONTENT.navbar;
-  const darkLogo = effectiveNavbar.logo_image_url || '/images/green_logo.png';
-  const lightLogo = effectiveNavbar.logo_light_image_url || '/images/white_logo.png';
+  const darkLogo = normalizePathOrUrl(effectiveNavbar.logo_image_url) || '/images/green_logo.png';
+  const lightLogo = normalizePathOrUrl(effectiveNavbar.logo_light_image_url) || '/images/white_logo.png';
   const navLinksList = (effectiveNavbar.nav_links && effectiveNavbar.nav_links.length > 0)
     ? effectiveNavbar.nav_links.filter((l) => l.visible !== false)
     : DEFAULT_NAVBAR_FOOTER_CONTENT.navbar.nav_links;
   const showCta = !!effectiveNavbar.cta_button_text;
   const ctaText = effectiveNavbar.cta_button_text || t('nav_book_with_us');
-  const ctaHref = effectiveNavbar.cta_button_url || '/booking';
+  const ctaHref = normalizePathOrUrl(effectiveNavbar.cta_button_url) || '/booking';
 
   useEffect(() => {
     if (!isHome) return;
@@ -79,7 +97,7 @@ export function SiteHeader({
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={logoImage}
-              alt="Travinco"
+              alt={effectiveNavbar.logo_text || 'Travinco'}
               className="max-h-10 sm:max-h-11 w-auto object-contain"
             />
           </div>
@@ -87,7 +105,8 @@ export function SiteHeader({
 
         <nav className="hidden items-center gap-7 lg:flex">
           {navLinksList.map((link) => {
-            const isDestinations = link.key === 'destinations' || link.href === '/destinations';
+            const linkHref = normalizePathOrUrl(link.href) || '/';
+            const isDestinations = link.key === 'destinations' || linkHref === '/destinations';
             if (isDestinations) {
               return (
                 <div
@@ -112,7 +131,7 @@ export function SiteHeader({
                     <div className="absolute left-1/2 top-full z-10 w-64 -translate-x-1/2 pt-2">
                       <div className="rounded-xl2 border border-ink-100 bg-white p-2 shadow-lg">
                         <Link
-                          href="/destinations"
+                          href={linkHref}
                           onClick={() => setDestinationsOpen(false)}
                           className="block rounded-lg px-3 py-2 text-sm font-semibold text-brand-700 hover:bg-brand-50"
                         >
@@ -141,7 +160,7 @@ export function SiteHeader({
             return (
               <Link
                 key={link.key || link.href}
-                href={link.href}
+                href={linkHref}
                 className={cn(
                   'text-sm font-medium transition-colors',
                   overlayMode ? 'text-white/90 hover:text-white' : 'text-ink-600 hover:text-brand-700'
@@ -196,7 +215,7 @@ export function SiteHeader({
                       type="button"
                       onClick={() => {
                         setAccountMenuOpen(false);
-                        headerLogOutCustomer();
+                        fastCustomerLogOut();
                       }}
                       className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-coral-600 hover:bg-coral-50"
                     >
@@ -217,7 +236,6 @@ export function SiteHeader({
               <User className="h-4 w-4" /> {t('nav_login')}
             </Link>
           )}
-          <LanguagePicker overlayMode={overlayMode} />
           {showCta && (
             <Link href={ctaHref} className="btn-cta">
               {ctaText}
@@ -242,7 +260,8 @@ export function SiteHeader({
         <div className="border-b border-ink-100 bg-white px-4 py-4 shadow-lg lg:hidden">
           <nav className="flex flex-col gap-1">
             {navLinksList.map((link) => {
-              const isDestinations = link.key === 'destinations' || link.href === '/destinations';
+              const linkHref = normalizePathOrUrl(link.href) || '/';
+              const isDestinations = link.key === 'destinations' || linkHref === '/destinations';
               if (isDestinations) {
                 return (
                   <div key={link.key || link.href}>
@@ -259,7 +278,7 @@ export function SiteHeader({
                     {mobileDestinationsOpen && (
                       <div className="ml-3 mt-1 flex flex-col gap-0.5 border-l border-ink-100 pl-3">
                         <Link
-                          href="/destinations"
+                          href={linkHref}
                           onClick={() => setMobileOpen(false)}
                           className="rounded-lg px-3 py-2 text-sm font-semibold text-brand-700"
                         >
@@ -284,7 +303,7 @@ export function SiteHeader({
               return (
                 <Link
                   key={link.key || link.href}
-                  href={link.href}
+                  href={linkHref}
                   onClick={() => setMobileOpen(false)}
                   className="rounded-lg px-3 py-2 text-sm font-medium text-ink-700 hover:bg-brand-50 hover:text-brand-700"
                 >
@@ -312,7 +331,7 @@ export function SiteHeader({
                   type="button"
                   onClick={() => {
                     setMobileOpen(false);
-                    headerLogOutCustomer();
+                    fastCustomerLogOut();
                   }}
                   className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-left text-sm font-medium text-coral-600 hover:bg-coral-50"
                 >

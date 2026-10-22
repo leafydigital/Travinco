@@ -1,7 +1,7 @@
 import 'server-only';
 import { createClient } from '@/lib/supabase/server';
 import { parseSeasonDates } from '@/lib/excel/season-dates';
-import { rateLocationIds } from './engine';
+import { rateLocationIds, normalizeLocationState } from './engine';
 import type { RateRow, TourMasters, TourSettings, QuotationLogosConfig, InvoiceSettings } from './types';
 import { DEFAULT_QUOTATION_LOGOS, DEFAULT_INVOICE_SETTINGS } from './types';
 
@@ -90,7 +90,7 @@ export async function loadTourMasters(opts: { activeOnly?: boolean; forceFresh?:
     if (active) q = q.eq('is_active', true);
     return q;
   };
-  const [locs, cats, points, vehicles, acts, dists, plans, tpls, settings, dests] = await Promise.all([
+  const [locs, cats, points, vehicles, acts, dists, plans, tpls, settings, dests, deletedDestSettings, deletedLocSettings] = await Promise.all([
     supabase.from('locations').select('id, name, display_name, state, description, parent_id, is_houseboat, is_active, sort_order').order('sort_order').order('name'),
     supabase.from('hotel_categories').select('id, name, sort_order').order('sort_order').order('id'),
     sel('pickup_drop_points', 'sort_order'),
@@ -100,13 +100,52 @@ export async function loadTourMasters(opts: { activeOnly?: boolean; forceFresh?:
     sel('day_plans', 'sort_order'),
     sel('quotation_templates', 'sort_order'),
     getTourSettings(supabase),
-    supabase.from('destinations').select('id, name').order('sort_order').order('name'),
+    supabase.from('destinations').select('id, name, status, is_deleted').order('sort_order').order('name'),
+    supabase.from('website_settings').select('key').like('key', 'deleted_destination_%'),
+    supabase.from('website_settings').select('key').like('key', 'deleted_location_%'),
   ]);
 
+  const deletedDestKeys = new Set(
+    (deletedDestSettings?.data || []).map((s: { key: string }) => s.key.replace('deleted_destination_', ''))
+  );
+  const deletedLocKeys = new Set(
+    (deletedLocSettings?.data || []).map((s: { key: string }) => s.key.replace('deleted_location_', ''))
+  );
+
+  // Background sync for legacy DB records where Tamil Nadu locations still have state = 'Kerala'
+  try {
+    supabase
+      .from('locations')
+      .update({ state: 'Tamil Nadu' })
+      .like('name', '%(TN)%')
+      .eq('state', 'Kerala')
+      .then(() => {});
+  } catch {}
+
+  const rawActiveLocs = ((locs.data ?? []) as TourMasters['locations']).filter(
+    (l: any) =>
+      l &&
+      l.is_deleted !== true &&
+      l.is_deleted !== 'true' &&
+      l.is_deleted !== 1 &&
+      !deletedLocKeys.has(String(l.id))
+  );
+
+  const normalizedLocs = rawActiveLocs.map((l) => {
+    const state = normalizeLocationState(l, rawActiveLocs);
+    let displayName = l.display_name;
+    if (!displayName && l.name?.includes('(TN)')) {
+      displayName = l.name.replace(/\(TN\)/gi, '').trim();
+    }
+    return {
+      ...l,
+      state,
+      display_name: displayName,
+    };
+  });
+
   const result: TourMasters = {
-    locations: ((locs.data ?? []) as TourMasters['locations']).filter(
-      (l: any) => l && l.is_deleted !== true && l.is_deleted !== 'true' && l.is_deleted !== 1
-    ),
+    locations: normalizedLocs,
     categories: (cats.data ?? []) as TourMasters['categories'],
     points: (points.data ?? [])
       .filter((p: any) => p && p.is_deleted !== true && p.is_deleted !== 'true' && p.is_deleted !== 1)
@@ -138,9 +177,16 @@ export async function loadTourMasters(opts: { activeOnly?: boolean; forceFresh?:
       plan_picks: Array.isArray(t.plan_picks) ? t.plan_picks : [],
     })),
     settings,
-    destinations: ((dests?.data ?? []) as { id: string; name: string }[]).filter(
-      (d: any) => d && d.is_deleted !== true && d.is_deleted !== 'true' && d.is_deleted !== 1
-    ),
+    destinations: ((dests?.data ?? []) as { id: string; name: string; is_deleted?: boolean }[])
+      .filter(
+        (d: any) =>
+          d &&
+          d.is_deleted !== true &&
+          d.is_deleted !== 'true' &&
+          d.is_deleted !== 1 &&
+          !deletedDestKeys.has(d.id)
+      )
+      .map((d: any) => ({ id: d.id, name: d.name })),
   };
 
   if (active) {
@@ -178,8 +224,8 @@ export async function loadRatesForStays(m: TourMasters, stayLocationIds: number[
       const parsed = parseSeasonDates(r.date_range_label);
       const windows: [string, string, boolean][] = parsed.ok
         ? [
-            ...parsed.ranges.map((x) => [x.from, x.to, false] as [string, string, boolean]),
-            ...parsed.exclusions.map((x) => [x.from, x.to, true] as [string, string, boolean]),
+            ...parsed.ranges.map((x: any) => [x.from, x.to, false] as [string, string, boolean]),
+            ...parsed.exclusions.map((x: any) => [x.from, x.to, true] as [string, string, boolean]),
           ]
         : ((Array.isArray(r.windows) ? r.windows : []) as [string, string, boolean][]);
       out.push({

@@ -283,7 +283,11 @@ export async function importRateMasterBatch(
     if (newLocs.length > 0) {
       const { data: insertedLocs, error: locErr } = await supabase
         .from('locations')
-        .insert(newLocs.map((name) => ({ name })))
+        .insert(newLocs.map((name) => ({
+          name,
+          state: name.includes('(TN)') ? 'Tamil Nadu' : 'Kerala',
+          display_name: name.includes('(TN)') ? name.replace(/\(TN\)/gi, '').trim() : name,
+        })))
         .select('id, name');
 
       if (locErr) {

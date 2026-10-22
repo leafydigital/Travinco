@@ -29,6 +29,7 @@ import {
   MapPin,
   BookOpen,
   Layout,
+  Headphones,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -57,6 +58,13 @@ import { DEFAULT_ABOUT_PAGE_CONTENT } from '@/lib/about-page-content-types';
 import { NavbarFooterEditor } from './navbar-footer-editor';
 import type { NavbarFooterContent } from '@/lib/navbar-footer-content-types';
 import { DEFAULT_NAVBAR_FOOTER_CONTENT } from '@/lib/navbar-footer-content-types';
+import { PageTitlesEditor } from './page-titles-editor';
+import type { PageTitlesContent } from '@/lib/page-titles-content-types';
+import { DEFAULT_PAGE_TITLES_CONTENT } from '@/lib/page-titles-content-types';
+import { ContactPageEditor } from './contact-page-editor';
+import type { ContactPageContent } from '@/lib/contact-page-content-types';
+import { DEFAULT_CONTACT_PAGE_CONTENT } from '@/lib/contact-page-content-types';
+import { Globe } from 'lucide-react';
 
 interface DestinationItem {
   id: string;
@@ -82,13 +90,15 @@ interface ThemeClientProps {
   initialDestinationsContent?: DestinationsPageContent;
   initialBlogContent?: BlogPageContent;
   initialAboutContent?: AboutPageContent;
+  initialContactContent?: ContactPageContent;
   initialNavbarFooterContent?: NavbarFooterContent;
+  initialPageTitlesContent?: PageTitlesContent;
   destinations?: DestinationItem[];
   recentPosts?: BlogPostItem[];
   isAdmin?: boolean;
 }
 
-type TabKey = 'home' | 'packages' | 'destinations' | 'blog' | 'about' | 'navbar-footer';
+type TabKey = 'home' | 'packages' | 'destinations' | 'blog' | 'about' | 'contact' | 'navbar-footer' | 'titles';
 
 interface TabConfig {
   key: TabKey;
@@ -172,10 +182,30 @@ const TABS: TabConfig[] = [
     ],
   },
   {
+    key: 'contact',
+    label: 'Contact',
+    icon: Headphones,
+    description: 'Customize the Contact page Hero background image, atmospheric text, trust pillars, and section headings.',
+    placements: [
+      {
+        value: 'hero',
+        label: 'Hero Background Image',
+        hint: 'Full-width background image behind the centered CONTACT US heading with dark luxury atmospheric overlay',
+      },
+    ],
+  },
+  {
     key: 'navbar-footer',
     label: 'Navbar & Footer',
     icon: Layout,
     description: 'Customize customer-facing Navbar logos (scrolled & transparent hero), page navigation links, CTA buttons, and Footer sections, socials, and contact info.',
+    placements: [],
+  },
+  {
+    key: 'titles',
+    label: 'Title change',
+    icon: Globe,
+    description: 'Change the browser tab title for every customer-facing page and customize the site favicon image.',
     placements: [],
   },
 ];
@@ -187,7 +217,9 @@ export function ThemeClient({
   initialDestinationsContent = DEFAULT_DESTINATIONS_PAGE_CONTENT,
   initialBlogContent = DEFAULT_BLOG_PAGE_CONTENT,
   initialAboutContent = DEFAULT_ABOUT_PAGE_CONTENT,
+  initialContactContent = DEFAULT_CONTACT_PAGE_CONTENT,
   initialNavbarFooterContent = DEFAULT_NAVBAR_FOOTER_CONTENT,
+  initialPageTitlesContent = DEFAULT_PAGE_TITLES_CONTENT,
   destinations = [],
   recentPosts = [],
   isAdmin = true,
@@ -588,6 +620,22 @@ export function ThemeClient({
       {activeTab === 'navbar-footer' && (
         <NavbarFooterEditor
           initialContent={initialNavbarFooterContent}
+          isAdmin={isAdmin}
+        />
+      )}
+
+      {/* ── Contact Tab: Dedicated Visuals & Content Editor ── */}
+      {activeTab === 'contact' && (
+        <ContactPageEditor
+          initialContent={initialContactContent}
+          isAdmin={isAdmin}
+        />
+      )}
+
+      {/* ── Title change Tab: Dedicated Page Titles & Favicon Editor ── */}
+      {activeTab === 'titles' && (
+        <PageTitlesEditor
+          initialContent={initialPageTitlesContent}
           isAdmin={isAdmin}
         />
       )}

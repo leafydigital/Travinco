@@ -76,7 +76,7 @@ export function PackageCard({ pkg }: { pkg: PackageCardData }) {
               </span>
             )}
           </div>
-          <span className="text-sm font-medium text-coral-600 transition-transform group-hover:translate-x-0.5">
+          <span className="text-sm font-semibold text-emerald-600 group-hover:text-emerald-500 transition-transform group-hover:translate-x-0.5">
             View details →
           </span>
         </div>

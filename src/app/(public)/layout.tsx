@@ -1,29 +1,54 @@
+import type { Metadata } from 'next';
 import { SiteHeader } from '@/components/public/site-header';
 import { SiteFooter } from '@/components/public/site-footer';
 import { getGeneralSettings } from '@/lib/settings';
 import { getNavbarFooterContent } from '@/lib/navbar-footer-content';
+import { getPageTitlesContent } from '@/lib/page-titles-content';
 import { createClient } from '@/lib/supabase/server';
 import { getCustomer } from '@/lib/supabase/customer-auth-helpers';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
+export async function generateMetadata(): Promise<Metadata> {
+  const titlesContent = await getPageTitlesContent();
+  if (titlesContent.favicon_url) {
+    return {
+      icons: {
+        icon: [{ url: titlesContent.favicon_url, href: titlesContent.favicon_url }],
+        shortcut: [titlesContent.favicon_url],
+        apple: [titlesContent.favicon_url],
+      },
+    };
+  }
+  return {};
+}
+
 export default async function PublicLayout({ children }: { children: React.ReactNode }) {
-  const [settings, navbarFooterContent] = await Promise.all([
+  const supabase = await createClient();
+
+  const [
+    settings,
+    navbarFooterContent,
+    pageTitlesContent,
+    destinationsRes,
+    deletedSettingsRes,
+    customer,
+  ] = await Promise.all([
     getGeneralSettings(),
     getNavbarFooterContent(),
-  ]);
-
-  const supabase = await createClient();
-  const [{ data: destinationsData }, { data: deletedSettingsData }] = await Promise.all([
+    getPageTitlesContent(),
     supabase
       .from('destinations')
       .select('id, name, slug, sort_order, is_deleted')
       .eq('status', 'published')
       .order('sort_order', { ascending: true }),
     supabase.from('website_settings').select('key').like('key', 'deleted_destination_%'),
-    supabase.auth.getUser(),
+    getCustomer(),
   ]);
+
+  const destinationsData = destinationsRes.data;
+  const deletedSettingsData = deletedSettingsRes.data;
 
   const deletedKeys = new Set(
     (deletedSettingsData || []).map((s: { key: string }) => s.key.replace('deleted_destination_', ''))
@@ -37,11 +62,13 @@ export default async function PublicLayout({ children }: { children: React.React
       slug: d.slug,
     }));
 
-  const customer = await getCustomer();
   const customerName = customer?.full_name ?? customer?.email ?? null;
 
   return (
     <div className="flex min-h-screen flex-col">
+      {pageTitlesContent.favicon_url && (
+        <link rel="icon" href={pageTitlesContent.favicon_url} />
+      )}
       <SiteHeader
         whatsappNumber={settings.whatsapp}
         destinations={activeDestinations}

@@ -17,6 +17,8 @@ import {
 import type { DestinationsPageContent } from '@/lib/destinations-page-content-types';
 import { DEFAULT_DESTINATIONS_PAGE_CONTENT } from '@/lib/destinations-page-content-types';
 
+import { CardGridSkeleton } from '@/components/ui/skeleton';
+
 export interface DestinationExplorerItem {
   id: string;
   name: string;
@@ -31,6 +33,7 @@ interface DestinationsExplorerProps {
   initialDestinations: DestinationExplorerItem[];
   initialSearch?: string;
   pageContent?: DestinationsPageContent;
+  isLoading?: boolean;
 }
 
 const ITEMS_PER_PAGE = 6;
@@ -39,6 +42,7 @@ export function DestinationsExplorer({
   initialDestinations,
   initialSearch = '',
   pageContent = DEFAULT_DESTINATIONS_PAGE_CONTENT,
+  isLoading = false,
 }: DestinationsExplorerProps) {
   const [searchQuery, setSearchQuery] = useState(initialSearch);
   const [currentPage, setCurrentPage] = useState(1);
@@ -195,7 +199,9 @@ export function DestinationsExplorer({
 
       {/* ── 3. DESTINATIONS CARDS GRID ── */}
       <section className="container-page mt-10">
-        {filteredDestinations.length === 0 ? (
+        {isLoading ? (
+          <CardGridSkeleton count={6} />
+        ) : filteredDestinations.length === 0 ? (
           <div className="rounded-3xl border border-dashed border-ink-200 bg-white p-12 text-center space-y-4 shadow-xs">
             <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-50 text-brand-600">
               <MapPin className="h-7 w-7" />

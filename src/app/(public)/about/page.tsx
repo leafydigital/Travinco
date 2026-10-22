@@ -17,13 +17,19 @@ import { getAboutPageContent } from '@/lib/about-page-content';
 import { getGeneralSettings } from '@/lib/settings';
 import { AboutFaqAccordion } from '@/components/public/about-faq-accordion';
 
+import { getPageTitlesContent } from '@/lib/page-titles-content';
+
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 export async function generateMetadata(): Promise<Metadata> {
-  const content = await getAboutPageContent();
+  const [content, titlesContent] = await Promise.all([
+    getAboutPageContent(),
+    getPageTitlesContent(),
+  ]);
+  const title = titlesContent.titles?.about || content.hero.title || 'About Us | Travinco';
   return {
-    title: content.hero.title || 'About Us | Travinco',
+    title: { absolute: title },
     description:
       content.hero.subtitle ||
       'How we plan trips, and why travelers keep coming back to Travinco.',

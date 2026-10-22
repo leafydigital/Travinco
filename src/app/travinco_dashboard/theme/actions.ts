@@ -13,20 +13,6 @@ import type { Tables } from '@/types/database';
 export async function revalidatePublicAndTheme() {
   try {
     revalidatePath('/', 'layout');
-    revalidatePath('/');
-    revalidatePath('/packages', 'layout');
-    revalidatePath('/packages');
-    revalidatePath('/destinations', 'layout');
-    revalidatePath('/destinations');
-    revalidatePath('/blog', 'layout');
-    revalidatePath('/blog');
-    revalidatePath('/about', 'layout');
-    revalidatePath('/about');
-    revalidatePath('/contact', 'layout');
-    revalidatePath('/contact');
-    revalidatePath('/booking', 'layout');
-    revalidatePath('/booking');
-    revalidatePath('/account', 'layout');
     revalidatePath('/travinco_dashboard/theme');
   } catch (err) {
     console.warn('revalidatePublicAndTheme warning:', err);
@@ -1087,5 +1073,241 @@ export async function uploadNavbarLogoAction(formData: FormData): Promise<{
     return { success: false, error: err?.message || 'Failed to upload logo image.' };
   }
 }
+
+/**
+ * Fetch customer page titles and favicon configuration
+ */
+export async function getPageTitlesContentAction(): Promise<{
+  data: import('@/lib/page-titles-content').PageTitlesContent;
+  error?: string;
+}> {
+  try {
+    const { getPageTitlesContent, DEFAULT_PAGE_TITLES_CONTENT } = await import('@/lib/page-titles-content');
+    const content = await getPageTitlesContent();
+    return { data: content };
+  } catch (err: any) {
+    const { DEFAULT_PAGE_TITLES_CONTENT } = await import('@/lib/page-titles-content');
+    return { data: DEFAULT_PAGE_TITLES_CONTENT, error: err?.message };
+  }
+}
+
+/**
+ * Save customer page titles and favicon configuration
+ */
+export async function savePageTitlesContentAction(
+  content: import('@/lib/page-titles-content').PageTitlesContent
+): Promise<{
+  success: boolean;
+  data?: import('@/lib/page-titles-content').PageTitlesContent;
+  error?: string;
+}> {
+  try {
+    const profile = await requireProfile();
+    const perm = await checkPageAccess(profile, 'theme', 'edit');
+    if (!perm.allowed) {
+      return { success: false, error: perm.error || 'Access denied.' };
+    }
+
+    // 1. Immediately persist to local JSON file for instant reliability
+    try {
+      const fs = await import('node:fs/promises');
+      const path = await import('node:path');
+      const dataDir = path.join(process.cwd(), 'src', 'data');
+      await fs.mkdir(dataDir, { recursive: true });
+      await fs.writeFile(
+        path.join(dataDir, 'page-titles-content.json'),
+        JSON.stringify(content, null, 2),
+        'utf8'
+      );
+    } catch (fsErr) {
+      console.warn('Could not write local page-titles-content.json backup:', fsErr);
+    }
+
+    // 2. Persist to Supabase website_settings using admin client with retry
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const supabase = await createAdminClient();
+        const { error: upsertError } = await supabase.from('website_settings').upsert(
+          {
+            key: 'page_titles_content',
+            value: content,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'key' }
+        );
+
+        if (!upsertError) {
+          break;
+        } else {
+          console.warn(`Upsert page_titles_content attempt ${attempt} warning:`, upsertError.message || upsertError);
+          if (attempt === 1) await new Promise((r) => setTimeout(r, 200));
+        }
+      } catch (connErr: any) {
+        console.warn(`Supabase connection attempt ${attempt} error:`, connErr.message || connErr);
+        if (attempt === 1) await new Promise((r) => setTimeout(r, 200));
+      }
+    }
+
+    await revalidatePublicAndTheme();
+
+    return { success: true, data: content };
+  } catch (err: any) {
+    console.error('savePageTitlesContentAction error:', err);
+    return { success: false, error: err?.message || 'Failed to save page titles content.' };
+  }
+}
+
+/**
+ * Quick upload helper for site favicon image
+ */
+export async function uploadFaviconAction(formData: FormData): Promise<{
+  success: boolean;
+  url?: string;
+  error?: string;
+}> {
+  try {
+    const profile = await requireProfile();
+    const perm = await checkPageAccess(profile, 'theme', 'edit');
+    if (!perm.allowed) return { success: false, error: perm.error || 'Access denied.' };
+
+    const file = formData.get('image') as File | null;
+    if (!file || typeof file === 'string' || file.size === 0) {
+      return { success: false, error: 'Please choose an image file to upload as favicon.' };
+    }
+
+    let uploadRes = await uploadImageToBucket(BUCKET, file);
+    if (uploadRes.error) {
+      uploadRes = await uploadImageToBucket(FALLBACK_BUCKET, file);
+    }
+
+    if (uploadRes.error || !uploadRes.url) {
+      return { success: false, error: uploadRes.error || 'Favicon upload failed. Please try again.' };
+    }
+
+    return { success: true, url: uploadRes.url };
+  } catch (err: any) {
+    console.error('Upload favicon image error:', err);
+    return { success: false, error: err?.message || 'Failed to upload favicon image.' };
+  }
+}
+
+import {
+  getContactPageContent,
+  type ContactPageContent,
+  DEFAULT_CONTACT_PAGE_CONTENT,
+} from '@/lib/contact-page-content';
+
+/**
+ * Fetch contact page content configuration from website_settings.
+ */
+export async function getContactPageContentAction(): Promise<{
+  data: ContactPageContent;
+  error?: string;
+}> {
+  try {
+    const data = await getContactPageContent();
+    return { data };
+  } catch (err: any) {
+    console.error('getContactPageContentAction error:', err);
+    return { data: DEFAULT_CONTACT_PAGE_CONTENT, error: 'Could not load contact page content.' };
+  }
+}
+
+/**
+ * Save contact page content configuration into website_settings and local JSON backup.
+ */
+export async function saveContactPageContentAction(
+  content: ContactPageContent
+): Promise<{ success: boolean; data?: ContactPageContent; error?: string }> {
+  try {
+    const profile = await requireProfile();
+    const perm = await checkPageAccess(profile, 'theme', 'edit');
+    if (!perm.allowed) return { success: false, error: perm.error || 'Access denied.' };
+
+    const supabase = await createAdminClient();
+    let { error: upsertError } = await supabase.from('website_settings').upsert(
+      {
+        key: 'contact_page_content',
+        value: content as any,
+        updated_by: profile.id,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'key' }
+    );
+
+    if (upsertError) {
+      const retry = await supabase.from('website_settings').upsert(
+        {
+          key: 'contact_page_content',
+          value: content as any,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'key' }
+      );
+      upsertError = retry.error;
+    }
+
+    if (upsertError) {
+      console.error('Failed to save contact_page_content in website_settings:', upsertError);
+    }
+
+    // Persist to local JSON file for backup
+    try {
+      const fs = await import('node:fs/promises');
+      const path = await import('node:path');
+      const dataDir = path.join(process.cwd(), 'src', 'data');
+      await fs.mkdir(dataDir, { recursive: true });
+      await fs.writeFile(
+        path.join(dataDir, 'contact-page-content.json'),
+        JSON.stringify(content, null, 2),
+        'utf8'
+      );
+    } catch (fsErr) {
+      console.warn('Could not write local contact-page-content.json backup:', fsErr);
+    }
+
+    await revalidatePublicAndTheme();
+
+    return { success: true, data: content };
+  } catch (err: any) {
+    console.error('saveContactPageContentAction error:', err);
+    return { success: false, error: err?.message || 'Failed to save contact page content.' };
+  }
+}
+
+/**
+ * Quick upload helper for Contact hero background image
+ */
+export async function uploadContactHeroImageAction(formData: FormData): Promise<{
+  success: boolean;
+  url?: string;
+  error?: string;
+}> {
+  try {
+    const profile = await requireProfile();
+    const perm = await checkPageAccess(profile, 'theme', 'edit');
+    if (!perm.allowed) return { success: false, error: perm.error || 'Access denied.' };
+
+    const file = formData.get('image') as File | null;
+    if (!file || typeof file === 'string' || file.size === 0) {
+      return { success: false, error: 'Please choose an image file to upload.' };
+    }
+
+    let uploadRes = await uploadImageToBucket(BUCKET, file);
+    if (uploadRes.error) {
+      uploadRes = await uploadImageToBucket(FALLBACK_BUCKET, file);
+    }
+
+    if (uploadRes.error || !uploadRes.url) {
+      return { success: false, error: uploadRes.error || 'Image upload failed. Please try again.' };
+    }
+
+    return { success: true, url: uploadRes.url };
+  } catch (err: any) {
+    console.error('Upload contact hero image error:', err);
+    return { success: false, error: err?.message || 'Failed to upload image.' };
+  }
+}
+
 
 

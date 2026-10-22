@@ -1054,3 +1054,229 @@ export function normalizeInputs(raw: Partial<QuoteInputs>, m: TourMasters): Quot
   i.trip_type = i.trip_type || 'Tour';
   return i;
 }
+
+/**
+ * Normalizes location state and resolves accurate region/state classification.
+ * Prevents non-Kerala locations (e.g. Tamil Nadu locations seeded with DB default 'Kerala')
+ * from polluting Kerala-specific quotation views.
+ */
+export function normalizeLocationState(
+  loc: { name?: string | null; display_name?: string | null; state?: string | null; parent_id?: number | null },
+  allLocs?: { id: number; state?: string | null; parent_id?: number | null }[]
+): string {
+  const nameLower = (loc.name || '').toLowerCase().trim();
+  const dispLower = (loc.display_name || '').toLowerCase().trim();
+  const stateLower = (loc.state || '').toLowerCase().trim();
+
+  // 1. Explicit tags in name or display_name
+  if (
+    nameLower.includes('(tn)') ||
+    dispLower.includes('(tn)') ||
+    nameLower.includes('(tamil nadu)') ||
+    dispLower.includes('(tamil nadu)') ||
+    nameLower.includes('tamil nadu')
+  ) {
+    return 'Tamil Nadu';
+  }
+  if (
+    nameLower.includes('(ka)') ||
+    dispLower.includes('(ka)') ||
+    nameLower.includes('(karnataka)') ||
+    dispLower.includes('(karnataka)')
+  ) {
+    return 'Karnataka';
+  }
+  if (
+    nameLower.includes('(kl)') ||
+    dispLower.includes('(kl)') ||
+    nameLower.includes('(kerala)') ||
+    dispLower.includes('(kerala)')
+  ) {
+    return 'Kerala';
+  }
+
+  // 2. Known Tamil Nadu locations
+  const tnKeywords = [
+    'chennai', 'chettinad', 'masinagudi', 'megamalai', 'thanjavur', 'tanjore',
+    'valparai', 'velankanni', 'kanyakumari', 'rameswaram', 'rameshwaram',
+    'madurai', 'coimbatore', 'ooty', 'udhagamandalam', 'kodaikanal',
+    'mahabalipuram', 'mamallapuram', 'pondicherry', 'puducherry', 'yercaud',
+    'coonoor', 'chidambaram', 'kumbakonam', 'trichy', 'tiruchirappalli',
+    'tirunelveli', 'tuticorin', 'thoothukudi'
+  ];
+  if (
+    tnKeywords.some(
+      (k) =>
+        nameLower === k ||
+        nameLower.startsWith(k + ' ') ||
+        nameLower.startsWith(k + '(') ||
+        dispLower === k ||
+        dispLower.startsWith(k + ' ') ||
+        dispLower.startsWith(k + '(')
+    )
+  ) {
+    return 'Tamil Nadu';
+  }
+
+  // 3. Known Karnataka locations
+  const kaKeywords = [
+    'bangalore', 'bengaluru', 'mysore', 'mysuru', 'coorg', 'madikeri',
+    'kabini', 'chikmagalur', 'chikkamagaluru', 'hampi', 'gokarna',
+    'bandipur', 'nagarhole', 'mangalore', 'mangaluru', 'udupi', 'badami', 'dandeli'
+  ];
+  if (
+    kaKeywords.some(
+      (k) =>
+        nameLower === k ||
+        nameLower.startsWith(k + ' ') ||
+        dispLower === k ||
+        dispLower.startsWith(k + ' ')
+    )
+  ) {
+    return 'Karnataka';
+  }
+
+  // 4. Known other destinations / international
+  if (
+    nameLower.includes('maldives') ||
+    dispLower.includes('maldives') ||
+    nameLower === 'male' ||
+    dispLower === 'male' ||
+    nameLower === 'maafushi' ||
+    dispLower === 'maafushi'
+  ) {
+    return 'Maldives';
+  }
+  if (nameLower === 'goa' || dispLower === 'goa') {
+    return 'Goa';
+  }
+
+  // 5. If state in DB is explicitly set to something other than 'Kerala' or empty, respect that
+  if (stateLower && stateLower !== 'kerala') {
+    return loc.state!.trim();
+  }
+
+  // 6. If state is empty and parent_id is set, inherit from parent
+  if (!stateLower && loc.parent_id && allLocs) {
+    const parent = allLocs.find((p) => p.id === loc.parent_id);
+    if (parent && parent.state?.trim()) {
+      return normalizeLocationState(parent, allLocs);
+    }
+  }
+
+  // 7. Otherwise, fallback to database state or default 'Kerala'
+  return loc.state?.trim() || 'Kerala';
+}
+
+/**
+ * Checks whether a given location belongs strictly to the selected destination.
+ * Specifically handles 'Kerala' so that non-Kerala locations are never included.
+ */
+export function isLocationInDestination(
+  loc: { name?: string | null; display_name?: string | null; state?: string | null; parent_id?: number | null },
+  destination: string,
+  allLocations?: { id: number; state?: string | null; parent_id?: number | null }[]
+): boolean {
+  if (!destination) return false;
+  const destLower = destination.toLowerCase().trim();
+  const nameLower = (loc.name || '').toLowerCase().trim();
+  const dispLower = (loc.display_name || '').toLowerCase().trim();
+
+  const isTN =
+    nameLower.includes('(tn)') ||
+    dispLower.includes('(tn)') ||
+    nameLower.includes('(tamil nadu)') ||
+    dispLower.includes('(tamil nadu)') ||
+    nameLower.includes('tamil nadu') ||
+    [
+      'chennai', 'chettinad', 'masinagudi', 'megamalai', 'thanjavur', 'tanjore',
+      'valparai', 'velankanni', 'kanyakumari', 'rameswaram', 'rameshwaram',
+      'madurai', 'coimbatore', 'ooty', 'udhagamandalam', 'kodaikanal',
+      'mahabalipuram', 'mamallapuram', 'pondicherry', 'puducherry', 'yercaud',
+      'coonoor', 'chidambaram', 'kumbakonam', 'trichy', 'tiruchirappalli',
+      'tirunelveli', 'tuticorin', 'thoothukudi'
+    ].some((k) =>
+      nameLower === k ||
+      nameLower.startsWith(k + ' ') ||
+      nameLower.startsWith(k + '(') ||
+      dispLower === k ||
+      dispLower.startsWith(k + ' ') ||
+      dispLower.startsWith(k + '(')
+    );
+
+  const isKA =
+    nameLower.includes('(ka)') ||
+    dispLower.includes('(ka)') ||
+    nameLower.includes('(karnataka)') ||
+    dispLower.includes('(karnataka)') ||
+    [
+      'bangalore', 'bengaluru', 'mysore', 'mysuru', 'coorg', 'madikeri',
+      'kabini', 'chikmagalur', 'chikkamagaluru', 'hampi', 'gokarna',
+      'bandipur', 'nagarhole', 'mangalore', 'mangaluru', 'udupi', 'badami', 'dandeli'
+    ].some((k) =>
+      nameLower === k ||
+      nameLower.startsWith(k + ' ') ||
+      dispLower === k ||
+      dispLower.startsWith(k + ' ')
+    );
+
+  const isMaldives =
+    nameLower.includes('maldives') ||
+    dispLower.includes('maldives') ||
+    nameLower === 'male' ||
+    dispLower === 'male' ||
+    nameLower === 'maafushi' ||
+    dispLower === 'maafushi';
+
+  const isGoa = nameLower === 'goa' || dispLower === 'goa';
+
+  let effectiveState = (loc.state || '').trim().toLowerCase();
+  if (isTN) {
+    effectiveState = 'tamil nadu';
+  } else if (isKA) {
+    effectiveState = 'karnataka';
+  } else if (isMaldives) {
+    effectiveState = 'maldives';
+  } else if (isGoa) {
+    effectiveState = 'goa';
+  } else if (!effectiveState && loc.parent_id && allLocations) {
+    const parent = allLocations.find((p) => p.id === loc.parent_id);
+    if (parent) {
+      return isLocationInDestination(parent, destination, allLocations);
+    }
+  }
+
+  // 1. Strict check when destination is Kerala
+  if (destLower === 'kerala' || destLower.includes('kerala')) {
+    if (isTN || isKA || isMaldives || isGoa) {
+      return false;
+    }
+    if (effectiveState && effectiveState !== 'kerala' && !effectiveState.includes('kerala')) {
+      return false;
+    }
+    return true;
+  }
+
+  // 2. Strict check when destination is Tamil Nadu
+  if (destLower === 'tamil nadu' || destLower.includes('tamil')) {
+    return isTN || effectiveState === 'tamil nadu' || effectiveState.includes('tamil');
+  }
+
+  // 3. Strict check when destination is Karnataka
+  if (destLower === 'karnataka') {
+    return isKA || effectiveState === 'karnataka';
+  }
+
+  // 4. Strict check when destination is Maldives
+  if (destLower === 'maldives') {
+    return isMaldives || effectiveState === 'maldives';
+  }
+
+  // 5. Generic destination check
+  if (effectiveState) {
+    if (effectiveState === destLower || destLower.includes(effectiveState) || effectiveState.includes(destLower)) {
+      return true;
+    }
+  }
+  return nameLower === destLower || dispLower === destLower;
+}

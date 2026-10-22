@@ -7,13 +7,15 @@ import {
   getDestinationsPageContentAction,
   getBlogPageContentAction,
   getAboutPageContentAction,
+  getContactPageContentAction,
   getNavbarFooterContentAction,
+  getPageTitlesContentAction,
 } from './actions';
 import { ThemeClient } from './theme-client';
 
 export const metadata = {
   title: 'Theme & Page Visuals | Travinco Admin',
-  description: 'Manage website banners, hero sliders, and customer-side theme images.',
+  description: 'Manage website banners, hero sliders, customer-side theme images, and page titles.',
 };
 
 export const dynamic = 'force-dynamic';
@@ -34,7 +36,9 @@ export default async function AdminThemePage() {
     destinationsContentRes,
     blogContentRes,
     aboutContentRes,
+    contactContentRes,
     navbarFooterRes,
+    pageTitlesRes,
     { data: destinations },
     { data: recentPosts },
   ] = await Promise.all([
@@ -44,7 +48,9 @@ export default async function AdminThemePage() {
     getDestinationsPageContentAction(),
     getBlogPageContentAction(),
     getAboutPageContentAction(),
+    getContactPageContentAction(),
     getNavbarFooterContentAction(),
+    getPageTitlesContentAction(),
     supabase
       .from('destinations')
       .select('id, name, slug, cover_image_url, description')
@@ -53,13 +59,13 @@ export default async function AdminThemePage() {
       .limit(6),
     supabase
       .from('blog_posts')
-      .select('id, title, slug, excerpt, cover_image_url, created_at, status, is_deleted')
+      .select('id, title, slug, excerpt, cover_image_url, created_at, status')
       .eq('status', 'published')
       .order('created_at', { ascending: false })
       .limit(12),
   ]);
 
-  const activeBlogPosts = (recentPosts ?? []).filter((p: any) => p.is_deleted !== true);
+  const activeBlogPosts = (recentPosts ?? []);
 
   return (
     <ThemeClient
@@ -69,7 +75,9 @@ export default async function AdminThemePage() {
       initialDestinationsContent={destinationsContentRes?.data}
       initialBlogContent={blogContentRes?.data}
       initialAboutContent={aboutContentRes?.data}
+      initialContactContent={contactContentRes?.data}
       initialNavbarFooterContent={navbarFooterRes?.data}
+      initialPageTitlesContent={pageTitlesRes?.data}
       destinations={destinations ?? []}
       recentPosts={activeBlogPosts}
       isAdmin={isAdmin}

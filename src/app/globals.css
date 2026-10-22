@@ -35,10 +35,10 @@
     @apply inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm font-medium transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-50;
   }
   .btn-primary {
-    @apply btn bg-brand-700 text-white shadow-sm hover:-translate-y-0.5 hover:bg-brand-800 hover:shadow-md;
+    @apply btn bg-emerald-600 text-white shadow-sm hover:-translate-y-0.5 hover:bg-emerald-500 hover:shadow-md hover:shadow-emerald-600/30;
   }
   .btn-cta {
-    @apply btn bg-coral-500 text-white shadow-sm hover:-translate-y-0.5 hover:bg-coral-600 hover:shadow-md;
+    @apply btn bg-emerald-600 text-white shadow-sm hover:-translate-y-0.5 hover:bg-emerald-500 hover:shadow-md hover:shadow-emerald-600/30;
   }
   .btn-secondary {
     @apply btn bg-sand-100 text-sand-800 hover:bg-sand-200;
@@ -77,7 +77,7 @@
     @apply badge bg-sand-100 text-sand-800;
   }
   .badge-discount {
-    @apply badge bg-coral-500 text-white;
+    @apply badge bg-emerald-600 text-white;
   }
   .badge-duration {
     @apply badge bg-ocean-50 text-ocean-800;

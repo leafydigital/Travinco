@@ -2,7 +2,6 @@
 
 import { createCustomerClient, CUSTOMER_AUTH_COOKIE } from '@/lib/supabase/server';
 import { requireCustomer } from '@/lib/supabase/customer-auth-helpers';
-import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
 import { z } from 'zod';
 
@@ -117,36 +116,41 @@ export async function logInCustomer(raw: unknown) {
     return { error: 'Incorrect email or password.' };
   }
 
-  // Check if this customer has been deactivated by admin/team
-  const { data: custRecord } = await supabase
-    .from('customers')
-    .select('id, is_active')
-    .eq('email', parsed.data.email)
-    .maybeSingle();
+  // Optimize: query customers and customer_accounts in parallel
+  const [custRecordRes, customerAccountRes] = await Promise.all([
+    supabase
+      .from('customers')
+      .select('id, is_active')
+      .eq('email', parsed.data.email)
+      .maybeSingle(),
+    supabase
+      .from('customer_accounts')
+      .select('id')
+      .eq('id', authData.user.id)
+      .maybeSingle(),
+  ]);
 
-  if (custRecord) {
-    const { data: statusSetting } = await supabase
-      .from('website_settings')
-      .select('value')
-      .eq('key', `customer_status_${custRecord.id}`)
-      .maybeSingle();
+  const custRecord = custRecordRes.data;
 
-    const isDeactivated = statusSetting?.value?.is_active === false || custRecord.is_active === false;
-    if (isDeactivated) {
-      await supabase.auth.signOut();
-      return { error: 'Your account has been deactivated. Please contact support.' };
-    }
+  // Check if customer account is deactivated
+  if (custRecord?.is_active === false) {
+    await supabase.auth.signOut();
+    return { error: 'Your account has been deactivated. Please contact support.' };
   }
 
-  // Ensure this authenticated user has a corresponding customer_accounts record.
-  // Prevents staff users from logging in through customer portal and vice versa.
-  const { data: customerAccount } = await supabase
-    .from('customer_accounts')
-    .select('id')
-    .eq('id', authData.user.id)
-    .maybeSingle();
+  const customerAccount = customerAccountRes.data;
 
-  if (!customerAccount) {
+  // Fast-path: Verified existing customer account
+  if (customerAccount) {
+    return { success: true };
+  }
+
+  // Ensure this authenticated user is not staff accessing customer portal
+  const isCustomerRole =
+    authData.user.user_metadata?.role === 'customer' ||
+    authData.user.user_metadata?.is_customer_signup === 'true';
+
+  if (!isCustomerRole) {
     // Check if this user is a staff member
     const { data: profile } = await supabase
       .from('profiles')
@@ -161,33 +165,33 @@ export async function logInCustomer(raw: unknown) {
           'This login is for customer accounts only. If you are a staff member, please use the staff portal at /travinco_admin_login.',
       };
     }
-
-    // Regular customer whose customer_accounts record was not populated yet by trigger
-    try {
-      const fullName = (authData.user.user_metadata?.full_name as string) || authData.user.email?.split('@')[0] || 'Customer';
-      await supabase.from('customer_accounts').upsert({
-        id: authData.user.id,
-        full_name: fullName,
-        email: authData.user.email!,
-      }, { onConflict: 'id' });
-
-      // Also ensure customer appears in public.customers
-      if (!custRecord) {
-        await supabase.from('customers').insert({
-          full_name: fullName,
-          email: authData.user.email!,
-          phone: '',
-          source: 'website',
-          is_active: true,
-          is_deleted: false,
-        } as any);
-      }
-    } catch (insertErr) {
-      console.error('Failed to create customer_accounts record:', insertErr);
-    }
   }
 
-  return {};
+  // Regular customer whose customer_accounts record was not populated yet by trigger
+  try {
+    const fullName = (authData.user.user_metadata?.full_name as string) || authData.user.email?.split('@')[0] || 'Customer';
+    await supabase.from('customer_accounts').upsert({
+      id: authData.user.id,
+      full_name: fullName,
+      email: authData.user.email!,
+    }, { onConflict: 'id' });
+
+    // Also ensure customer appears in public.customers
+    if (!custRecord) {
+      await supabase.from('customers').insert({
+        full_name: fullName,
+        email: authData.user.email!,
+        phone: '',
+        source: 'website',
+        is_active: true,
+        is_deleted: false,
+      } as any);
+    }
+  } catch (insertErr) {
+    console.error('Failed to create customer_accounts record:', insertErr);
+  }
+
+  return { success: true };
 }
 
 export async function logOutCustomer() {
@@ -195,7 +199,7 @@ export async function logOutCustomer() {
     const supabase = await createCustomerClient();
     await Promise.race([
       supabase.auth.signOut(),
-      new Promise((resolve) => setTimeout(resolve, 600)),
+      new Promise((resolve) => setTimeout(resolve, 300)),
     ]);
 
     const cookieStore = await cookies();
@@ -206,33 +210,72 @@ export async function logOutCustomer() {
   } catch (err) {
     console.warn('Customer signOut error caught:', err);
   }
-  redirect('/account/login');
+  return { success: true };
 }
 
-const changePasswordSchema = z.object({
-  password: z
-    .string()
-    .min(7, 'Password must be at least 7 characters')
-    .regex(/[A-Z]/, 'Password must include at least one capital letter')
-    .regex(/[a-z]/, 'Password must include at least one lowercase letter')
-    .regex(/[0-9]/, 'Password must include at least one number')
-    .regex(/[^A-Za-z0-9]/, 'Password must include at least one symbol'),
-});
+/**
+ * Step 1: Confirms that the entered email matches the logged-in customer's active account.
+ */
+export async function verifyCustomerEmailAction(rawEmail: string) {
+  const customer = await requireCustomer();
+
+  const email = (rawEmail || '').trim().toLowerCase();
+  if (!email) {
+    return { error: 'Please enter your email address.' };
+  }
+
+  if (email !== customer.email.toLowerCase()) {
+    return { error: 'This email does not match your active customer account.' };
+  }
+
+  return {
+    success: true,
+    email: customer.email,
+    fullName: customer.full_name || 'Customer',
+  };
+}
+
+const changePasswordSchema = z
+  .object({
+    email: z.string().email('Enter a valid email').optional(),
+    password: z
+      .string()
+      .min(7, 'Password must be at least 7 characters')
+      .regex(/[A-Z]/, 'Password must include at least one capital letter')
+      .regex(/[a-z]/, 'Password must include at least one lowercase letter')
+      .regex(/[0-9]/, 'Password must include at least one number')
+      .regex(/[^A-Za-z0-9]/, 'Password must include at least one symbol'),
+    confirmPassword: z.string().optional(),
+  })
+  .refine(
+    (data) => !data.confirmPassword || data.password === data.confirmPassword,
+    {
+      message: 'Passwords do not match',
+      path: ['confirmPassword'],
+    }
+  );
 
 export async function changeCustomerPassword(raw: unknown) {
   // Enforces that the session is a verified customer account
-  await requireCustomer();
+  const customer = await requireCustomer();
 
   const parsed = changePasswordSchema.safeParse(raw);
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? 'Please check the form.' };
   }
 
+  if (
+    parsed.data.email &&
+    parsed.data.email.trim().toLowerCase() !== customer.email.toLowerCase()
+  ) {
+    return { error: 'Email does not match your active customer account.' };
+  }
+
   const supabase = await createCustomerClient();
   const { error } = await supabase.auth.updateUser({ password: parsed.data.password });
-  if (error) return { error: 'Could not update your password. Please try again.' };
+  if (error) return { error: error.message || 'Could not update your password. Please try again.' };
 
-  return {};
+  return { success: true };
 }
 
 export async function requestPasswordReset(email: string) {

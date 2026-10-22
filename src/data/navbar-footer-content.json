@@ -2,7 +2,7 @@
   "navbar": {
     "logo_type": "image",
     "logo_text": "Travinco",
-    "logo_image_url": "/images/green_logo.png",
+    "logo_image_url": "https://lrkwfmzclonvednxwpyv.supabase.co/storage/v1/object/public/theme-images/b3698907-cb51-4944-a5ec-2c9718f39d00.png",
     "logo_light_image_url": "/images/white_logo.png",
     "cta_button_text": "Book with Us",
     "cta_button_url": "/booking",
@@ -47,7 +47,7 @@
   },
   "footer": {
     "brand_name": "Travinco",
-    "brand_tagline": "Handpicked holidays and end-to-end trip planning, built around how you actually like to travel.",
+    "brand_tagline": "Travinco Travel Solutions is your trusted travel companion across Asia. Based in Kerala, we design meaningful journeys through India, Vietnam, Thailand, and beyond—blending culture, authenticity, and seamless planning.",
     "show_social": true,
     "social": {
       "facebook": "",
@@ -60,36 +60,36 @@
     "explore_links": [
       {
         "id": "1",
-        "label": "Packages",
-        "href": "/packages"
+        "href": "/packages",
+        "label": "Packages"
       },
       {
         "id": "2",
-        "label": "Destinations",
-        "href": "/destinations"
+        "href": "/destinations",
+        "label": "Destinations"
       },
       {
         "id": "3",
-        "label": "Travel Blog",
-        "href": "/blog"
+        "href": "/blog",
+        "label": "Travel Blog"
       }
     ],
     "company_heading": "Company",
     "company_links": [
       {
         "id": "1",
-        "label": "About us",
-        "href": "/about"
+        "href": "/about",
+        "label": "About us"
       },
       {
         "id": "2",
-        "label": "Contact",
-        "href": "/contact"
+        "href": "/contact",
+        "label": "Contact"
       },
       {
         "id": "3",
-        "label": "Plan a trip",
-        "href": "/booking"
+        "href": "/booking",
+        "label": "Plan a trip"
       }
     ],
     "contact_heading": "Get in touch",

@@ -1,31 +1,38 @@
+import { Suspense } from 'react';
 import { createClient } from '@/lib/supabase/server';
 import {
   DestinationsExplorer,
   type DestinationExplorerItem,
 } from '@/components/public/destinations-explorer';
 import { getDestinationsPageContent } from '@/lib/destinations-page-content';
+import { getPageTitlesContent } from '@/lib/page-titles-content';
 import type { Metadata } from 'next';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-export const metadata: Metadata = {
-  title: 'Destinations | Handcrafted Holiday Regions & Sanctuaries',
-  description:
-    'Explore iconic travel destinations across Asia, each handpicked with bespoke itineraries, luxury boutique resorts, and private chauffeured tours.',
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const titlesContent = await getPageTitlesContent();
+  const title = titlesContent.titles?.destinations || 'Destinations | Handcrafted Holiday Regions & Sanctuaries';
+  return {
+    title: { absolute: title },
+    description:
+      'Explore iconic travel destinations across Asia, each handpicked with bespoke itineraries, luxury boutique resorts, and private chauffeured tours.',
+  };
+}
 
-export default async function DestinationsPage({
-  searchParams,
+async function DestinationsDataSection({
+  pageContent,
+  initialSearch,
 }: {
-  searchParams: { search?: string; q?: string };
+  pageContent: any;
+  initialSearch: string;
 }) {
   const supabase = await createClient();
 
   const [
     { data: destinationsData },
     { data: deletedSettingsData },
-    pageContent,
   ] = await Promise.all([
     supabase
       .from('destinations')
@@ -36,14 +43,12 @@ export default async function DestinationsPage({
       .order('sort_order', { ascending: true })
       .order('name', { ascending: true }),
     supabase.from('website_settings').select('key').like('key', 'deleted_destination_%'),
-    getDestinationsPageContent(),
   ]);
 
   const deletedKeys = new Set(
     (deletedSettingsData || []).map((s: { key: string }) => s.key.replace('deleted_destination_', ''))
   );
 
-  // Guarantee that is_deleted true destinations NEVER show on customer side
   const mappedDestinations: DestinationExplorerItem[] = (destinationsData ?? [])
     .filter((d: any) => d.is_deleted !== true && !deletedKeys.has(d.id))
     .map((d: any) => ({
@@ -59,8 +64,33 @@ export default async function DestinationsPage({
   return (
     <DestinationsExplorer
       initialDestinations={mappedDestinations}
-      initialSearch={searchParams.search ?? searchParams.q ?? ''}
+      initialSearch={initialSearch}
       pageContent={pageContent}
+      isLoading={false}
     />
+  );
+}
+
+export default async function DestinationsPage({
+  searchParams,
+}: {
+  searchParams: { search?: string; q?: string };
+}) {
+  const pageContent = await getDestinationsPageContent();
+  const initialSearch = searchParams.search ?? searchParams.q ?? '';
+
+  return (
+    <Suspense
+      fallback={
+        <DestinationsExplorer
+          initialDestinations={[]}
+          initialSearch={initialSearch}
+          pageContent={pageContent}
+          isLoading={true}
+        />
+      }
+    >
+      <DestinationsDataSection pageContent={pageContent} initialSearch={initialSearch} />
+    </Suspense>
   );
 }

@@ -34,6 +34,8 @@ export interface DestinationFilterItem {
   slug: string;
 }
 
+import { CardGridSkeleton } from '@/components/ui/skeleton';
+
 interface PackagesExplorerProps {
   initialPackages: PackageExplorerItem[];
   destinations: DestinationFilterItem[];
@@ -41,6 +43,7 @@ interface PackagesExplorerProps {
   initialDestination?: string;
   initialSearch?: string;
   pageContent?: PackagesPageContent;
+  isLoading?: boolean;
 }
 
 const ITEMS_PER_PAGE = 6;
@@ -63,6 +66,7 @@ export function PackagesExplorer({
   initialDestination = '',
   initialSearch = '',
   pageContent,
+  isLoading = false,
 }: PackagesExplorerProps) {
   const content = pageContent || DEFAULT_PACKAGES_PAGE_CONTENT;
   const [searchQuery, setSearchQuery] = useState(initialSearch);
@@ -359,7 +363,9 @@ export function PackagesExplorer({
 
       {/* ── 3. PACKAGES GRID & PAGINATION ── */}
       <section className="container-page py-10 sm:py-14 px-4">
-        {totalItems === 0 ? (
+        {isLoading ? (
+          <CardGridSkeleton count={6} />
+        ) : totalItems === 0 ? (
           <div className="rounded-3xl border border-dashed border-ink-200 bg-white p-12 text-center shadow-xs">
             <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-50 text-brand-600 mb-4">
               <Search className="h-6 w-6" />

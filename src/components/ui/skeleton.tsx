@@ -38,9 +38,15 @@ export function HeroSectionSkeleton() {
 /**
  * Skeleton for responsive 3-column card grid (packages, destinations, blogs)
  */
-export function CardGridSkeleton({ count = 6 }: { count?: number }) {
+export function CardGridSkeleton({
+  count = 6,
+  gridClassName = 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3',
+}: {
+  count?: number;
+  gridClassName?: string;
+}) {
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
+    <div className={cn('grid gap-6 sm:gap-8', gridClassName)}>
       {Array.from({ length: count }).map((_, i) => (
         <div
           key={i}

@@ -126,11 +126,11 @@ export async function middleware(request: NextRequest) {
     request.cookies.has(CUSTOMER_AUTH_COOKIE) ||
     request.cookies.has(`${CUSTOMER_AUTH_COOKIE}.0`);
 
-  // Retrieve admin user if on admin/staff-login routes or if admin cookie is present
+  // Retrieve admin user ONLY if visiting admin/staff-login routes AND admin cookie is present
   let adminUser = null;
   let isStaff = false;
 
-  if (isAdminRoute || isStaffLoginRoute || hasAdminCookie) {
+  if ((isAdminRoute || isStaffLoginRoute) && hasAdminCookie) {
     try {
       const { data: { user } } = await adminSupabase.auth.getUser();
       if (user) {
@@ -161,29 +161,34 @@ export async function middleware(request: NextRequest) {
     } catch {}
   }
 
-  // Retrieve customer user if on customer routes or if customer cookie is present
+  // Retrieve customer user if customer cookie is present and visiting customer-gated routes or admin routes
   let customerUser = null;
   let isCustomer = false;
 
-  if (isCustomerAuthRoute || isProtectedCustomerRoute || isBookingRoute || hasCustomerCookie) {
+  const needsCustomerCheck =
+    hasCustomerCookie &&
+    (isAdminRoute || isCustomerAuthRoute || isProtectedCustomerRoute || isBookingRoute);
+
+  if (needsCustomerCheck) {
     try {
       const { data: { user } } = await customerSupabase.auth.getUser();
       if (user) {
-        const { data: custAccount } = await customerSupabase
-          .from('customer_accounts')
-          .select('id')
-          .eq('id', user.id)
-          .maybeSingle();
+        const isCustomerMeta =
+          user.user_metadata?.is_customer_signup === 'true' ||
+          user.user_metadata?.is_customer_signup === true ||
+          user.user_metadata?.role === 'customer';
 
-        if (custAccount) {
+        if (isCustomerMeta) {
           customerUser = user;
           isCustomer = true;
         } else {
-          const isCustomerMeta =
-            user.user_metadata?.is_customer_signup === 'true' ||
-            user.user_metadata?.is_customer_signup === true ||
-            user.user_metadata?.role === 'customer';
-          if (isCustomerMeta) {
+          const { data: custAccount } = await customerSupabase
+            .from('customer_accounts')
+            .select('id')
+            .eq('id', user.id)
+            .maybeSingle();
+
+          if (custAccount) {
             customerUser = user;
             isCustomer = true;
           }

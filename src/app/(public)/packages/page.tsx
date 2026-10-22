@@ -1,19 +1,27 @@
+import { Suspense } from 'react';
 import { createClient } from '@/lib/supabase/server';
 import { PackagesExplorer, type PackageExplorerItem } from '@/components/public/packages-explorer';
 import { getPackagesPageContent } from '@/lib/packages-page-content';
+import { getPageTitlesContent } from '@/lib/page-titles-content';
 import type { Metadata } from 'next';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-export const metadata: Metadata = {
-  title: 'Packages | Handcrafted Holiday Tours & Retreats',
-  description: 'Browse our curated collection of holiday packages, authentic Ayurvedic retreats, and custom travel itineraries across India and beyond.',
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const titlesContent = await getPageTitlesContent();
+  const title = titlesContent.titles?.packages || 'Packages | Handcrafted Holiday Tours & Retreats';
+  return {
+    title: { absolute: title },
+    description: 'Browse our curated collection of holiday packages, authentic Ayurvedic retreats, and custom travel itineraries across India and beyond.',
+  };
+}
 
-export default async function PackagesPage({
+async function PackagesDataSection({
+  pageContent,
   searchParams,
 }: {
+  pageContent: any;
   searchParams: { destination?: string; category?: string; search?: string; q?: string };
 }) {
   const supabase = await createClient();
@@ -24,7 +32,6 @@ export default async function PackagesPage({
     { data: activeOffers },
     { data: destinations },
     { data: deletedSettingsData },
-    pageContent,
   ] = await Promise.all([
     supabase
       .from('travel_packages')
@@ -49,7 +56,6 @@ export default async function PackagesPage({
       .from('website_settings')
       .select('key')
       .like('key', 'deleted_package_%'),
-    getPackagesPageContent(),
   ]);
 
   const deletedKeys = new Set(
@@ -104,6 +110,33 @@ export default async function PackagesPage({
       initialDestination={searchParams.destination ?? ''}
       initialSearch={searchParams.search ?? searchParams.q ?? ''}
       pageContent={pageContent}
+      isLoading={false}
     />
+  );
+}
+
+export default async function PackagesPage({
+  searchParams,
+}: {
+  searchParams: { destination?: string; category?: string; search?: string; q?: string };
+}) {
+  const pageContent = await getPackagesPageContent();
+
+  return (
+    <Suspense
+      fallback={
+        <PackagesExplorer
+          initialPackages={[]}
+          destinations={[]}
+          initialCategory={searchParams.category ?? ''}
+          initialDestination={searchParams.destination ?? ''}
+          initialSearch={searchParams.search ?? searchParams.q ?? ''}
+          pageContent={pageContent}
+          isLoading={true}
+        />
+      }
+    >
+      <PackagesDataSection pageContent={pageContent} searchParams={searchParams} />
+    </Suspense>
   );
 }

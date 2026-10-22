@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition, useRef } from 'react';
+import { useState, useTransition, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Save,
@@ -52,6 +52,10 @@ export function NavbarFooterEditor({
   const darkLogoInputRef = useRef<HTMLInputElement>(null);
   const lightLogoInputRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    setContent(initialContent);
+  }, [initialContent]);
+
   // Helper to update navbar subfield
   function updateNavbar<K extends keyof NavbarFooterContent['navbar']>(
     field: K,
@@ -97,19 +101,26 @@ export function NavbarFooterEditor({
       fd.append('image', file);
       const res = await uploadNavbarLogoAction(fd);
       if (res.success && res.url) {
-        if (type === 'dark') {
-          updateNavbar('logo_image_url', res.url);
-        } else {
-          updateNavbar('logo_light_image_url', res.url);
-        }
-        if (content.navbar.logo_type === 'text') {
-          updateNavbar('logo_type', 'image');
+        const nextContent: NavbarFooterContent = {
+          ...content,
+          navbar: {
+            ...content.navbar,
+            [type === 'dark' ? 'logo_image_url' : 'logo_light_image_url']: res.url,
+            logo_type: 'image',
+          },
+        };
+        setContent(nextContent);
+        // Persist immediately to website_settings so live customer header is instantly updated
+        const saveRes = await saveNavbarFooterContentAction(nextContent);
+        if (saveRes.success && saveRes.data) {
+          setContent(saveRes.data);
         }
         toast.success(
           type === 'dark'
-            ? 'Scrolled Green logo uploaded successfully'
-            : 'Initial Load White logo uploaded successfully'
+            ? 'Scrolled Green logo uploaded and saved live!'
+            : 'Initial Load White logo uploaded and saved live!'
         );
+        router.refresh();
       } else {
         toast.error(res.error || 'Failed to upload logo');
       }
@@ -223,6 +234,9 @@ export function NavbarFooterEditor({
     startTransition(async () => {
       const res = await saveNavbarFooterContentAction(content);
       if (res.success) {
+        if (res.data) {
+          setContent(res.data);
+        }
         toast.success('Navbar and footer contents saved successfully! Live customer layout updated.');
         router.refresh();
       } else {
@@ -296,42 +310,8 @@ export function NavbarFooterEditor({
             </span>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="label">Logo Display Style</label>
-              <select
-                className="input"
-                value={content.navbar.logo_type}
-                onChange={(e) =>
-                  updateNavbar('logo_type', e.target.value as 'text' | 'image' | 'both')
-                }
-              >
-                <option value="image">Image Only (Custom Graphic Logos - Active)</option>
-                <option value="both">Both (Image Icon + Brand Name Text)</option>
-                <option value="text">Text Only (Brand Title)</option>
-              </select>
-              <p className="mt-1 text-[11px] text-ink-400">
-                Customer navbar displays the dual logo images (White logo on initial load, Green logo when scrolled).
-              </p>
-            </div>
-
-            <div>
-              <label className="label">Brand Name (Alt text & fallback)</label>
-              <input
-                type="text"
-                className="input"
-                value={content.navbar.logo_text}
-                onChange={(e) => updateNavbar('logo_text', e.target.value)}
-                placeholder="e.g. Travinco"
-              />
-              <p className="mt-1 text-[11px] text-ink-400">
-                Brand title used for accessibility, image alt tags, and footer.
-              </p>
-            </div>
-          </div>
-
           {/* Dual Logo Cards */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 pt-2">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 pt-1">
             {/* Logo 1: Scrolled / Solid Header Logo (Green logo for white background) */}
             <div className="rounded-xl border border-ink-200 bg-white p-4 space-y-3 shadow-2xs">
               <div className="flex items-center justify-between">
@@ -1058,7 +1038,7 @@ export function NavbarFooterEditor({
                     'Handpicked holidays and end-to-end trip planning, built around how you actually like to travel.'}
                 </p>
                 {content.footer.show_social && (
-                  <div className="mt-4 flex gap-3">
+                  <div className="mt-4 flex flex-wrap gap-3">
                     <span className="rounded-full bg-white/10 p-2 text-white/70 hover:bg-brand-600 hover:text-white cursor-pointer transition">
                       <Facebook className="h-4 w-4" />
                     </span>
@@ -1068,6 +1048,16 @@ export function NavbarFooterEditor({
                     <span className="rounded-full bg-white/10 p-2 text-white/70 hover:bg-brand-600 hover:text-white cursor-pointer transition">
                       <Twitter className="h-4 w-4" />
                     </span>
+                    {content.footer.social?.linkedin && (
+                      <span className="rounded-full bg-white/10 p-2 text-white/70 hover:bg-brand-600 hover:text-white cursor-pointer transition">
+                        <Linkedin className="h-4 w-4" />
+                      </span>
+                    )}
+                    {content.footer.social?.youtube && (
+                      <span className="rounded-full bg-white/10 p-2 text-white/70 hover:bg-brand-600 hover:text-white cursor-pointer transition">
+                        <Youtube className="h-4 w-4" />
+                      </span>
+                    )}
                   </div>
                 )}
               </div>

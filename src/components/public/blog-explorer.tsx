@@ -19,6 +19,7 @@ import {
 import type { BlogPageContent } from '@/lib/blog-page-content-types';
 import { DEFAULT_BLOG_PAGE_CONTENT } from '@/lib/blog-page-content-types';
 import { formatDate } from '@/lib/utils/format';
+import { CardGridSkeleton } from '@/components/ui/skeleton';
 
 export interface BlogExplorerPost {
   id: string;
@@ -33,6 +34,7 @@ export interface BlogExplorerPost {
 interface BlogExplorerProps {
   initialPosts: BlogExplorerPost[];
   pageContent?: BlogPageContent;
+  isLoading?: boolean;
 }
 
 const ITEMS_PER_PAGE = 7; // 1 featured + 6 grid on page 1, or 6 grid on subsequent pages
@@ -40,6 +42,7 @@ const ITEMS_PER_PAGE = 7; // 1 featured + 6 grid on page 1, or 6 grid on subsequ
 export function BlogExplorer({
   initialPosts,
   pageContent = DEFAULT_BLOG_PAGE_CONTENT,
+  isLoading = false,
 }: BlogExplorerProps) {
   const [currentPage, setCurrentPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState('');
@@ -192,7 +195,33 @@ export function BlogExplorer({
 
       {/* ── 3. EDITORIAL ARTICLES SECTION ── */}
       <div className="container-page pt-10 sm:pt-14">
-        {filteredPosts.length === 0 ? (
+        {isLoading ? (
+          <div className="space-y-12">
+            {/* Featured Story Skeleton */}
+            <div className="rounded-3xl border border-ink-100 bg-white shadow-lg overflow-hidden">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-0">
+                <div className="lg:col-span-7 min-h-[300px] sm:min-h-[380px] bg-ink-100 animate-pulse" />
+                <div className="lg:col-span-5 p-6 sm:p-10 flex flex-col justify-between space-y-6">
+                  <div className="space-y-4">
+                    <div className="h-4 w-32 rounded bg-ink-100 animate-pulse" />
+                    <div className="h-8 w-4/5 rounded-lg bg-ink-200/80 animate-pulse" />
+                    <div className="space-y-2">
+                      <div className="h-4 w-full rounded bg-ink-100 animate-pulse" />
+                      <div className="h-4 w-full rounded bg-ink-100 animate-pulse" />
+                      <div className="h-4 w-2/3 rounded bg-ink-100 animate-pulse" />
+                    </div>
+                  </div>
+                  <div className="pt-4 border-t border-ink-100 flex items-center justify-between">
+                    <div className="h-5 w-28 rounded bg-ink-100 animate-pulse" />
+                    <div className="h-8 w-8 rounded-full bg-ink-100 animate-pulse" />
+                  </div>
+                </div>
+              </div>
+            </div>
+            {/* Story Grid Skeleton */}
+            <CardGridSkeleton count={6} />
+          </div>
+        ) : filteredPosts.length === 0 ? (
           /* Empty state */
           <div className="rounded-3xl border border-dashed border-ink-200 bg-white p-12 sm:p-14 text-center space-y-4 shadow-xs max-w-xl mx-auto">
             <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-50 text-brand-600">

@@ -23,7 +23,7 @@ export function TestimonialsCarousel({ items }: TestimonialsCarouselProps) {
 
   const borders = [
     'border-t-brand-500',
-    'border-t-coral-500',
+    'border-t-emerald-500',
     'border-t-ocean-500',
     'border-t-sand-500',
   ];

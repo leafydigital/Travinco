@@ -42,28 +42,28 @@ export default async function BookingsPage() {
   // customers to view only their own bookings/enquiries matching their account).
   const supabase = await createClient();
 
-  // Matched by email — see migration 021's comment for why this join
-  // works even for bookings staff logged before the customer signed up.
-  const { data: customerRow } = await supabase
-    .from('customers')
-    .select('id')
-    .eq('email', account.email)
-    .maybeSingle();
-
-  const [{ data: bookings }, { data: enquiries }] = await Promise.all([
-    customerRow
-      ? supabase
-          .from('bookings')
-          .select('*, travel_packages(title, slug, cover_image_url)')
-          .eq('customer_id', customerRow.id)
-          .order('created_at', { ascending: false })
-      : Promise.resolve({ data: [] }),
+  // Run customer lookup and enquiries queries concurrently
+  const [customerRowRes, { data: enquiries }] = await Promise.all([
+    supabase
+      .from('customers')
+      .select('id')
+      .eq('email', account.email)
+      .maybeSingle(),
     supabase
       .from('enquiries')
       .select('*, travel_packages(title)')
       .eq('email', account.email)
       .order('created_at', { ascending: false }),
   ]);
+
+  const customerRow = customerRowRes.data;
+  const { data: bookings } = customerRow
+    ? await supabase
+        .from('bookings')
+        .select('*, travel_packages(title, slug, cover_image_url)')
+        .eq('customer_id', customerRow.id)
+        .order('created_at', { ascending: false })
+    : { data: [] };
 
   const bookingRows = bookings ?? [];
   // Only show enquiries that haven't already become one of the bookings

@@ -29,12 +29,17 @@ interface HeroSliderProps {
 
 export function HeroSlider({ slides, heroContent }: HeroSliderProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [mounted, setMounted] = useState(false);
   const totalSlides = slides.length;
 
   const eyebrow = heroContent?.eyebrow || 'Explore Beyond Boundaries';
   const title = heroContent?.title || 'Discover Asia with us';
   const buttonText = heroContent?.button_text || 'Learn More';
   const buttonLink = heroContent?.button_link || '/packages';
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const nextSlide = useCallback(() => {
     if (totalSlides === 0) return;
@@ -82,6 +87,10 @@ export function HeroSlider({ slides, heroContent }: HeroSliderProps) {
       <div className="absolute inset-0 z-0">
         {slides.map((slide, idx) => {
           const isActive = idx === currentIndex;
+          // Prioritize first slide on initial paint to maximize speed; mount remaining slides smoothly
+          const shouldRender = idx === 0 || mounted;
+          if (!shouldRender) return null;
+
           return (
             <div
               key={slide.id || idx}
@@ -90,7 +99,7 @@ export function HeroSlider({ slides, heroContent }: HeroSliderProps) {
               }`}
             >
               <div
-                className={`relative h-full w-full transition-transform duration-[7500ms] ease-out ${
+                className={`relative h-full w-full transform-gpu transition-transform duration-[7500ms] ease-out ${
                   isActive ? 'scale-105' : 'scale-100'
                 }`}
               >
@@ -99,34 +108,34 @@ export function HeroSlider({ slides, heroContent }: HeroSliderProps) {
                   alt={slide.title || 'Travel destination'}
                   fill
                   priority={idx === 0}
-                  className="object-cover object-center"
+                  loading={idx === 0 ? 'eager' : 'lazy'}
+                  unoptimized
+                  className="object-cover object-center brightness-[0.78] contrast-[1.05]"
                   sizes="100vw"
-                  quality={90}
                 />
               </div>
 
-              {/* Multi-layered Gradients for Deep Contrast & Pure White Text Readability */}
-              <div className="absolute inset-0 bg-gradient-to-t from-navy-950/90 via-navy-950/40 to-navy-950/60" />
-              <div className="absolute inset-0 bg-black/40" />
+              {/* Subtle tint to gently lower brightness so text is easily readable */}
+              <div className="absolute inset-0 bg-black/20 pointer-events-none" />
             </div>
           );
         })}
       </div>
 
-      {/* ── Centered Main Hero Text (Pure White, No AI Symbol) ── */}
+      {/* ── Centered Main Hero Text (Clean Pure White, No Shadow) ── */}
       <div className="container-page relative z-20 text-center flex flex-col items-center justify-center px-4 pt-16">
-        <p className="text-sm sm:text-base md:text-lg font-semibold tracking-widest uppercase text-white drop-shadow-md mb-4 sm:mb-6">
+        <p className="text-sm sm:text-base md:text-lg font-semibold tracking-widest uppercase text-white mb-4 sm:mb-6">
           {eyebrow}
         </p>
 
-        <h1 className="font-display text-4xl sm:text-6xl md:text-7xl lg:text-8xl font-bold tracking-tight text-white drop-shadow-2xl max-w-5xl leading-[1.08] uppercase">
+        <h1 className="font-display text-4xl sm:text-6xl md:text-7xl lg:text-8xl font-bold tracking-tight text-white max-w-5xl leading-[1.08] uppercase">
           {title}
         </h1>
 
         <div className="pt-6 sm:pt-8">
           <Link
             href={buttonLink}
-            className="btn-cta inline-flex items-center gap-2 px-9 py-4 text-base font-semibold shadow-2xl hover:shadow-coral-500/30 transition-all rounded-full"
+            className="btn-cta inline-flex items-center gap-2 px-9 py-4 text-base font-semibold shadow-2xl hover:shadow-emerald-600/30 transition-all rounded-full"
           >
             <span>{buttonText}</span>
             <ArrowRight className="h-4 w-4" />

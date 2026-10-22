@@ -6,6 +6,7 @@ import { destinationSchema } from '@/lib/validations/settings';
 import { slugify } from '@/lib/validations/package';
 import { revalidatePath } from 'next/cache';
 import type { ContentStatus } from '@/types/database';
+import { invalidateTourMastersCache } from '@/lib/tour/data';
 
 export async function createDestination(raw: unknown) {
   const profile = await requireProfile();
@@ -28,6 +29,7 @@ export async function createDestination(raw: unknown) {
   }
 
   revalidatePath('/travinco_dashboard/destinations');
+  invalidateTourMastersCache();
   return { id: data.id };
 }
 
@@ -50,6 +52,7 @@ export async function updateDestination(id: string, raw: unknown) {
   revalidatePath('/travinco_dashboard/destinations');
   revalidatePath(`/travinco_dashboard/destinations/${id}`);
   revalidatePath('/destinations');
+  invalidateTourMastersCache();
   return {};
 }
 
@@ -63,6 +66,7 @@ export async function setDestinationStatus(id: string, status: ContentStatus) {
   if (error) return { error: 'Could not update status.' };
   revalidatePath('/travinco_dashboard/destinations');
   revalidatePath('/destinations');
+  invalidateTourMastersCache();
   return {};
 }
 
@@ -92,6 +96,7 @@ export async function toggleDestinationActive(id: string, currentlyActive: boole
 
   revalidatePath('/travinco_dashboard/destinations');
   revalidatePath('/destinations');
+  invalidateTourMastersCache();
   return {};
 }
 
@@ -150,6 +155,7 @@ export async function deleteDestination(id: string) {
   revalidatePath('/travinco_dashboard/destinations');
   revalidatePath('/travinco_dashboard');
   revalidatePath('/destinations');
+  invalidateTourMastersCache();
   return {};
 }
 
@@ -229,6 +235,7 @@ export async function bulkCreateDestinations(
   revalidatePath('/travinco_dashboard/destinations');
   revalidatePath('/travinco_dashboard');
   revalidatePath('/destinations');
+  invalidateTourMastersCache();
 
   return { count: data?.length ?? payload.length, ids: (data || []).map((d: any) => d.id) };
 }

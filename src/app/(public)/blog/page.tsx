@@ -1,45 +1,44 @@
+import { Suspense } from 'react';
 import { createClient } from '@/lib/supabase/server';
 import { BlogExplorer, type BlogExplorerPost } from '@/components/public/blog-explorer';
 import { getBlogPageContent } from '@/lib/blog-page-content';
+import { getPageTitlesContent } from '@/lib/page-titles-content';
 import type { Metadata } from 'next';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-export const metadata: Metadata = {
-  title: 'Blog & Travel Stories | Travinco',
-  description:
-    'Explore inspiring travel guides, wellness retreats, cultural journeys, and practical tips from the field curated by Travinco specialists.',
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const titlesContent = await getPageTitlesContent();
+  const title = titlesContent.titles?.blog || 'Blog & Travel Stories | Travinco';
+  return {
+    title: { absolute: title },
+    description:
+      'Explore inspiring travel guides, wellness retreats, cultural journeys, and practical tips from the field curated by Travinco specialists.',
+  };
+}
 
-export default async function BlogListPage({
-  searchParams,
-}: {
-  searchParams: { search?: string; q?: string };
-}) {
+async function BlogPostsSection({ pageContent }: { pageContent: any }) {
   const supabase = await createClient();
 
   const [
     { data: postsData },
     { data: deletedSettingsData },
-    pageContent,
   ] = await Promise.all([
     supabase
       .from('blog_posts')
-      .select('id, title, slug, excerpt, cover_image_url, created_at, status, is_deleted')
+      .select('id, title, slug, excerpt, cover_image_url, created_at, status')
       .eq('status', 'published')
       .order('created_at', { ascending: false }),
     supabase.from('website_settings').select('key').like('key', 'deleted_blog_%'),
-    getBlogPageContent(),
   ]);
 
   const deletedKeys = new Set(
     (deletedSettingsData || []).map((s: { key: string }) => s.key.replace('deleted_blog_', ''))
   );
 
-  // Guarantee that deleted posts never show on customer side
   const mappedPosts: BlogExplorerPost[] = (postsData ?? [])
-    .filter((p: any) => p.is_deleted !== true && !deletedKeys.has(p.id))
+    .filter((p: any) => !deletedKeys.has(p.id))
     .map((p: any) => ({
       id: p.id,
       title: p.title,
@@ -49,10 +48,19 @@ export default async function BlogListPage({
       created_at: p.created_at,
     }));
 
+  return <BlogExplorer initialPosts={mappedPosts} pageContent={pageContent} isLoading={false} />;
+}
+
+export default async function BlogListPage() {
+  const pageContent = await getBlogPageContent();
+
   return (
-    <BlogExplorer
-      initialPosts={mappedPosts}
-      pageContent={pageContent}
-    />
+    <Suspense
+      fallback={
+        <BlogExplorer initialPosts={[]} pageContent={pageContent} isLoading={true} />
+      }
+    >
+      <BlogPostsSection pageContent={pageContent} />
+    </Suspense>
   );
 }

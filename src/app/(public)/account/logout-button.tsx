@@ -1,20 +1,17 @@
 'use client';
 
-import { useTransition } from 'react';
 import { LogOut } from 'lucide-react';
-import { logOutCustomer } from './actions';
+import { fastCustomerLogOut } from '@/lib/supabase/customer-signout';
 
 export function LogOutButton() {
-  const [isPending, startTransition] = useTransition();
-
   return (
     <button
       type="button"
-      onClick={() => startTransition(() => logOutCustomer())}
-      disabled={isPending}
+      onClick={() => fastCustomerLogOut()}
       className="btn-outline"
     >
       <LogOut className="h-4 w-4" /> Log out
     </button>
   );
 }
+

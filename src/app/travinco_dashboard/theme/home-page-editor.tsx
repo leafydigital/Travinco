@@ -738,15 +738,13 @@ export function HomePageEditor({
                 src={heroImages[0]!.image_url}
                 alt="Hero preview"
                 fill
-                className="object-cover"
+                unoptimized
+                className="object-cover brightness-[0.78] contrast-[1.05]"
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-navy-950/90 via-navy-950/40 to-navy-950/60" />
-              <div className="absolute inset-0 bg-black/40" />
+              <div className="absolute inset-0 bg-black/20 pointer-events-none" />
             </div>
           ) : (
-            <div className="absolute inset-0 z-0 bg-gradient-to-r from-brand-900 to-navy-950">
-              <div className="absolute inset-0 bg-black/40" />
-            </div>
+            <div className="absolute inset-0 z-0 bg-gradient-to-r from-brand-900 to-navy-950" />
           )}
 
           <div className="relative z-10 max-w-2xl space-y-3">
@@ -754,7 +752,7 @@ export function HomePageEditor({
               {content.hero.eyebrow || 'Explore Beyond Boundaries'}
             </span>
 
-            <h1 className="font-display text-2xl sm:text-4xl md:text-5xl font-bold uppercase tracking-tight text-white drop-shadow-xl leading-tight">
+            <h1 className="font-display text-2xl sm:text-4xl md:text-5xl font-bold uppercase tracking-tight text-white leading-tight">
               {content.hero.title || 'Discover Asia with us'}
             </h1>
 

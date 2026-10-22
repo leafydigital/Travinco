@@ -33,6 +33,7 @@ import {
   hotelsIn,
   inr,
   inputsFromTemplate,
+  isLocationInDestination,
   locName,
   newStay,
   num,
@@ -148,14 +149,17 @@ export function QuotationBuilder({
     inputs.template_id ? String(inputs.template_id) : ''
   );
 
-  // 1. Build list of destinations from DB destinations table + locations.state
+  // 1. Build list of destinations strictly from Destinations page (m.destinations)
   const destinationOptions = useMemo(() => {
-    const map = new Map<string, string>();
-    if (m.destinations) {
+    if (m.destinations && m.destinations.length > 0) {
+      const map = new Map<string, string>();
       for (const d of m.destinations) {
         if (d?.name?.trim()) map.set(d.name.trim().toLowerCase(), d.name.trim());
       }
+      return Array.from(map.values()).sort((a, b) => a.localeCompare(b));
     }
+    // Fallback only if no destinations exist in the system at all
+    const map = new Map<string, string>();
     for (const l of m.locations) {
       if (l?.state?.trim()) map.set(l.state.trim().toLowerCase(), l.state.trim());
     }
@@ -174,8 +178,25 @@ export function QuotationBuilder({
       const destSet = new Set<string>();
       for (const locId of locationIds) {
         const loc = m.locations.find((l) => l.id === locId);
-        if (loc?.state?.trim()) {
-          destSet.add(loc.state.trim());
+        if (loc) {
+          const state = loc.state?.trim();
+          if (state) {
+            const matched = destinationOptions.find(
+              (d) =>
+                d.toLowerCase() === state.toLowerCase() ||
+                d.toLowerCase().includes(state.toLowerCase()) ||
+                state.toLowerCase().includes(d.toLowerCase())
+            );
+            if (matched) destSet.add(matched);
+            else destSet.add(state);
+          }
+          const locName = loc.name?.trim();
+          if (locName) {
+            const matched = destinationOptions.find(
+              (d) => d.toLowerCase() === locName.toLowerCase()
+            );
+            if (matched) destSet.add(matched);
+          }
         }
       }
       // Also match destination names appearing in template title
@@ -201,16 +222,9 @@ export function QuotationBuilder({
     if (!selectedDestination) {
       return [];
     }
-    const destLower = selectedDestination.toLowerCase().trim();
     return m.locations.filter((l) => {
       if (!l.is_active) return false;
-      const state = l.state?.toLowerCase().trim();
-      if (state && (state === destLower || destLower.includes(state) || state.includes(destLower))) {
-        return true;
-      }
-      const name = l.name.toLowerCase().trim();
-      const disp = (l.display_name || '').toLowerCase().trim();
-      return name === destLower || disp === destLower;
+      return isLocationInDestination(l, selectedDestination, m.locations);
     });
   }, [m.locations, selectedDestination]);
 
