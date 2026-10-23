@@ -125,8 +125,8 @@ export function InvoiceDocument({
   // Build UPI URI encoding invoice total balance amount
   const upiId = cfg.bank_upi_id || 'travinco1@fdl';
   const accName = cfg.bank_account_name || s.company_name || 'Travinco Travel Solutions';
-  const totalAmt = Number(inv.total_amount).toFixed(2);
-  const upiUri = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(accName)}&am=${totalAmt}&cu=INR&tn=${encodeURIComponent(`Invoice ${inv.invoice_number}`)}`;
+  const totalAmt = Number(inv.total_amount) || 0;
+  const upiUri = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(accName)}&am=${totalAmt.toFixed(2)}&cu=INR&tn=${encodeURIComponent(`Invoice ${inv.invoice_number}`)}`;
 
   const [qrSrc, setQrSrc] = useState<string>(
     cfg.qr_code_mode === 'custom_image' && cfg.custom_qr_url
@@ -158,19 +158,67 @@ export function InvoiceDocument({
     };
   }, [upiUri, cfg.qr_code_mode, cfg.custom_qr_url]);
 
-  // Line items formatting
-  const hasItems = Array.isArray(inv.items) && inv.items.length > 0;
-  const items = hasItems
-    ? inv.items
-    : [
-        {
-          description: `Land Package Services for Kerala Tour${inv.travel_start ? `\nFrom ${d(inv.travel_start)} to ${d(inv.travel_end)} Inclusive of all taxes` : ' Inclusive of all taxes'}`,
-          sac: s.sac_code || '998555',
-          qty: 1,
-          rate: Number(inv.total_amount),
-          amount: Number(inv.total_amount),
-        },
-      ];
+  // Line items formatting: ensure the invoice always shows the total price everywhere
+  const rawItems = Array.isArray(inv.items) && inv.items.length > 0 ? inv.items : [];
+
+  let items: { description: string; sac: string; qty: number; rate: number; amount: number }[] = [];
+
+  if (rawItems.length === 0) {
+    items = [
+      {
+        description: `Land Package Services for Kerala Tour${inv.travel_start ? `\nFrom ${d(inv.travel_start)} to ${d(inv.travel_end)} Inclusive of all taxes` : ' Inclusive of all taxes'}`,
+        sac: s.sac_code || '998555',
+        qty: 1,
+        rate: totalAmt,
+        amount: totalAmt,
+      },
+    ];
+  } else if (rawItems.length === 1 && rawItems[0]) {
+    const it = rawItems[0];
+    const qty = Number(it.qty) || 1;
+    items = [
+      {
+        description: it.description,
+        sac: it.sac || s.sac_code || '998555',
+        qty: qty,
+        rate: qty > 0 ? Math.round((totalAmt / qty) * 100) / 100 : totalAmt,
+        amount: totalAmt,
+      },
+    ];
+  } else {
+    // If multiple items, ensure their sum matches totalAmt; if not, scale them so the sum equals totalAmt
+    const currentSum = rawItems.reduce(
+      (acc, it) => acc + (Number(it.amount) || (Number(it.rate) || 0) * (Number(it.qty) || 1)),
+      0
+    );
+    if (currentSum > 0 && Math.abs(currentSum - totalAmt) > 0.5) {
+      const scale = totalAmt / currentSum;
+      let running = 0;
+      items = rawItems.map((it, idx) => {
+        const isLast = idx === rawItems.length - 1;
+        const qty = Number(it.qty) || 1;
+        const itemAmt = isLast
+          ? Math.round((totalAmt - running) * 100) / 100
+          : Math.round((Number(it.amount) || (Number(it.rate) || 0) * qty) * scale * 100) / 100;
+        running += itemAmt;
+        return {
+          description: it.description,
+          sac: it.sac || s.sac_code || '998555',
+          qty: qty,
+          rate: qty > 0 ? Math.round((itemAmt / qty) * 100) / 100 : itemAmt,
+          amount: itemAmt,
+        };
+      });
+    } else {
+      items = rawItems.map((it) => ({
+        description: it.description,
+        sac: it.sac || s.sac_code || '998555',
+        qty: Number(it.qty) || 1,
+        rate: Number(it.rate) || 0,
+        amount: Number(it.amount) || (Number(it.rate) || 0) * (Number(it.qty) || 1),
+      }));
+    }
+  }
 
   const totalQty = items.reduce((sum, it) => sum + (Number(it.qty) || 1), 0);
 

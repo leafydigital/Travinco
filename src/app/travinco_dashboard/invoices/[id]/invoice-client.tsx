@@ -113,7 +113,15 @@ function InvoiceEditor({ id, inv, companyState, onClose }: { id: string; inv: In
     markup_pct: String(inv.markup_pct ?? 15),
     markup_amount: String(inv.markup_amount ?? ''),
   });
-  const [items, setItems] = useState(inv.items.map((i) => ({ description: i.description, sac: i.sac, qty: String(i.qty), rate: String(i.rate) })));
+  const [items, setItems] = useState(
+    inv.items.map((i) => {
+      const isSingle = inv.items.length === 1;
+      const rateVal = isSingle && Math.abs(Number(i.rate) * (Number(i.qty) || 1) - Number(inv.total_amount)) > 1
+        ? Number(inv.total_amount) / (Number(i.qty) || 1)
+        : Number(i.rate);
+      return { description: i.description, sac: i.sac, qty: String(i.qty), rate: String(rateVal) };
+    })
+  );
   const set = (k: keyof typeof f, v: string) => setF((s) => ({ ...s, [k]: v }));
   const subtotal = items.reduce((a, i) => a + (Number(i.qty) || 0) * (Number(i.rate) || 0), 0);
   const taxable = Math.max(0, subtotal - (Number(f.discount) || 0));

@@ -26,7 +26,7 @@ export default async function AccountPage() {
             </div>
             <div>
               <p className="font-medium text-ink-900">My bookings</p>
-              <p className="text-sm text-ink-500">Trip &amp; quote history</p>
+              <p className="text-sm text-ink-500">Trip &amp; invoice history</p>
             </div>
           </div>
           <ArrowRight className="h-4 w-4 text-ink-400" />

@@ -78,8 +78,8 @@ export async function convertQuotationToInvoice(quotationId: string, option: 1 |
         `Travel ${q.start_date} to ${q.end_date}; ${snap?.guests_line ?? `${q.adults} adults`}. Ref ${q.quote_number}.`,
       sac: settings.sac_code || '998555',
       qty: 1,
-      rate: taxable,
-      amount: taxable,
+      rate: total,
+      amount: total,
     },
   ];
 
@@ -105,9 +105,9 @@ export async function convertQuotationToInvoice(quotationId: string, option: 1 |
     travel_start: q.start_date,
     travel_end: q.end_date,
     items,
-    subtotal: taxable,
+    subtotal: total,
     discount: 0,
-    taxable_amount: taxable,
+    taxable_amount: total,
     gst_pct: gstPct,
     tax_mode: mode,
     cgst_amount: t.cgst,
