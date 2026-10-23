@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useState, useEffect, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, Save } from 'lucide-react';
 import { TextField, TextAreaField, SelectField } from '@/components/ui/form-fields';
 import { StringListEditor } from '@/components/admin/string-list-editor';
 import { packageCategories, slugify, type PackageFormValues } from '@/lib/validations/package';
+import { ConfirmDeleteDialog } from '@/components/admin/confirm-delete-dialog';
 import { createPackage, updatePackage } from './actions';
 import { uploadPackageImage } from './upload-actions';
 
@@ -30,6 +31,13 @@ export function PackageForm({
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+
+  useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent('package-form-saving', { detail: { isSaving: isPending } })
+    );
+  }, [isPending]);
+
   const [slugTouched, setSlugTouched] = useState(Boolean(packageId));
   const [showSeoFields, setShowSeoFields] = useState(Boolean(packageId));
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -37,9 +45,11 @@ export function PackageForm({
   const [isUploading, setIsUploading] = useState(false);
   const [videoUrlsText, setVideoUrlsText] = useState('');
   const [itineraryDays, setItineraryDays] = useState<DraftItineraryDay[]>([]);
+  const [dayToDeleteIndex, setDayToDeleteIndex] = useState<number | null>(null);
   const [inclusionsList, setInclusionsList] = useState<string[]>([]);
   const [exclusionsList, setExclusionsList] = useState<string[]>([]);
   const [faqsList, setFaqsList] = useState<{ question: string; answer: string }[]>([]);
+  const [faqToDeleteIndex, setFaqToDeleteIndex] = useState<number | null>(null);
 
   const [values, setValues] = useState<Partial<PackageFormValues>>({
     category: 'other',
@@ -163,7 +173,7 @@ export function PackageForm({
   }
 
   return (
-    <form id="package-form" onSubmit={(e) => handleSubmit(e, false)} className="space-y-6">
+    <form id="package-form" noValidate onSubmit={(e) => handleSubmit(e, false)} className="space-y-6">
       <div className="card space-y-4 p-5">
         <h2 className="text-sm font-semibold text-ink-800">Basic information</h2>
         <div className="grid gap-4 sm:grid-cols-2">
@@ -365,9 +375,11 @@ export function PackageForm({
                 <p className="text-sm font-semibold text-brand-700">Day {day.day_number}</p>
                 <button
                   type="button"
-                  onClick={() => removeItineraryDay(i)}
-                  className="text-coral-500 hover:text-coral-700"
+                  data-no-confirm-save="true"
+                  onClick={() => setDayToDeleteIndex(i)}
+                  className="rounded-lg p-1.5 text-coral-500 hover:bg-coral-50 hover:text-coral-700 transition cursor-pointer"
                   aria-label="Remove day"
+                  title="Remove this day"
                 >
                   <Trash2 className="h-4 w-4" />
                 </button>
@@ -425,9 +437,11 @@ export function PackageForm({
                 </p>
                 <button
                   type="button"
-                  onClick={() => removeFaq(i)}
-                  className="text-coral-500 hover:text-coral-700"
+                  data-no-confirm-save="true"
+                  onClick={() => setFaqToDeleteIndex(i)}
+                  className="rounded-lg p-1.5 text-coral-500 hover:bg-coral-50 hover:text-coral-700 transition cursor-pointer"
                   aria-label="Remove question"
+                  title="Remove this question"
                 >
                   <Trash2 className="h-4 w-4" />
                 </button>
@@ -531,6 +545,22 @@ export function PackageForm({
         )}
       </div>
 
+      {packageId && (
+        <div className="flex items-center justify-between rounded-2xl bg-white p-4 border border-ink-200 shadow-xs">
+          <p className="text-xs text-ink-500 font-medium">
+            Saves package title, pricing, duration, descriptions, highlights, and SEO fields.
+          </p>
+          <button
+            type="submit"
+            className="btn-primary inline-flex items-center gap-2 px-5 py-2.5 text-xs font-bold rounded-xl"
+            disabled={isPending}
+          >
+            <Save className="h-4 w-4" />
+            <span>{isPending ? 'Saving changes…' : 'Save Package Details'}</span>
+          </button>
+        </div>
+      )}
+
       {!packageId && (
         <div className="space-y-2">
           {uploadedUrls.length === 0 && (
@@ -554,6 +584,71 @@ export function PackageForm({
           </div>
         </div>
       )}
+
+      {/* Itinerary Day Delete Confirmation Dialog */}
+      <ConfirmDeleteDialog
+        isOpen={dayToDeleteIndex !== null}
+        title="Remove Itinerary Day"
+        description={
+          dayToDeleteIndex !== null && itineraryDays[dayToDeleteIndex] ? (
+            <div className="space-y-2 text-left">
+              <p className="text-sm text-ink-700">
+                Are you sure you want to remove{' '}
+                <strong>Day {itineraryDays[dayToDeleteIndex].day_number}</strong>
+                {itineraryDays[dayToDeleteIndex].title
+                  ? `: "${itineraryDays[dayToDeleteIndex].title}"`
+                  : ''}{' '}
+                from this package itinerary?
+              </p>
+              <p className="text-xs text-ink-500">
+                Subsequent days will automatically be renumbered.
+              </p>
+            </div>
+          ) : (
+            <p className="text-sm text-ink-700">
+              Are you sure you want to remove this itinerary day? Subsequent days will automatically be renumbered.
+            </p>
+          )
+        }
+        confirmLabel="Remove Day"
+        onConfirm={() => {
+          if (dayToDeleteIndex !== null) {
+            removeItineraryDay(dayToDeleteIndex);
+            setDayToDeleteIndex(null);
+            toast.success('Itinerary day removed');
+          }
+        }}
+        onClose={() => setDayToDeleteIndex(null)}
+      />
+
+      {/* FAQ Delete Confirmation Dialog */}
+      <ConfirmDeleteDialog
+        isOpen={faqToDeleteIndex !== null}
+        title="Remove FAQ"
+        description={
+          faqToDeleteIndex !== null && faqsList[faqToDeleteIndex] ? (
+            <div className="space-y-2 text-left">
+              <p className="text-sm text-ink-700">
+                Are you sure you want to remove this FAQ?
+              </p>
+              {faqsList[faqToDeleteIndex].question && (
+                <p className="rounded-lg bg-ink-50 p-2.5 text-xs font-semibold text-ink-800">
+                  &ldquo;{faqsList[faqToDeleteIndex].question}&rdquo;
+                </p>
+              )}
+            </div>
+          ) : null
+        }
+        confirmLabel="Remove FAQ"
+        onConfirm={() => {
+          if (faqToDeleteIndex !== null) {
+            removeFaq(faqToDeleteIndex);
+            setFaqToDeleteIndex(null);
+            toast.success('FAQ removed');
+          }
+        }}
+        onClose={() => setFaqToDeleteIndex(null)}
+      />
     </form>
   );
 }

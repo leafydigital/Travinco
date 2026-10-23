@@ -356,3 +356,70 @@ export async function reorderPackageVideo(
   revalidatePath(`/admin/packages/${packageId}`);
   return {};
 }
+
+const faqSchema = z.object({
+  question: z.string().min(1, 'Question cannot be empty').max(300),
+  answer: z.string().min(1, 'Answer cannot be empty'),
+});
+
+export async function addFaq(
+  packageId: string,
+  raw: { question: string; answer: string }
+) {
+  const permCheck = await checkEditPermission();
+  if (permCheck.error) return { error: permCheck.error };
+  const parsed = faqSchema.safeParse(raw);
+  if (!parsed.success) return { error: 'Question and answer cannot be empty.' };
+
+  const supabase = await createClient();
+  const { count } = await supabase
+    .from('package_faqs')
+    .select('id', { count: 'exact', head: true })
+    .eq('package_id', packageId);
+
+  const { error } = await supabase.from('package_faqs').insert({
+    package_id: packageId,
+    question: parsed.data.question,
+    answer: parsed.data.answer,
+    sort_order: count ?? 0,
+  });
+
+  if (error) return { error: 'Could not add FAQ.' };
+  revalidatePath(`/admin/packages/${packageId}`);
+  return {};
+}
+
+export async function updateFaq(
+  packageId: string,
+  id: string,
+  raw: { question: string; answer: string }
+) {
+  const permCheck = await checkEditPermission();
+  if (permCheck.error) return { error: permCheck.error };
+  const parsed = faqSchema.safeParse(raw);
+  if (!parsed.success) return { error: 'Question and answer cannot be empty.' };
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from('package_faqs')
+    .update({
+      question: parsed.data.question,
+      answer: parsed.data.answer,
+    })
+    .eq('id', id);
+
+  if (error) return { error: 'Could not update FAQ.' };
+  revalidatePath(`/admin/packages/${packageId}`);
+  return {};
+}
+
+export async function removeFaq(packageId: string, id: string) {
+  const permCheck = await checkEditPermission();
+  if (permCheck.error) return { error: permCheck.error };
+  const supabase = await createClient();
+  const { error } = await supabase.from('package_faqs').delete().eq('id', id);
+  if (error) return { error: 'Could not remove FAQ.' };
+  revalidatePath(`/admin/packages/${packageId}`);
+  return {};
+}
+

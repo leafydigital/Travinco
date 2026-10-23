@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
 import { Plus, Trash2, Pencil } from 'lucide-react';
 import { TextField, TextAreaField } from '@/components/ui/form-fields';
+import { ConfirmDeleteDialog } from '@/components/admin/confirm-delete-dialog';
 import { replaceItineraryDay, deleteItineraryDay } from '../sub-resource-actions';
 import type { Tables } from '@/types/database';
 
@@ -21,6 +22,7 @@ export function ItineraryManager({
   const [isPending, startTransition] = useTransition();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
+  const [dayToDelete, setDayToDelete] = useState<ItineraryDay | null>(null);
   const [draft, setDraft] = useState({
     day_number: days.length + 1,
     title: '',
@@ -77,14 +79,15 @@ export function ItineraryManager({
     });
   }
 
-  function remove(dayId: string) {
-    if (!confirm('Remove this itinerary day?')) return;
+  function handleDeleteConfirm(day: ItineraryDay) {
     startTransition(async () => {
-      const result = await deleteItineraryDay(packageId, dayId);
+      const result = await deleteItineraryDay(packageId, day.id);
       if (result.error) {
         toast.error(result.error);
         return;
       }
+      toast.success(`Day ${day.day_number} removed`);
+      setDayToDelete(null);
       router.refresh();
     });
   }
@@ -118,9 +121,11 @@ export function ItineraryManager({
               </button>
               <button
                 type="button"
-                onClick={() => remove(day.id)}
-                className="rounded-lg p-1.5 text-ink-400 hover:bg-red-50 hover:text-red-600"
+                data-no-confirm-save="true"
+                onClick={() => setDayToDelete(day)}
+                className="rounded-lg p-1.5 text-ink-400 hover:bg-red-50 hover:text-red-600 transition cursor-pointer"
                 aria-label="Delete day"
+                title="Remove this day"
               >
                 <Trash2 className="h-4 w-4" />
               </button>
@@ -189,6 +194,34 @@ export function ItineraryManager({
           <Plus className="h-4 w-4" /> Add itinerary day
         </button>
       )}
+
+      {/* Itinerary Day Delete Confirmation Dialog */}
+      <ConfirmDeleteDialog
+        isOpen={Boolean(dayToDelete)}
+        isPending={isPending}
+        title="Remove Itinerary Day"
+        description={
+          dayToDelete ? (
+            <div className="space-y-2 text-left">
+              <p className="text-sm text-ink-700">
+                Are you sure you want to remove{' '}
+                <strong>Day {dayToDelete.day_number}</strong>
+                {dayToDelete.title ? `: "${dayToDelete.title}"` : ''} from this package?
+              </p>
+              <p className="text-xs text-ink-500">
+                This will delete this day and its details permanently.
+              </p>
+            </div>
+          ) : null
+        }
+        confirmLabel="Remove Day"
+        onConfirm={() => {
+          if (dayToDelete) {
+            handleDeleteConfirm(dayToDelete);
+          }
+        }}
+        onClose={() => setDayToDelete(null)}
+      />
     </div>
   );
 }

@@ -41,27 +41,62 @@ export function SaveConfirmationProvider({ children }: { children?: React.ReactN
       return;
     }
 
-    if (pending.isFormSubmit && pending.form) {
-      pending.form.dataset.confirmedSave = 'true';
-      if (typeof pending.form.requestSubmit === 'function') {
-        pending.form.requestSubmit(
-          pending.element instanceof HTMLButtonElement || pending.element instanceof HTMLInputElement
-            ? pending.element
-            : undefined
-        );
-      } else {
-        pending.form.submit();
+    const targetEl = pending.element;
+    const targetForm =
+      pending.form ||
+      (targetEl instanceof HTMLButtonElement || targetEl instanceof HTMLInputElement
+        ? targetEl.form ||
+          (targetEl.getAttribute('form')
+            ? (document.getElementById(targetEl.getAttribute('form')!) as HTMLFormElement | null)
+            : null)
+        : null);
+
+    // Mark confirmedSave flag on both element and form
+    if (targetEl) targetEl.dataset.confirmedSave = 'true';
+    if (targetForm) targetForm.dataset.confirmedSave = 'true';
+
+    const isSubmitAction =
+      pending.isFormSubmit ||
+      (targetEl &&
+        (targetEl as HTMLButtonElement).type === 'submit' &&
+        Boolean(targetForm));
+
+    if (targetForm && isSubmitAction) {
+      const isDescendant = Boolean(targetEl && targetForm.contains(targetEl));
+      const submitter =
+        isDescendant &&
+        (targetEl instanceof HTMLButtonElement || targetEl instanceof HTMLInputElement)
+          ? targetEl
+          : undefined;
+
+      let submitted = false;
+      if (typeof targetForm.requestSubmit === 'function') {
+        try {
+          targetForm.requestSubmit(submitter);
+          submitted = true;
+        } catch {
+          try {
+            targetForm.requestSubmit();
+            submitted = true;
+          } catch {
+            // will fallback below
+          }
+        }
       }
-      setTimeout(() => {
-        if (pending.form) delete pending.form.dataset.confirmedSave;
-      }, 200);
-    } else if (pending.element) {
-      pending.element.dataset.confirmedSave = 'true';
-      pending.element.click();
-      setTimeout(() => {
-        if (pending.element) delete pending.element.dataset.confirmedSave;
-      }, 200);
+
+      if (!submitted) {
+        // Dispatch synthetic submit event for React 18 form handlers
+        const submitEvt = new Event('submit', { bubbles: true, cancelable: true });
+        targetForm.dispatchEvent(submitEvt);
+      }
+    } else if (targetEl) {
+      targetEl.click();
     }
+
+    setTimeout(() => {
+      if (targetEl) delete targetEl.dataset.confirmedSave;
+      if (targetForm) delete targetForm.dataset.confirmedSave;
+    }, 1200);
 
     pendingActionRef.current = null;
     setIsOpen(false);
@@ -79,8 +114,19 @@ export function SaveConfirmationProvider({ children }: { children?: React.ReactN
       );
       if (!button) return;
 
+      // Find associated form if any
+      const form =
+        button.form ||
+        (button.getAttribute('form')
+          ? (document.getElementById(button.getAttribute('form')!) as HTMLFormElement | null)
+          : null) ||
+        button.closest('form');
+
       // If already confirmed, let the click proceed to native/React handler
-      if (button.dataset.confirmedSave === 'true') {
+      if (
+        button.dataset.confirmedSave === 'true' ||
+        (form && form.dataset.confirmedSave === 'true')
+      ) {
         return;
       }
 
@@ -125,6 +171,10 @@ export function SaveConfirmationProvider({ children }: { children?: React.ReactN
       e.stopPropagation();
       e.stopImmediatePropagation();
 
+      const isSubmitButton =
+        button.type === 'submit' ||
+        (form !== null && button.getAttribute('type') !== 'button');
+
       // Determine human-friendly description
       let displayContext = text.replace(/^save\s*/i, '').trim();
       if (!displayContext || displayContext.length > 50) {
@@ -140,6 +190,8 @@ export function SaveConfirmationProvider({ children }: { children?: React.ReactN
       pendingActionRef.current = {
         element: button,
         label: text,
+        isFormSubmit: Boolean(isSubmitButton && form),
+        form: form || undefined,
       };
 
       setActionInfo({
@@ -165,6 +217,14 @@ export function SaveConfirmationProvider({ children }: { children?: React.ReactN
       if (!form) return;
 
       if (form.dataset.confirmedSave === 'true') {
+        return;
+      }
+
+      if (
+        e.submitter &&
+        (e.submitter as HTMLElement).dataset?.confirmedSave === 'true'
+      ) {
+        form.dataset.confirmedSave = 'true';
         return;
       }
 

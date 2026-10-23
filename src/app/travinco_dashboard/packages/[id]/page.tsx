@@ -4,12 +4,15 @@ import { notFound } from 'next/navigation';
 import { PackageForm } from '../package-form';
 import { ItineraryManager } from './itinerary-manager';
 import { InclusionExclusionManager } from './inclusion-exclusion-manager';
+import { FaqManager } from './faq-manager';
 import {
   addInclusion, addInclusionsBulk, updateInclusion, removeInclusion,
   addExclusion, addExclusionsBulk, updateExclusion, removeExclusion,
+  addFaq, updateFaq, removeFaq,
 } from '../sub-resource-actions';
 import { PackageImagesManager } from './package-images-manager';
 import { PackageVideosManager } from './package-videos-manager';
+import { PackageSaveCard } from './package-save-card';
 import { StatusBadge } from '@/components/ui/status-badge';
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
@@ -25,6 +28,7 @@ export default async function EditPackagePage({ params }: { params: { id: string
     { data: itinerary },
     { data: inclusions },
     { data: exclusions },
+    { data: faqs },
     { data: images },
     { data: videos },
   ] = await Promise.all([
@@ -42,6 +46,11 @@ export default async function EditPackagePage({ params }: { params: { id: string
         .order('sort_order'),
       supabase
         .from('package_exclusions')
+        .select('*')
+        .eq('package_id', params.id)
+        .order('sort_order'),
+      supabase
+        .from('package_faqs')
         .select('*')
         .eq('package_id', params.id)
         .order('sort_order'),
@@ -88,6 +97,7 @@ export default async function EditPackagePage({ params }: { params: { id: string
           duration_nights: pkg.duration_nights,
           base_price: pkg.base_price,
           discount_price: pkg.discount_price,
+          child_price: pkg.child_price,
           currency: pkg.currency,
           short_description: pkg.short_description,
           full_description: pkg.full_description,
@@ -134,6 +144,17 @@ export default async function EditPackagePage({ params }: { params: { id: string
       </div>
 
       <div className="card space-y-4 p-5">
+        <h2 className="text-sm font-semibold text-ink-800">Frequently asked questions</h2>
+        <FaqManager
+          packageId={pkg.id}
+          faqs={faqs ?? []}
+          onAdd={addFaq}
+          onUpdate={updateFaq}
+          onRemove={removeFaq}
+        />
+      </div>
+
+      <div className="card space-y-4 p-5">
         <h2 className="text-sm font-semibold text-ink-800">Gallery images</h2>
         <PackageImagesManager packageId={pkg.id} images={images ?? []} />
       </div>
@@ -143,17 +164,7 @@ export default async function EditPackagePage({ params }: { params: { id: string
         <PackageVideosManager packageId={pkg.id} videos={videos ?? []} />
       </div>
 
-      {/* Triggers PackageForm's own submit via the form="package-form"
-          link — same save logic, just visually last on the page, to
-          match the create page where the button is naturally the last
-          element. The itinerary/inclusions/exclusions/images/videos
-          managers above each save independently as you use them; this
-          button only saves the basic-info fields further up. */}
-      <div className="flex justify-end">
-        <button type="submit" form="package-form" className="btn-primary">
-          Save changes
-        </button>
-      </div>
+      <PackageSaveCard formId="package-form" />
     </div>
   );
 }
