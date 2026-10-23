@@ -34,10 +34,48 @@ export type NotificationType =
   | 'new_enquiry' | 'new_booking' | 'payment_received' | 'followup_due'
   | 'followup_overdue' | 'contact_message' | 'low_availability';
 export type LeadStatus = 'fresh_lead' | 'follow_up' | 'interested' | 'not_interested' | 'enquired' | 'converted';
+export type PluginSlot = 'home-top' | 'home-middle' | 'home-bottom';
+
+export type Plugin = {
+  id: number;
+  name: string;
+  description: string | null;
+  code: string;
+  slot: PluginSlot;
+  position: number;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+};
 
 export interface Database {
   public: {
     Tables: {
+      plugins: {
+        Row: Plugin;
+        Insert: {
+          id?: number;
+          name: string;
+          description?: string | null;
+          code: string;
+          slot?: PluginSlot;
+          position?: number;
+          active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: number;
+          name?: string;
+          description?: string | null;
+          code?: string;
+          slot?: PluginSlot;
+          position?: number;
+          active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
       leads: {
         Row: {
           id: string;

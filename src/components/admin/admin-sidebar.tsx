@@ -9,7 +9,7 @@ import {
   LayoutDashboard, Package, MapPin, Inbox, CalendarCheck, Image as ImageIcon,
   Settings, Tag, BookOpen, Users, LogOut, TrendingUp, Receipt,
   UsersRound, Database, FileText, ReceiptText, Hotel, Car, MapPinned, Landmark,
-  ShieldCheck, ClipboardList, Menu, X, Loader2, Palette, PanelLeftClose,
+  ShieldCheck, ClipboardList, Menu, X, Loader2, Palette, PanelLeftClose, Blocks,
   type LucideIcon,
 } from 'lucide-react';
 import { signOut } from '@/app/travinco_dashboard/actions';
@@ -19,7 +19,7 @@ import { ResetPasswordModal } from '@/components/admin/reset-password-modal';
 const iconMap: Record<IconName, LucideIcon> = {
   LayoutDashboard, Package, MapPin, Inbox, CalendarCheck, ImageIcon, Settings, Tag, BookOpen, Users,
   TrendingUp, Receipt, UsersRound, Database, FileText, ReceiptText, Hotel, Car,
-  MapPinned, Landmark, ShieldCheck, ClipboardList, Palette,
+  MapPinned, Landmark, ShieldCheck, ClipboardList, Palette, Blocks,
 };
 
 export function AdminSidebar({
@@ -114,9 +114,11 @@ export function AdminSidebar({
             )}
             <ul className="space-y-1">
               {section.items.map((item) => {
+                const normalizedHref = item.href.replace(/^\/admin/, '/travinco_dashboard');
                 const isCurrent =
                   pathname === item.href ||
-                  (item.href !== '/travinco_dashboard' && pathname.startsWith(item.href));
+                  pathname === normalizedHref ||
+                  (item.href !== '/travinco_dashboard' && pathname.startsWith(normalizedHref));
                 const isPending = pendingHref === item.href;
                 const active = isPending || (isCurrent && !pendingHref);
                 const Icon = iconMap[item.icon];

@@ -2,6 +2,12 @@
 
 import { createCustomerClient, CUSTOMER_AUTH_COOKIE } from '@/lib/supabase/server';
 import { requireCustomer } from '@/lib/supabase/customer-auth-helpers';
+import {
+  checkLoginLockout,
+  recordFailedLoginAttempt,
+  clearLoginAttempts,
+  MAX_LOGIN_ATTEMPTS,
+} from '@/lib/auth/login-limiter';
 import { cookies } from 'next/headers';
 import { z } from 'zod';
 
@@ -100,6 +106,17 @@ export async function logInCustomer(raw: unknown) {
     return { error: parsed.error.issues[0]?.message ?? 'Please check the form.' };
   }
 
+  // 1. Check if customer account is temporarily locked out
+  const lockoutStatus = await checkLoginLockout(parsed.data.email, 'customer');
+  if (lockoutStatus.isLocked) {
+    const mins = lockoutStatus.minutesRemaining || 15;
+    return {
+      error: `Account is temporarily locked due to 5 consecutive failed login attempts. Please try again in ${mins} minute${mins === 1 ? '' : 's'} or use "Forgot password?".`,
+      isLocked: true,
+      remainingAttempts: 0,
+    };
+  }
+
   const supabase = await createCustomerClient();
   const { data: authData, error } = await supabase.auth.signInWithPassword({
     email: parsed.data.email,
@@ -113,7 +130,22 @@ export async function logInCustomer(raw: unknown) {
           'Please confirm your email first — check your inbox for the link we sent when you signed up.',
       };
     }
-    return { error: 'Incorrect email or password.' };
+
+    // 2. Record failed login attempt and check 5-attempt limit
+    const attemptStatus = await recordFailedLoginAttempt(parsed.data.email, 'customer');
+    if (attemptStatus.isLocked) {
+      return {
+        error: `Too many failed login attempts (${MAX_LOGIN_ATTEMPTS}/${MAX_LOGIN_ATTEMPTS}). Your account is locked for 15 minutes. Please try again later or use "Forgot password?".`,
+        isLocked: true,
+        remainingAttempts: 0,
+      };
+    }
+
+    const remaining = attemptStatus.remainingAttempts;
+    return {
+      error: `Incorrect email or password. You have ${remaining} attempt${remaining === 1 ? '' : 's'} remaining before account lockout.`,
+      remainingAttempts: remaining,
+    };
   }
 
   // Optimize: query customers and customer_accounts in parallel
@@ -139,6 +171,9 @@ export async function logInCustomer(raw: unknown) {
   }
 
   const customerAccount = customerAccountRes.data;
+
+  // 3. Clear failed login attempts upon successful authentication
+  await clearLoginAttempts(parsed.data.email, 'customer');
 
   // Fast-path: Verified existing customer account
   if (customerAccount) {
@@ -274,6 +309,8 @@ export async function changeCustomerPassword(raw: unknown) {
   const supabase = await createCustomerClient();
   const { error } = await supabase.auth.updateUser({ password: parsed.data.password });
   if (error) return { error: error.message || 'Could not update your password. Please try again.' };
+
+  await clearLoginAttempts(customer.email, 'customer');
 
   return { success: true };
 }

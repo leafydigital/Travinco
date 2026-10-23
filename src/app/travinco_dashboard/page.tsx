@@ -4,7 +4,7 @@ import { navForProfile } from '@/lib/admin-nav';
 import { redirect } from 'next/navigation';
 import { formatCurrency, formatDate, toLabel } from '@/lib/utils/format';
 import {
-  Sparkles,
+  UserPlus,
   PhoneCall,
   Flame,
   Inbox,
@@ -336,7 +336,7 @@ export default async function AdminDashboardPage({
                 Fresh Leads
               </span>
               <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 text-blue-600 group-hover:scale-110 transition-transform shadow-xs">
-                <Sparkles className="h-4 w-4" />
+                <UserPlus className="h-4 w-4" />
               </span>
             </div>
             <p className="mt-3 text-3xl font-bold tracking-tight text-ink-900">

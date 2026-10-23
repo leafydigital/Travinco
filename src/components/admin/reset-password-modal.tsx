@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useTransition, useMemo } from 'react';
+import { useState, useTransition, useMemo, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   KeyRound,
   X,
@@ -26,6 +27,7 @@ export function ResetPasswordModal({
   variant = 'dashboard',
   className = '',
 }: ResetPasswordModalProps) {
+  const [mounted, setMounted] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -33,6 +35,10 @@ export function ResetPasswordModal({
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const rules = useMemo(
     () => ({
@@ -69,6 +75,18 @@ export function ResetPasswordModal({
     setErrorMessage(null);
   };
 
+  // Close modal when Escape key is pressed
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isPending) {
+        handleClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, isPending]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!allRulesMet || isPending) return;
@@ -90,40 +108,22 @@ export function ResetPasswordModal({
     });
   };
 
-  return (
-    <>
-      {/* Trigger Button */}
-      {variant === 'dashboard' ? (
-        <button
-          type="button"
-          onClick={handleOpen}
-          className={`inline-flex items-center gap-2 rounded-lg border border-brand-200 bg-white px-3 py-1.5 text-xs font-semibold text-brand-700 shadow-2xs hover:bg-brand-50 hover:border-brand-300 transition-colors cursor-pointer ${className}`}
-          title="Reset your account password"
-        >
-          <KeyRound className="h-3.5 w-3.5 text-brand-600" />
-          <span>Reset Password</span>
-        </button>
-      ) : (
-        <button
-          type="button"
-          onClick={handleOpen}
-          className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-ink-600 hover:bg-ink-100 hover:text-ink-900 transition-colors cursor-pointer ${className}`}
-          title="Reset your account password"
-        >
-          <KeyRound className="h-4 w-4 text-ink-500" />
-          <span>Reset Password</span>
-        </button>
-      )}
-
-      {/* Modal Dialog */}
-      {isOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-ink-950/50 backdrop-blur-xs animate-in fade-in duration-150"
-          role="dialog"
-          aria-modal="true"
-        >
-          {/* Card Container */}
-          <div className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-ink-100 animate-in zoom-in-95 duration-150">
+  const modalDialog = isOpen ? (
+    <div
+      className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-ink-950/60 backdrop-blur-xs animate-in fade-in duration-150"
+      role="dialog"
+      aria-modal="true"
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !isPending) {
+          handleClose();
+        }
+      }}
+    >
+      {/* Card Container */}
+      <div
+        className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-ink-100 animate-in zoom-in-95 duration-150"
+        onClick={(e) => e.stopPropagation()}
+      >
             {/* Close Button */}
             <button
               type="button"
@@ -330,7 +330,37 @@ export function ResetPasswordModal({
             </form>
           </div>
         </div>
+      ) : null;
+
+  return (
+    <>
+      {/* Trigger Button */}
+      {variant === 'dashboard' ? (
+        <button
+          type="button"
+          onClick={handleOpen}
+          className={`inline-flex items-center gap-2 rounded-lg border border-brand-200 bg-white px-3 py-1.5 text-xs font-semibold text-brand-700 shadow-2xs hover:bg-brand-50 hover:border-brand-300 transition-colors cursor-pointer ${className}`}
+          title="Reset your account password"
+        >
+          <KeyRound className="h-3.5 w-3.5 text-brand-600" />
+          <span>Reset Password</span>
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={handleOpen}
+          className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-ink-600 hover:bg-ink-100 hover:text-ink-900 transition-colors cursor-pointer ${className}`}
+          title="Reset your account password"
+        >
+          <KeyRound className="h-4 w-4 text-ink-500" />
+          <span>Reset Password</span>
+        </button>
       )}
+
+      {/* Render modal in document.body via Portal so it never gets trapped inside sidebar */}
+      {mounted && typeof document !== 'undefined' && modalDialog
+        ? createPortal(modalDialog, document.body)
+        : null}
     </>
   );
 }

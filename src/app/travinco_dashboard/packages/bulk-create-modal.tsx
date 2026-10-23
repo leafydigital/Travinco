@@ -14,7 +14,6 @@ import {
   Table as TableIcon,
   CheckCircle2,
   AlertCircle,
-  Sparkles,
   ExternalLink,
   Image as ImageIcon,
   UploadCloud,
@@ -602,7 +601,7 @@ export function BulkCreateModal({
                 </div>
 
                 <div className="flex items-center gap-2 text-xs text-ink-500">
-                  <Sparkles className="h-3.5 w-3.5 text-brand-500" />
+                  <CheckCircle2 className="h-3.5 w-3.5 text-brand-500" />
                   <span>Unique slugs &amp; SEO metadata are auto-generated on save.</span>
                 </div>
               </div>

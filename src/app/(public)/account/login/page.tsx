@@ -16,6 +16,7 @@ import {
   ArrowRight,
   CheckCircle2,
   AlertCircle,
+  ShieldAlert,
 } from 'lucide-react';
 import { logInCustomer, requestPasswordReset } from '../actions';
 
@@ -35,6 +36,11 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [resetSent, setResetSent] = useState(false);
+  const [loginError, setLoginError] = useState<{
+    message: string;
+    isLocked?: boolean;
+    remainingAttempts?: number;
+  } | null>(null);
 
   function getSafeRedirect(path: string | null): string {
     if (!path || !path.startsWith('/') || path.startsWith('//') || path.includes('\\')) {
@@ -48,23 +54,32 @@ export default function LoginPage() {
     if (isLoading) return;
 
     setIsLoading(true);
+    setLoginError(null);
     try {
       const result = await logInCustomer({ email, password });
 
       // ONLY show the snackbar after the API response is available
       if (result.error) {
         setIsLoading(false);
+        setLoginError({
+          message: result.error,
+          isLocked: result.isLocked,
+          remainingAttempts: result.remainingAttempts,
+        });
         toast.error(result.error);
         return;
       }
 
       toast.success('Signed in successfully');
+      setLoginError(null);
       // Direct navigation ensures fresh cookie state without redundant RSC passes
       const target = getSafeRedirect(redirectTo);
       window.location.href = target;
     } catch (err: any) {
       setIsLoading(false);
-      toast.error(err?.message || 'Login failed. Please try again.');
+      const message = err?.message || 'Login failed. Please try again.';
+      setLoginError({ message });
+      toast.error(message);
     }
   }
 
@@ -190,6 +205,50 @@ export default function LoginPage() {
               <div className="mt-4 rounded-xl border border-sand-300 bg-sand-50 p-3.5 text-xs text-sand-900 flex items-start gap-2.5">
                 <AlertCircle className="h-4 w-4 text-sand-700 shrink-0 mt-0.5" />
                 <p className="font-semibold">{REASON_MESSAGES[reason]}</p>
+              </div>
+            )}
+
+            {/* Login Attempt / Lockout Warning Banner */}
+            {loginError && (
+              <div
+                className={`mt-4 rounded-xl border p-3.5 text-xs transition-all ${loginError.isLocked
+                  ? 'border-red-300 bg-red-50 text-red-900 shadow-sm'
+                  : typeof loginError.remainingAttempts === 'number' && loginError.remainingAttempts < 5
+                    ? 'border-amber-300 bg-amber-50 text-amber-900 shadow-sm'
+                    : 'border-red-200 bg-red-50 text-red-700'
+                  }`}
+              >
+                <div className="flex items-start gap-2.5">
+                  {loginError.isLocked ? (
+                    <ShieldAlert className="h-4 w-4 shrink-0 text-red-600 mt-0.5" />
+                  ) : typeof loginError.remainingAttempts === 'number' && loginError.remainingAttempts < 5 ? (
+                    <AlertCircle className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
+                  ) : (
+                    <AlertCircle className="h-4 w-4 shrink-0 text-red-600 mt-0.5" />
+                  )}
+                  <div className="flex-1 space-y-1">
+                    {loginError.isLocked ? (
+                      <p className="font-bold text-red-950 uppercase tracking-wide text-[11px]">
+                        Account Temporarily Locked (5/5 Attempts)
+                      </p>
+                    ) : typeof loginError.remainingAttempts === 'number' && loginError.remainingAttempts < 5 ? (
+                      <p className="font-bold text-amber-950 text-[11px] uppercase tracking-wide">
+                        Login Attempt Failed ({5 - loginError.remainingAttempts} of 5)
+                      </p>
+                    ) : null}
+                    <p className="leading-relaxed">{loginError.message}</p>
+                    {loginError.isLocked && (
+                      <button
+                        type="button"
+                        onClick={handleForgotPassword}
+                        disabled={isResetting}
+                        className="mt-1 text-xs font-semibold text-red-800 hover:text-red-950 underline inline-block cursor-pointer"
+                      >
+                        Forgot password &rarr;
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
 

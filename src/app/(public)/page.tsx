@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { getThemeImagesAction } from '@/app/travinco_dashboard/theme/actions';
 import { getHomePageContent, DEFAULT_HOME_PAGE_CONTENT } from '@/lib/home-page-content';
+import { PluginSlot } from '@/components/plugins/plugin-slot';
 
 function getExperienceIcon(key: string) {
   switch (key) {
@@ -472,6 +473,9 @@ export default async function HomePage() {
       {/* ── 1. HERO SECTION: 100vh Full Viewport Slideshow (Renders Immediately) ── */}
       <HeroSlider slides={heroSlides} heroContent={homeContent.hero} />
 
+      {/* ── PLUGIN WIDGET SLOT: HOME TOP (Flight / Hotel Search Widgets) ── */}
+      <PluginSlot slot="home-top" />
+
       {/* ── 2. POPULAR DESTINATIONS SHOWCASE (Streamed Section) ── */}
       <Suspense fallback={<HomeDestinationsSkeleton homeContent={homeContent} />}>
         <HomeDestinationsSection homeContent={homeContent} />
@@ -529,6 +533,9 @@ export default async function HomePage() {
           )}
         </div>
       </section>
+
+      {/* ── PLUGIN WIDGET SLOT: HOME MIDDLE ── */}
+      <PluginSlot slot="home-middle" />
 
       {/* ── 5. REAL TRAVEL MOMENTS: CAPTURED ON THE ROAD (MANAGED IN THEME) ── */}
       {roadImagesToDisplay.length > 0 && (
@@ -643,6 +650,9 @@ export default async function HomePage() {
       <Suspense fallback={<HomeBlogSkeleton homeContent={homeContent} />}>
         <HomeBlogSection homeContent={homeContent} />
       </Suspense>
+
+      {/* ── PLUGIN WIDGET SLOT: HOME BOTTOM ── */}
+      <PluginSlot slot="home-bottom" />
 
       {/* ── 10. HIGH-IMPACT FINAL CALL TO ACTION ── */}
       <section className="relative overflow-hidden bg-gradient-to-br from-brand-800 via-brand-900 to-navy-950 py-20 text-white">

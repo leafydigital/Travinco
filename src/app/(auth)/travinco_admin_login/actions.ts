@@ -1,6 +1,12 @@
 'use server';
 
 import { createAdminClient, createClient } from '@/lib/supabase/server';
+import {
+  checkLoginLockout,
+  recordFailedLoginAttempt,
+  clearLoginAttempts,
+  MAX_LOGIN_ATTEMPTS,
+} from '@/lib/auth/login-limiter';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
 
@@ -11,6 +17,8 @@ const loginSchema = z.object({
 
 export type LoginState = {
   error?: string;
+  isLocked?: boolean;
+  remainingAttempts?: number;
 };
 
 function getSafeRedirectPath(rawPath: unknown, fallback: string): string {
@@ -41,6 +49,17 @@ export async function login(
 
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? 'Invalid input' };
+  }
+
+  // 1. Check if this staff email is currently locked out
+  const lockoutStatus = await checkLoginLockout(parsed.data.email, 'admin');
+  if (lockoutStatus.isLocked) {
+    const mins = lockoutStatus.minutesRemaining || 15;
+    return {
+      error: `Account is temporarily locked due to 5 consecutive failed login attempts. Please try again in ${mins} minute${mins === 1 ? '' : 's'} or use "Forgot password?".`,
+      isLocked: true,
+      remainingAttempts: 0,
+    };
   }
 
   const supabase = await createAdminClient();
@@ -75,7 +94,22 @@ export async function login(
         };
       }
     }
-    return { error: 'Incorrect email or password.' };
+
+    // 2. Record failed login attempt and check 5-attempt limit
+    const attemptStatus = await recordFailedLoginAttempt(parsed.data.email, 'admin');
+    if (attemptStatus.isLocked) {
+      return {
+        error: `Too many failed login attempts (${MAX_LOGIN_ATTEMPTS}/${MAX_LOGIN_ATTEMPTS}). Your account is locked for 15 minutes. Please try again later or use "Forgot password?".`,
+        isLocked: true,
+        remainingAttempts: 0,
+      };
+    }
+
+    const remaining = attemptStatus.remainingAttempts;
+    return {
+      error: `Incorrect email or password. You have ${remaining} attempt${remaining === 1 ? '' : 's'} remaining before account lockout.`,
+      remainingAttempts: remaining,
+    };
   }
 
   // Verify that the user has a corresponding profiles record (staff/admin)
@@ -100,6 +134,9 @@ export async function login(
       error: 'This staff account has been deactivated. Contact your administrator.',
     };
   }
+
+  // 3. Successful login: reset failed attempts counter back to 0
+  await clearLoginAttempts(parsed.data.email, 'admin');
 
   // Find staff member's first accessible page so staff without dashboard access land directly on an allowed page
   let defaultDestination = '/travinco_dashboard';
@@ -244,10 +281,14 @@ export async function resetStaffPasswordDirectAction(data: {
 
     if (!rpcError && rpcRes) {
       if (typeof rpcRes === 'boolean' && rpcRes === true) {
+        await clearLoginAttempts(normalizedEmail, 'admin');
         return { success: true };
       }
       if (typeof rpcRes === 'object') {
-        if (rpcRes.success) return { success: true };
+        if (rpcRes.success) {
+          await clearLoginAttempts(normalizedEmail, 'admin');
+          return { success: true };
+        }
         if (rpcRes.error) return { error: rpcRes.error };
       }
     }
@@ -273,6 +314,7 @@ export async function resetStaffPasswordDirectAction(data: {
           { password: parsed.data.password }
         );
         if (!adminError) {
+          await clearLoginAttempts(normalizedEmail, 'admin');
           return { success: true };
         }
       }

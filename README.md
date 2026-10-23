@@ -308,3 +308,34 @@ Being direct about what's unverified or intentionally deferred:
    calculations in the system
 6. Consider a background job queue for WhatsApp campaign sends once
    recipient lists grow beyond what one request/response cycle should handle
+
+---
+
+## 10. Plugins & Third-Party Widgets (Travelpayouts, etc.)
+
+Travinco includes a WordPress-style **Plugins** system that allows administrators to embed third-party widgets (such as Travelpayouts flight search, hotel booking calendars, etc.) directly into designated slots on the customer home page without modifying application source code.
+
+### Available Slots
+- **`home-top`**: Rendered immediately below the full-height hero slider banner — ideal for flight search forms, hotel finders, and booking engines.
+- **`home-middle`**: Rendered between the "Travinco Difference" section and the photo gallery / travel highlights.
+- **`home-bottom`**: Rendered above the final call-to-action banner and footer.
+
+### How to Add a Travelpayouts Widget
+1. Log in to the Admin Dashboard as an administrator (`/travinco_dashboard` or `/admin`).
+2. Click **Plugins** in the sidebar navigation (or navigate to `/admin/plugins`).
+3. Click **Add Plugin**.
+4. Enter a name (e.g. `Travelpayouts Flight Search`).
+5. Choose a slot (e.g. `Home Top`).
+6. Paste your Travelpayouts HTML / script embed code into the code editor. For example:
+   ```html
+   <script async src="https://tp.media/content?currency=usd&trs=28431&shmarker=268481&show_hotels=true&powered_by=true&locale=en&searchUrl=flights.travinco.com" charset="utf-8"></script>
+   ```
+   Or click **Upload .html / .txt** to load an exported snippet directly from your computer.
+7. Click **Preview** to render the widget in a secure, sandboxed environment without leaving the admin modal.
+8. Click **Create Plugin**. The home page cache is automatically revalidated, and the widget will appear live immediately.
+
+### Script Security & Multi-Partner Support
+To support the full range of Travelpayouts affiliate partners and widgets (flights, hotels, tours, car rentals, eSIMs, insurance, and booking engines), widget scripts can be loaded from any partner CDN or domain without restrictive host blocking. The system automatically inspects submitted scripts to guard against unsafe schemes (such as `javascript:` or `vbscript:`), while allowing all legitimate widget snippets to run smoothly.
+
+### Script Execution Mechanics
+Browsers intentionally disable script execution for tags injected via standard `innerHTML` or `dangerouslySetInnerHTML`. The public `CodeEmbed` component uses `document.createRange().createContextualFragment(code)` to parse the HTML string and attach it to the DOM, ensuring third-party `<script>` loaders initialize properly.

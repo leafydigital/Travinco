@@ -6,7 +6,6 @@ import Image from 'next/image';
 import {
   Save,
   RotateCcw,
-  Sparkles,
   Upload,
   Globe,
   ExternalLink,

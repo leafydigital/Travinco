@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Sparkles, PhoneCall, Heart, Users } from 'lucide-react';
+import { UserPlus, PhoneCall, Heart, Users } from 'lucide-react';
 
 interface KpiCounts {
   total: number;
@@ -45,7 +45,7 @@ export function LeadsKpiCards({ counts }: Props) {
       key: 'fresh_lead',
       label: 'Fresh Leads',
       count: counts.fresh,
-      icon: Sparkles,
+      icon: UserPlus,
       color: 'text-blue-600',
       bg: 'bg-blue-50',
       borderActive: 'border-blue-500 ring-2 ring-blue-100',

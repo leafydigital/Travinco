@@ -10,13 +10,11 @@ import {
   CheckCircle2,
   AlertCircle,
   Loader2,
-  FileSpreadsheet,
   Calendar,
   IndianRupee,
   MapPin,
   Tag,
   Clock,
-  Sparkles,
   Info,
   ChevronRight,
   HelpCircle,
@@ -126,8 +124,6 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
   ]);
   const [activeIdx, setActiveIdx] = useState(0);
   const [activeTab, setActiveTab] = useState<'basic' | 'pricing' | 'itinerary' | 'inclusions' | 'media' | 'seo'>('basic');
-  const [isPasteModalOpen, setIsPasteModalOpen] = useState(false);
-  const [pasteText, setPasteText] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [singleImageUrlInput, setSingleImageUrlInput] = useState('');
@@ -340,63 +336,6 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
     toast.success(`Copied ${type.replace('_', ' ')} to all other packages!`);
   }
 
-  // Parse TSV / CSV text from Excel or Google Sheets
-  function handleParsePaste() {
-    if (!pasteText.trim()) return;
-
-    const lines = pasteText
-      .split(/\r?\n/)
-      .map((l) => l.trim())
-      .filter(Boolean);
-
-    if (lines.length === 0) return;
-
-    const newPackages: BulkPackageDraft[] = [];
-
-    for (const line of lines) {
-      const parts = line.includes('\t') ? line.split('\t') : line.split(',');
-      const title = parts[0]?.trim() || '';
-      if (!title) continue;
-
-      const destText = parts[1]?.trim()?.toLowerCase() || '';
-      const matchedDest = destinations.find(
-        (d) => d.name.toLowerCase() === destText || destText.includes(d.name.toLowerCase())
-      );
-
-      const days = parseInt(parts[2]?.trim() || '3', 10) || 3;
-      const nights = parseInt(parts[3]?.trim() || String(Math.max(0, days - 1)), 10) || Math.max(0, days - 1);
-      const price = parseFloat(parts[4]?.replace(/[^0-9.]/g, '') || '0') || 0;
-
-      const rawCat = parts[5]?.trim()?.toLowerCase() || 'family';
-      const cat = (packageCategories as readonly string[]).includes(rawCat)
-        ? (rawCat as (typeof packageCategories)[number])
-        : 'family';
-
-      const draft = createEmptyPackageDraft(newPackages.length + 1);
-      draft.title = title;
-      draft.slug = slugify(title);
-      draft.destination_id = matchedDest ? matchedDest.id : '';
-      draft.category = cat;
-      draft.duration_days = days;
-      draft.duration_nights = nights;
-      draft.base_price = price > 0 ? price : '';
-
-      newPackages.push(draft);
-    }
-
-    if (newPackages.length > 0) {
-      setPackages((prev) => {
-        const existing = prev.filter((p) => p.title.trim().length > 0);
-        return [...existing, ...newPackages];
-      });
-      toast.success(`Loaded ${newPackages.length} packages from spreadsheet!`);
-      setIsPasteModalOpen(false);
-      setPasteText('');
-    } else {
-      toast.error('No valid rows found. Please check your pasted columns.');
-    }
-  }
-
   // Submit all packages in bulk
   function handleBulkSave() {
     setFormError(null);
@@ -492,15 +431,6 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
         </div>
 
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setIsPasteModalOpen(true)}
-            className="btn-outline h-8 text-xs inline-flex items-center gap-1.5 cursor-pointer"
-          >
-            <FileSpreadsheet className="h-3.5 w-3.5 text-brand-600" />
-            <span>Paste from Excel / CSV</span>
-          </button>
-
           <button
             type="button"
             onClick={addPackage}
@@ -1492,61 +1422,6 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
           </div>
         </div>
       </div>
-
-      {/* Spreadsheet Import Modal */}
-      {isPasteModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-ink-950/40 backdrop-blur-xs">
-          <div className="w-full max-w-2xl bg-white rounded-2xl p-6 shadow-2xl border border-ink-150 space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <FileSpreadsheet className="h-5 w-5 text-brand-600" />
-                <h3 className="text-sm font-bold text-ink-900">Paste Spreadsheet / CSV Rows</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsPasteModalOpen(false)}
-                className="text-ink-400 hover:text-ink-700"
-              >
-                &times;
-              </button>
-            </div>
-
-            <p className="text-xs text-ink-500 leading-relaxed">
-              Paste rows copied from Excel or Google Sheets. Columns expected in order:
-              <br />
-              <code className="bg-ink-100 text-brand-700 px-1 py-0.5 rounded text-[11px] font-mono mt-1 inline-block">
-                Title [Tab] Destination [Tab] Days [Tab] Nights [Tab] Price [Tab] Category
-              </code>
-            </p>
-
-            <textarea
-              rows={8}
-              value={pasteText}
-              onChange={(e) => setPasteText(e.target.value)}
-              placeholder={`Munnar Honeymoon Special\tKerala\t4\t3\t18500\thoneymoon\nAlleppey Houseboat Cruise\tKerala\t2\t1\t9500\tfamily`}
-              className="input font-mono text-xs w-full p-3 leading-relaxed"
-            />
-
-            <div className="flex items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setIsPasteModalOpen(false)}
-                className="btn-outline h-8 text-xs px-3"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleParsePaste}
-                disabled={!pasteText.trim()}
-                className="btn-primary h-8 text-xs px-4"
-              >
-                Parse &amp; Append Packages
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

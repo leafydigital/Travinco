@@ -9,7 +9,7 @@ import {
   CheckSquare,
   Square,
   RotateCcw,
-  Sparkles,
+  Bookmark,
   Lock,
   Save,
   Users,
@@ -440,7 +440,7 @@ export function PageAccessClient({
                     onClick={() => applyPreset('sales')}
                     className="inline-flex items-center gap-1 rounded border border-ink-200 bg-ink-50 px-2 py-0.5 font-medium text-ink-700 hover:bg-ink-100 transition-colors"
                   >
-                    <Sparkles className="h-3 w-3 text-brand-600" />
+                    <Bookmark className="h-3 w-3 text-brand-600" />
                     Sales Preset
                   </button>
                   <button
@@ -448,7 +448,7 @@ export function PageAccessClient({
                     onClick={() => applyPreset('accounts')}
                     className="inline-flex items-center gap-1 rounded border border-ink-200 bg-ink-50 px-2 py-0.5 font-medium text-ink-700 hover:bg-ink-100 transition-colors"
                   >
-                    <Sparkles className="h-3 w-3 text-emerald-600" />
+                    <Bookmark className="h-3 w-3 text-emerald-600" />
                     Accounts Preset
                   </button>
                   <button
@@ -456,7 +456,7 @@ export function PageAccessClient({
                     onClick={() => applyPreset('tour_ops')}
                     className="inline-flex items-center gap-1 rounded border border-ink-200 bg-ink-50 px-2 py-0.5 font-medium text-ink-700 hover:bg-ink-100 transition-colors"
                   >
-                    <Sparkles className="h-3 w-3 text-purple-600" />
+                    <Bookmark className="h-3 w-3 text-purple-600" />
                     Tour Ops
                   </button>
                 </div>

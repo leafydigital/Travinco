@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import {
   Save,
   Loader2,
-  Sparkles,
   Upload,
   Trash2,
   Eye,
@@ -870,7 +869,7 @@ export function NavbarFooterEditor({
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-ink-100 pb-4">
           <div className="flex items-center gap-2.5">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-50 text-brand-600 border border-brand-100">
-              <Sparkles className="h-4 w-4" />
+              <Eye className="h-4 w-4" />
             </div>
             <div>
               <h3 className="text-sm font-bold text-ink-900">Live Customer Side Preview</h3>

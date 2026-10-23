@@ -4,7 +4,9 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import {
-  Sparkles,
+  Pencil,
+  Tag,
+  Info,
   Save,
   Upload,
   Compass,
@@ -336,7 +338,7 @@ export function AboutPageEditor({
         <div>
           <div className="flex items-center gap-2">
             <span className="inline-flex items-center gap-1.5 rounded-full bg-brand-50 px-2.5 py-0.5 text-xs font-semibold text-brand-700 border border-brand-200">
-              <Sparkles className="h-3 w-3" />
+              <Pencil className="h-3 w-3" />
               Theme Editor
             </span>
             <span className="text-xs text-ink-400 font-medium">• /about page</span>
@@ -410,7 +412,7 @@ export function AboutPageEditor({
             <div className="relative z-10 max-w-xl mx-auto flex flex-col items-center">
               {content.hero.badge && (
                 <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-[11px] font-semibold uppercase tracking-widest text-sand-300 border border-white/20 mb-3 shadow-xs">
-                  <Sparkles className="h-3 w-3 text-sand-300" />
+                  <Tag className="h-3 w-3 text-sand-300" />
                   <span>{content.hero.badge}</span>
                 </span>
               )}
@@ -1126,7 +1128,7 @@ export function AboutPageEditor({
         <div className="flex items-center justify-between border-b border-ink-100 pb-4">
           <div className="flex items-center gap-2.5">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-50 text-brand-700">
-              <Sparkles className="h-5 w-5" />
+              <Compass className="h-5 w-5" />
             </div>
             <div>
               <h3 className="font-display text-base font-bold text-ink-950">
@@ -1235,7 +1237,7 @@ export function AboutPageEditor({
       {/* ── Bottom Save Sticky Bar ── */}
       <div className="sticky bottom-4 z-30 flex items-center justify-between rounded-2xl bg-navy-950/90 backdrop-blur-md p-4 text-white shadow-2xl border border-white/10">
         <div className="flex items-center gap-2 text-xs">
-          <Sparkles className="h-4 w-4 text-sand-300" />
+          <Info className="h-4 w-4 text-sand-300" />
           <span className="font-medium text-white/90">
             Unsaved changes will be published to the customer About page when saved.
           </span>

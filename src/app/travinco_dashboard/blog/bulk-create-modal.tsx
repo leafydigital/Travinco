@@ -10,7 +10,7 @@ import {
   X,
   Loader2,
   AlertCircle,
-  Sparkles,
+  CheckCircle2,
   BookOpen,
   ChevronDown,
   ChevronUp,
@@ -449,7 +449,7 @@ export function BulkCreateBlogsModal({
               </div>
 
               <div className="flex items-center gap-1.5 text-xs text-ink-500">
-                <Sparkles className="h-3.5 w-3.5 text-brand-500" />
+                <CheckCircle2 className="h-3.5 w-3.5 text-brand-500" />
                 <span>Unique URL slugs are automatically generated from post titles.</span>
               </div>
             </div>

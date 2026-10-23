@@ -25,6 +25,7 @@ export const iconNames = [
   'ShieldCheck',
   'ClipboardList',
   'Palette',
+  'Blocks',
 ] as const;
 
 export type IconName = (typeof iconNames)[number];
@@ -68,6 +69,13 @@ export const adminNav: NavSection[] = [
         icon: 'Database',
         pageKey: 'master',
         roles: ['admin', 'super_admin', 'sales_staff', 'accounts_staff'],
+      },
+      {
+        label: 'Plugins',
+        href: '/travinco_dashboard/plugins',
+        icon: 'Blocks',
+        pageKey: 'plugins',
+        roles: ['admin', 'super_admin'],
       },
       {
         label: 'Settings',
@@ -168,8 +176,8 @@ export function navForProfile(
         // 1. Super admin sees all navigation items
         if (profile.role === 'super_admin') return true;
 
-        // 2. Role Management section & items are strictly restricted to admin & super_admin
-        if (item.pageKey === 'page_access' || item.pageKey === 'users') {
+        // 2. Role Management & system configuration items are strictly restricted to admin & super_admin
+        if (item.pageKey === 'page_access' || item.pageKey === 'users' || item.pageKey === 'plugins') {
           return profile.role === 'admin';
         }
 

@@ -7,7 +7,9 @@ import Link from 'next/link';
 import {
   Pencil,
   RotateCcw,
-  Sparkles,
+  Layout,
+  TrendingUp,
+  Heart,
   Eye,
   Upload,
   Plus,
@@ -465,7 +467,7 @@ export function HomePageEditor({
       <div className="sticky top-4 z-40 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-brand-200/90 bg-white/95 backdrop-blur-md p-4 shadow-lg">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-600 text-white shadow-xs">
-            <Sparkles className="h-5 w-5" />
+            <Layout className="h-5 w-5" />
           </div>
           <div>
             <div className="flex items-center gap-2">
@@ -1118,7 +1120,7 @@ export function HomePageEditor({
               <div className="flex items-center justify-between">
                 <div>
                   <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
-                    <Sparkles className="h-3.5 w-3.5 text-sand-300" />
+                    <TrendingUp className="h-3.5 w-3.5 text-sand-300" />
                     <span>
                       Quick Stats &amp; Milestone Numbers (
                       {(content.experience.stats || DEFAULT_HOME_PAGE_CONTENT.experience.stats || []).length})
@@ -1916,7 +1918,7 @@ export function HomePageEditor({
 
           <div className="relative z-10 max-w-lg rounded-2xl bg-black/60 backdrop-blur-md p-6 border border-white/15 text-white shadow-xl">
             <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/25 border border-emerald-400/35 px-3 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-300 mb-2">
-              <Sparkles className="h-3 w-3 text-emerald-400" />
+              <Heart className="h-3 w-3 text-emerald-400" />
               <span>{content.ayurveda?.eyebrow || 'Ayurveda & Traditional Yoga'}</span>
             </span>
 
@@ -2523,7 +2525,7 @@ export function HomePageEditor({
 
         <div className="p-8 sm:p-14 text-center max-w-2xl mx-auto space-y-4">
           <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3.5 py-1 text-xs font-semibold text-sand-300 border border-white/20">
-            <Sparkles className="h-3.5 w-3.5" />
+            <Compass className="h-3.5 w-3.5" />
             <span>{content.final_cta.badge || 'Start Planning Today'}</span>
           </span>
 

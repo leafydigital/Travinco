@@ -17,7 +17,8 @@ import {
   X,
   Search,
   SlidersHorizontal,
-  Sparkles,
+  Globe,
+  Heart,
   ExternalLink,
   Layers,
   Image as ImageIcon,
@@ -64,7 +65,6 @@ import { DEFAULT_PAGE_TITLES_CONTENT } from '@/lib/page-titles-content-types';
 import { ContactPageEditor } from './contact-page-editor';
 import type { ContactPageContent } from '@/lib/contact-page-content-types';
 import { DEFAULT_CONTACT_PAGE_CONTENT } from '@/lib/contact-page-content-types';
-import { Globe } from 'lucide-react';
 
 interface DestinationItem {
   id: string;
@@ -448,7 +448,7 @@ export function ThemeClient({
               Theme & Customer Page Visuals
             </h1>
             <span className="inline-flex items-center gap-1 rounded-full bg-brand-50 border border-brand-200 px-3 py-1 text-xs font-semibold text-brand-800">
-              <Sparkles className="h-3.5 w-3.5 text-brand-600" />
+              <Globe className="h-3.5 w-3.5 text-brand-600" />
               Customer Front-End
             </span>
           </div>
@@ -546,7 +546,7 @@ export function ThemeClient({
                   : 'text-ink-600 hover:text-ink-900 hover:bg-ink-50'
               }`}
             >
-              <Sparkles className="h-3.5 w-3.5" />
+              <Pencil className="h-3.5 w-3.5" />
               <span>Live Page Content Editor & Preview</span>
             </button>
             <button
@@ -703,7 +703,7 @@ export function ThemeClient({
                 : 'bg-teal-50 text-teal-800 hover:bg-teal-100 border border-teal-200/60'
             }`}
           >
-            <Sparkles className="h-3.5 w-3.5" />
+            <Heart className="h-3.5 w-3.5" />
             <span>Ayurveda & Wellness ({images.filter((img) => img.page === 'home' && (img.placement === 'ayurveda' || img.placement === 'wellness')).length})</span>
           </button>
         </div>

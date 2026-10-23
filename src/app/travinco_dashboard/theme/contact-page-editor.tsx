@@ -4,7 +4,9 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import {
-  Sparkles,
+  Star,
+  Pencil,
+  Type,
   Save,
   Upload,
   ShieldCheck,
@@ -41,7 +43,7 @@ const PILLAR_ICONS = [
   { key: 'message', label: 'Message / Chat', icon: MessageCircle },
   { key: 'phone', label: 'Phone', icon: Phone },
   { key: 'shield', label: 'Shield / Security', icon: ShieldCheck },
-  { key: 'sparkles', label: 'Sparkles / Luxury', icon: Sparkles },
+  { key: 'star', label: 'Star / Luxury', icon: Star },
 ] as const;
 
 const CURATED_IMAGES = [
@@ -167,7 +169,7 @@ export function ContactPageEditor({
         <div>
           <div className="flex items-center gap-2">
             <span className="inline-flex items-center gap-1.5 rounded-full bg-brand-50 px-2.5 py-0.5 text-xs font-semibold text-brand-700 border border-brand-200">
-              <Sparkles className="h-3 w-3" />
+              <Pencil className="h-3 w-3" />
               Theme Editor
             </span>
             <span className="text-xs text-ink-400 font-medium">• /contact page</span>
@@ -355,7 +357,7 @@ export function ContactPageEditor({
       <div className="rounded-2xl border border-ink-200 bg-white p-6 shadow-sm space-y-6">
         <div className="flex items-center gap-3 border-b border-ink-100 pb-4">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sand-100 text-sand-800 border border-sand-300">
-            <Sparkles className="h-5 w-5" />
+            <Type className="h-5 w-5" />
           </div>
           <div>
             <h3 className="font-display text-base font-bold text-ink-950">

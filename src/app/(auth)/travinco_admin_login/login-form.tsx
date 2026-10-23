@@ -17,6 +17,7 @@ import {
   CheckCircle2,
   AlertCircle,
   ShieldCheck,
+  ShieldAlert,
   Check,
   Circle,
 } from 'lucide-react';
@@ -412,9 +413,52 @@ export function LoginForm({ redirectTo }: { redirectTo?: string }) {
       </div>
 
       {state.error && (
-        <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-          {state.error}
-        </p>
+        <div
+          className={`rounded-xl border p-3.5 text-xs transition-all ${
+            state.isLocked
+              ? 'border-red-300 bg-red-50 text-red-900 shadow-sm'
+              : typeof state.remainingAttempts === 'number' && state.remainingAttempts < 5
+              ? 'border-amber-300 bg-amber-50 text-amber-900 shadow-sm'
+              : 'border-red-200 bg-red-50 text-red-700'
+          }`}
+        >
+          <div className="flex items-start gap-2.5">
+            {state.isLocked ? (
+              <ShieldAlert className="h-4 w-4 shrink-0 text-red-600 mt-0.5" />
+            ) : typeof state.remainingAttempts === 'number' && state.remainingAttempts < 5 ? (
+              <AlertCircle className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
+            ) : (
+              <AlertCircle className="h-4 w-4 shrink-0 text-red-600 mt-0.5" />
+            )}
+            <div className="flex-1 space-y-1">
+              {state.isLocked ? (
+                <p className="font-bold text-red-950 uppercase tracking-wide text-[11px]">
+                  Account Temporarily Locked (5/5 Attempts)
+                </p>
+              ) : typeof state.remainingAttempts === 'number' && state.remainingAttempts < 5 ? (
+                <p className="font-bold text-amber-950 text-[11px] uppercase tracking-wide">
+                  Login Attempt Failed ({5 - state.remainingAttempts} of 5)
+                </p>
+              ) : null}
+              <p className="leading-relaxed">{state.error}</p>
+              {state.isLocked && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setResetEmail(email);
+                    setResetError(null);
+                    setSuccessBanner(null);
+                    setResetStep('verify');
+                    setMode('reset');
+                  }}
+                  className="mt-1 text-xs font-semibold text-red-800 hover:text-red-950 underline inline-block cursor-pointer"
+                >
+                  Forgot password? Reset it now &rarr;
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       <SubmitButton />

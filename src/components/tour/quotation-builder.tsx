@@ -16,9 +16,8 @@ import {
   Save,
   Search,
   Send,
-  Sparkles,
   Trash2,
-  Wand2,
+  Layers,
   X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
@@ -428,7 +427,7 @@ export function QuotationBuilder({
             {/* Quick 4-Dropdown Template Selector */}
             <div className="rounded-xl border border-brand-200/80 bg-gradient-to-r from-brand-50/90 via-sky-50/60 to-sand-50/70 p-3 sm:p-4 shadow-2xs">
               <div className="mb-2.5 flex items-center gap-1.5 text-xs font-semibold text-brand-900">
-                <Wand2 className="h-4 w-4 text-brand-700" />
+                <Layers className="h-4 w-4 text-brand-700" />
                 <span>Choose Template to Autofill:</span>
                 <span className="hidden sm:inline text-[11px] font-normal text-ink-500">
                   (Filter by Destination, Location, or Days to autofill route &amp; hotels)
@@ -1493,7 +1492,7 @@ function ActivitySearchSelect({
     return (
       <div className="flex items-center gap-1.5 animate-in fade-in duration-150">
         <div className="relative flex-1">
-          <Sparkles className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-brand-600 pointer-events-none" />
+          <Plus className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-brand-600 pointer-events-none" />
           <input
             ref={customInputRef}
             type="text"
@@ -1611,7 +1610,7 @@ function ActivitySearchSelect({
             }}
           >
             <span className="flex items-center gap-1.5 truncate">
-              <Sparkles className="h-3.5 w-3.5 text-brand-600 shrink-0" />
+              <Plus className="h-3.5 w-3.5 text-brand-600 shrink-0" />
               <span>
                 {query.trim()
                   ? `+ Create custom activity: "${query.trim()}"`

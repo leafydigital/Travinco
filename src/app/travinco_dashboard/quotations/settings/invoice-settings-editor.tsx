@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element */
 'use client';
 
 import {
@@ -23,7 +24,6 @@ import {
   FileSignature,
   FileText,
   HelpCircle,
-  Sparkles,
 } from 'lucide-react';
 import type { InvoiceSettings } from '@/lib/tour/types';
 import { DEFAULT_INVOICE_SETTINGS } from '@/lib/tour/types';
@@ -591,7 +591,7 @@ export function BankDetailsLivePreview() {
             <h2 className="text-sm font-semibold text-ink-900">Bank Details Live Preview</h2>
           </div>
           <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 border border-emerald-200">
-            <Sparkles className="h-3 w-3 text-emerald-600" /> Real-time Sync
+            <RefreshCw className="h-3 w-3 text-emerald-600" /> Real-time Sync
           </span>
         </div>
         <p className="mt-1 text-xs text-ink-500">

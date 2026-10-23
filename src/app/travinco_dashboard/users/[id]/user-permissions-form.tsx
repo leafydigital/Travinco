@@ -7,7 +7,7 @@ import {
   ShieldCheck,
   CheckSquare,
   Square,
-  Sparkles,
+  Briefcase,
   LayoutDashboard,
   Package,
   MapPin,
@@ -330,7 +330,7 @@ export function UserPermissionsForm({
               onClick={selectOperational}
               className="btn-outline text-xs py-1 px-2.5 h-8 flex items-center gap-1.5"
             >
-              <Sparkles className="h-3.5 w-3.5 text-amber-500" />
+              <Briefcase className="h-3.5 w-3.5 text-amber-500" />
               Operational Only
             </button>
             <button

@@ -39,8 +39,9 @@ next-env.d.ts
 /supabase/.branches
 /supabase/.temp
 .env.local
-.env.local
 *.sql
+!supabase/migrations/*.sql
 
 # migration files 
 *migration
+*.sql
