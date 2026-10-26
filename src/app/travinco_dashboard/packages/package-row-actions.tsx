@@ -38,7 +38,7 @@ function ActionButton({
 
   if (href) {
     return (
-      <Link href={href} target={target} className={shared} aria-label={label}>
+      <Link href={href} target={target} prefetch={true} className={shared} aria-label={label}>
         {tooltip}
         <ActionIcon label={label} />
       </Link>

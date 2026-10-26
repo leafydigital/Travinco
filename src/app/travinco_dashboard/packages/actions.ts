@@ -779,3 +779,114 @@ export async function bulkCreatePackages(
     packages: inserted || [],
   };
 }
+
+export interface PackageTableItem {
+  id: string;
+  title: string;
+  slug: string;
+  cover_image_url: string | null;
+  destination_name: string | null;
+  duration_days: number;
+  duration_nights: number;
+  base_price: number;
+  discount_price: number | null;
+  currency: string;
+  status: string;
+  is_featured: boolean;
+}
+
+export interface PackagesTableQueryResult {
+  packages: PackageTableItem[];
+  totalCount: number;
+  totalPages: number;
+  page: number;
+  pageSize: number;
+}
+
+/**
+ * Fast, lean query fetching strictly the 7 table columns:
+ * Image, Package (title/slug/id), Destination, Duration, Price, Status, Featured.
+ * Excludes heavy itineraries, inclusions, exclusions, faqs, images, videos, and descriptions.
+ */
+export async function getPackagesTableList({
+  page = 1,
+  pageSize = 20,
+  q = '',
+  status = 'all',
+}: {
+  page?: number;
+  pageSize?: number;
+  q?: string;
+  status?: string;
+} = {}): Promise<PackagesTableQueryResult> {
+  const profile = await requireProfile();
+  await checkModulePermission(profile, 'packages', 'view');
+
+  const supabase = await createClient();
+
+  const currentPage = Math.max(1, page);
+  const from = (currentPage - 1) * pageSize;
+  const to = from + pageSize - 1;
+
+  let query = supabase
+    .from('travel_packages')
+    .select(
+      'id, title, slug, cover_image_url, duration_days, duration_nights, base_price, discount_price, currency, status, is_featured, destination_id, is_deleted',
+      { count: 'exact' }
+    )
+    .order('created_at', { ascending: false });
+
+  if (status && status !== 'all') {
+    query = query.eq('status', status as any);
+  }
+
+  if (q && q.trim()) {
+    query = query.or(`title.ilike.%${q.trim()}%,slug.ilike.%${q.trim()}%`);
+  }
+
+  const [packagesRes, destinationsRes, deletedSettingsRes] = await Promise.all([
+    query.range(from, to),
+    supabase.from('destinations').select('id, name'),
+    supabase.from('website_settings').select('key').like('key', 'deleted_package_%'),
+  ]);
+
+  const deletedKeys = new Set(
+    (deletedSettingsRes.data || []).map((s: { key: string }) => s.key.replace('deleted_package_', ''))
+  );
+
+  const destMap = new Map<string, string>();
+  (destinationsRes.data || []).forEach((d: { id: string; name: string }) => {
+    destMap.set(d.id, d.name);
+  });
+
+  const rawRows = packagesRes.data || [];
+  const activeRows = rawRows.filter(
+    (pkg: any) => pkg.is_deleted !== true && !deletedKeys.has(pkg.id)
+  );
+
+  const items: PackageTableItem[] = activeRows.map((pkg: any) => ({
+    id: pkg.id,
+    title: pkg.title,
+    slug: pkg.slug,
+    cover_image_url: pkg.cover_image_url || null,
+    destination_name: pkg.destination_id ? destMap.get(pkg.destination_id) || '—' : '—',
+    duration_days: pkg.duration_days ?? 0,
+    duration_nights: pkg.duration_nights ?? 0,
+    base_price: Number(pkg.base_price) || 0,
+    discount_price: pkg.discount_price ? Number(pkg.discount_price) : null,
+    currency: pkg.currency || 'INR',
+    status: pkg.status,
+    is_featured: Boolean(pkg.is_featured),
+  }));
+
+  const totalCount = packagesRes.count ?? items.length;
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+
+  return {
+    packages: items,
+    totalCount,
+    totalPages,
+    page: currentPage,
+    pageSize,
+  };
+}

@@ -10,14 +10,31 @@ import {
 } from '@/lib/auth/login-limiter';
 import { cookies } from 'next/headers';
 import { z } from 'zod';
+import {
+  initiateCustomerLoginFlow,
+  resendCustomerLoginOtpFlow,
+  verifyCustomerLoginOtpFlow,
+  type InitiateLoginResult,
+  type VerifyLoginOtpResult,
+} from '@/lib/auth/login-otp';
+import {
+  initiateCustomerSignupFlow,
+  resendCustomerSignupOtpFlow,
+  verifyCustomerSignupOtpFlow,
+  type InitiateSignupResult,
+  type VerifySignupResult,
+} from '@/lib/auth/signup-otp';
 
 const signupSchema = z.object({
   full_name: z.string().min(1, 'Name is required'),
   email: z
     .string()
     .email('Enter a valid email')
-    .refine((email) => email.toLowerCase().endsWith('@gmail.com'), {
-      message: 'Only @gmail.com email addresses are accepted',
+    .refine((email) => {
+      const e = email.toLowerCase().trim();
+      return e.endsWith('@gmail.com') || e.endsWith('.in');
+    }, {
+      message: 'Only @gmail.com and .in email addresses are accepted.',
     }),
   password: z
     .string()
@@ -28,10 +45,76 @@ const signupSchema = z.object({
     .regex(/[^A-Za-z0-9]/, 'Password must include at least one symbol'),
 });
 
+const initiateSignupSchema = z
+  .object({
+    full_name: z.string().min(1, 'Please enter your full name.'),
+    email: z
+      .string()
+      .email('Please enter a valid email address.')
+      .refine((email) => {
+        const e = email.toLowerCase().trim();
+        return e.endsWith('@gmail.com') || e.endsWith('.in');
+      }, {
+        message: 'Only @gmail.com and .in email addresses are accepted.',
+      }),
+    password: z
+      .string()
+      .min(7, 'Password must be at least 7 characters.')
+      .regex(/[A-Z]/, 'Password must include at least one capital letter.')
+      .regex(/[a-z]/, 'Password must include at least one lowercase letter.')
+      .regex(/[0-9]/, 'Password must include at least one number.')
+      .regex(/[^A-Za-z0-9]/, 'Password must include at least one symbol.'),
+    confirm_password: z.string().min(1, 'Please confirm your password.'),
+  })
+  .refine((data) => data.password === data.confirm_password, {
+    message: 'Passwords do not match.',
+    path: ['confirm_password'],
+  });
+
 const loginSchema = z.object({
   email: z.string().email('Enter a valid email'),
   password: z.string().min(1, 'Password is required'),
 });
+
+/**
+ * Step 1 of OTP Signup: Validates name, email, password, confirm password,
+ * checks for duplicate email, and sends a 6-digit OTP to the user's Gmail.
+ */
+export async function initiateCustomerSignup(raw: unknown): Promise<InitiateSignupResult> {
+  const parsed = initiateSignupSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? 'Please check the form.' };
+  }
+  return initiateCustomerSignupFlow({
+    fullName: parsed.data.full_name,
+    email: parsed.data.email,
+    password: parsed.data.password,
+    confirmPassword: parsed.data.confirm_password,
+  });
+}
+
+/**
+ * Resends a fresh 6-digit signup OTP for an active signup ticket.
+ */
+export async function resendCustomerSignupOtp(signupTicket: string): Promise<{
+  error?: string;
+  success?: boolean;
+}> {
+  if (!signupTicket) return { error: 'Invalid signup session.' };
+  return resendCustomerSignupOtpFlow(signupTicket);
+}
+
+/**
+ * Step 2 of OTP Signup: Verifies 6-digit OTP, creates the user account in Supabase
+ * without sending an email confirmation link, and dispatches the welcome email.
+ */
+export async function verifyCustomerSignupOtp(
+  signupTicket: string,
+  otp: string
+): Promise<VerifySignupResult> {
+  if (!signupTicket) return { error: 'Invalid signup session.' };
+  return verifyCustomerSignupOtpFlow(signupTicket, otp);
+}
 
 export async function signUpCustomer(raw: unknown) {
   const parsed = signupSchema.safeParse(raw);
@@ -61,7 +144,7 @@ export async function signUpCustomer(raw: unknown) {
       message.includes('already exists') ||
       message.includes('user already')
     ) {
-      return { error: 'An account with this email already exists. Try logging in instead.' };
+      return { error: 'Email is already taken' };
     }
     console.error('signUpCustomer failed:', error.message);
     return { error: 'Could not create your account. Please try again.' };
@@ -98,6 +181,39 @@ export async function signUpCustomer(raw: unknown) {
   }
 
   return { hasSession: Boolean(authData?.session) };
+}
+
+/**
+ * Step 1 of OTP Login: Validates email and password, sends a 6-digit OTP to the registered email.
+ */
+export async function initiateCustomerLogin(raw: unknown): Promise<InitiateLoginResult> {
+  const parsed = loginSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? 'Please check the form.' };
+  }
+  return initiateCustomerLoginFlow(parsed.data.email, parsed.data.password);
+}
+
+/**
+ * Resends a fresh login verification code for an active login ticket.
+ */
+export async function resendCustomerLoginOtp(loginTicket: string): Promise<{
+  error?: string;
+  success?: boolean;
+}> {
+  if (!loginTicket) return { error: 'Invalid login session.' };
+  return resendCustomerLoginOtpFlow(loginTicket);
+}
+
+/**
+ * Step 2 of OTP Login: Verifies the entered OTP and establishes the authenticated session.
+ */
+export async function verifyCustomerLoginOtp(
+  loginTicket: string,
+  otp: string
+): Promise<VerifyLoginOtpResult> {
+  if (!loginTicket) return { error: 'Invalid login session.' };
+  return verifyCustomerLoginOtpFlow(loginTicket, otp);
 }
 
 export async function logInCustomer(raw: unknown) {

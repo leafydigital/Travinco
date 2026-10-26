@@ -239,3 +239,103 @@ export async function bulkCreateDestinations(
 
   return { count: data?.length ?? payload.length, ids: (data || []).map((d: any) => d.id) };
 }
+
+export interface DestinationTableItem {
+  id: string;
+  name: string;
+  slug: string;
+  country: string | null;
+  cover_image_url: string | null;
+  is_featured: boolean;
+  status: ContentStatus;
+  is_active?: boolean;
+}
+
+export interface DestinationsTableQueryResult {
+  destinations: DestinationTableItem[];
+  totalCount: number;
+  totalPages: number;
+  page: number;
+  pageSize: number;
+}
+
+/**
+ * Fast, lean query fetching strictly the 5 display columns:
+ * Image, Destination (name/slug/id), Country, Featured, Status.
+ * Excludes heavy description, meta fields, and other non-table attributes.
+ */
+export async function getDestinationsTableList({
+  page = 1,
+  pageSize = 20,
+  q = '',
+  status = 'all',
+}: {
+  page?: number;
+  pageSize?: number;
+  q?: string;
+  status?: string;
+} = {}): Promise<DestinationsTableQueryResult> {
+  const profile = await requireProfile();
+  await checkModulePermission(profile, 'destinations', 'view');
+
+  const supabase = await createClient();
+
+  const currentPage = Math.max(1, page);
+  const from = (currentPage - 1) * pageSize;
+  const to = from + pageSize - 1;
+
+  let query = supabase
+    .from('destinations')
+    .select(
+      'id, name, slug, country, cover_image_url, is_featured, status, is_deleted',
+      { count: 'exact' }
+    )
+    .order('sort_order', { ascending: true })
+    .order('name', { ascending: true });
+
+  if (status && status !== 'all') {
+    query = query.eq('status', status as any);
+  }
+
+  if (q && q.trim()) {
+    const term = q.trim();
+    query = query.or(`name.ilike.%${term}%,slug.ilike.%${term}%,country.ilike.%${term}%`);
+  }
+
+  const [destinationsRes, deletedSettingsRes] = await Promise.all([
+    query.range(from, to),
+    supabase.from('website_settings').select('key').like('key', 'deleted_destination_%'),
+  ]);
+
+  const deletedKeys = new Set(
+    (deletedSettingsRes.data || []).map((s: { key: string }) => s.key.replace('deleted_destination_', ''))
+  );
+
+  const rawRows = destinationsRes.data || [];
+  const activeRows = rawRows.filter(
+    (d: any) => d.is_deleted !== true && !deletedKeys.has(d.id)
+  );
+
+  const items: DestinationTableItem[] = activeRows.map((d: any) => ({
+    id: d.id,
+    name: d.name,
+    slug: d.slug,
+    country: d.country || null,
+    cover_image_url: d.cover_image_url || null,
+    is_featured: Boolean(d.is_featured),
+    status: d.status,
+    is_active: d.status === 'published',
+  }));
+
+  const totalCount = destinationsRes.count ?? items.length;
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+
+  return {
+    destinations: items,
+    totalCount,
+    totalPages,
+    page: currentPage,
+    pageSize,
+  };
+}
+

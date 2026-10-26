@@ -8,6 +8,7 @@ import {
 } from '@/lib/services/rate-master-import';
 import {
   getMasterRatesFromDb,
+  getMasterRateByIdFromDb,
   deleteMasterRateFromDb,
   clearAllMasterRatesFromDb,
   getMasterFilterOptions,
@@ -15,6 +16,7 @@ import {
   type RateMasterQueryResult,
   type MasterFilterOptions,
 } from '@/lib/services/master-rates-db';
+import type { MasterHotelRateItem } from '@/lib/excel/master-parser';
 import { revalidatePath } from 'next/cache';
 
 export interface UploadActionResult {
@@ -117,6 +119,27 @@ export async function getMasterRatesAction(
   await assertPageAccess(profile, 'master');
 
   return getMasterRatesFromDb(params);
+}
+
+/**
+ * Fetches complete details of a single master rate for on-demand editing.
+ */
+export async function getMasterRateByIdAction(
+  rateId: string | number
+): Promise<{ data?: MasterHotelRateItem; error?: string }> {
+  try {
+    const profile = await requireProfile();
+    await assertPageAccess(profile, 'master');
+
+    const rate = await getMasterRateByIdFromDb(rateId);
+    if (!rate) {
+      return { error: 'Rate record not found.' };
+    }
+    return { data: rate };
+  } catch (err: unknown) {
+    console.error('Error in getMasterRateByIdAction:', err);
+    return { error: 'Could not fetch rate details.' };
+  }
 }
 
 /**

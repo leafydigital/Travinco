@@ -237,7 +237,15 @@ export function SiteHeader({
             </Link>
           )}
           {showCta && (
-            <Link href={ctaHref} className="btn-cta">
+            <Link
+              href={ctaHref}
+              onClick={() => {
+                if (typeof window !== 'undefined') {
+                  window.dispatchEvent(new CustomEvent('travinco:reset-booking-form'));
+                }
+              }}
+              className="btn-cta"
+            >
               {ctaText}
             </Link>
           )}
@@ -350,7 +358,12 @@ export function SiteHeader({
             {showCta && (
               <Link
                 href={ctaHref}
-                onClick={() => setMobileOpen(false)}
+                onClick={() => {
+                  setMobileOpen(false);
+                  if (typeof window !== 'undefined') {
+                    window.dispatchEvent(new CustomEvent('travinco:reset-booking-form'));
+                  }
+                }}
                 className="btn-cta mt-2 justify-center"
               >
                 {ctaText}

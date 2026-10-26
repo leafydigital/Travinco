@@ -1,8 +1,10 @@
 'use server';
 
 import { createCustomerClient } from '@/lib/supabase/server';
+import { createServiceClient } from '@/lib/supabase/service';
 import { getCustomer } from '@/lib/supabase/customer-auth-helpers';
 import { enquiryFormSchema } from '@/lib/validations/enquiry';
+import { sendEnquiryEmailOtp, verifyEnquiryEmailOtp } from '@/lib/enquiry-otp';
 import { headers } from 'next/headers';
 import { revalidatePath } from 'next/cache';
 
@@ -12,15 +14,22 @@ export type EnquirySubmitState = {
   enquiryNumber?: string;
 };
 
-// Simple in-memory rate limit: same IP can't submit more than 3 times in
-// 10 minutes. This resets on server restart / doesn't share state across
-// serverless instances — adequate as a first line of defense for a small
-// agency site, but a real deployment on serverless infra should move this
-// to a shared store (Upstash Redis, Supabase table) if abuse becomes an
-// issue.
+export type RequestEnquiryOtpResult = {
+  error?: string;
+  success?: boolean;
+  email?: string;
+};
+
+export type VerifyEnquiryOtpResult = {
+  error?: string;
+  success?: boolean;
+  enquiryNumber?: string;
+};
+
+// Simple in-memory rate limit: same IP can't submit more than 5 times in 10 minutes
 const submissionLog = new Map<string, number[]>();
 const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
-const RATE_LIMIT_MAX = 3;
+const RATE_LIMIT_MAX = 5;
 
 function isRateLimited(ip: string) {
   const now = Date.now();
@@ -50,22 +59,15 @@ function computePriorityFromDate(travelDateStr?: string | null): 'urgent' | 'hig
   }
 }
 
-export async function submitEnquiry(
-  _prev: EnquirySubmitState,
-  formData: FormData
-): Promise<EnquirySubmitState> {
-  const customer = await getCustomer();
-  if (!customer) {
-    return { error: 'Please log in to your customer account before submitting a request.' };
-  }
-
-  const supabase = await createCustomerClient();
-
+/**
+ * Step 1: Validates enquiry form fields and sends a 6-digit OTP to the provided email.
+ */
+export async function requestEnquiryOtp(formData: FormData): Promise<RequestEnquiryOtpResult> {
   const headersList = await headers();
   const ip = headersList.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
 
   if (isRateLimited(ip)) {
-    return { error: 'Too many submissions. Please try again in a few minutes.' };
+    return { error: 'Too many requests. Please try again in a few minutes.' };
   }
 
   const raw = Object.fromEntries(formData.entries());
@@ -78,99 +80,179 @@ export async function submitEnquiry(
     return { error: fieldName ? `${fieldName}: ${message}` : message };
   }
 
-  // Honeypot tripped — silently pretend success so bots don't learn to
-  // adapt, without actually writing spam to the database.
+  // Honeypot tripped — pretend success silently
+  if (parsed.data.website) {
+    return { success: true, email: parsed.data.email };
+  }
+
+  const sendResult = await sendEnquiryEmailOtp(parsed.data.email, parsed.data.customer_name);
+  if (sendResult.error) {
+    return { error: sendResult.error };
+  }
+
+  return { success: true, email: parsed.data.email };
+}
+
+/**
+ * Step 2: Verifies the entered OTP and, upon success, creates and saves the enquiry.
+ */
+export async function verifyEnquiryOtpAndSubmit(
+  formData: FormData,
+  otp: string
+): Promise<VerifyEnquiryOtpResult> {
+  if (!otp || otp.trim().length !== 6) {
+    return { error: 'Please enter the 6-digit verification code.' };
+  }
+
+  const raw = Object.fromEntries(formData.entries());
+  const parsed = enquiryFormSchema.safeParse(raw);
+
+  if (!parsed.success) {
+    const firstIssue = parsed.error.issues[0];
+    const fieldName = firstIssue?.path?.[0];
+    const message = firstIssue?.message ?? 'Please check the form and try again.';
+    return { error: fieldName ? `${fieldName}: ${message}` : message };
+  }
+
+  // Honeypot tripped — silently return success
   if (parsed.data.website) {
     return { success: true, enquiryNumber: 'ENQ-0000-00000' };
   }
 
-  // Uses the authenticated client and RPC function.
-  // Falls back gracefully so enquiry submissions never fail even if service-role keys are missing.
-  const initialPriority = computePriorityFromDate(parsed.data.travel_date);
-  let enquiryNumber = `ENQ-${new Date().getFullYear()}-${Math.floor(10000 + Math.random() * 90000)}`;
-  let insertedSuccessfully = false;
+  // Verify OTP strictly
+  const verifyResult = await verifyEnquiryEmailOtp(parsed.data.email, otp.trim());
+  if (verifyResult.error || !verifyResult.verified) {
+    return { error: verifyResult.error || 'Invalid verification code.' };
+  }
 
-  // 1. Try the security-definer RPC function first
-  const { data: rpcNumber, error: rpcError } = await supabase.rpc('submit_customer_enquiry', {
-    p_customer_name: parsed.data.customer_name,
-    p_phone: parsed.data.phone,
-    p_whatsapp_number: parsed.data.whatsapp_number || null,
-    p_email: parsed.data.email || customer.email || null,
-    p_package_id: parsed.data.package_id || null,
-    p_destination: parsed.data.destination || null,
-    p_travel_date: parsed.data.travel_date || null,
-    p_number_of_adults: parsed.data.number_of_adults,
-    p_number_of_children: parsed.data.number_of_children,
-    p_number_of_infants: parsed.data.number_of_infants,
-    p_budget: parsed.data.budget || null,
-    p_message: parsed.data.message || null,
-    p_priority: initialPriority,
-  });
+  // Check optional logged-in customer session
+  const customer = await getCustomer();
+  const serviceSupabase = createServiceClient();
 
-  if (!rpcError && rpcNumber) {
-    enquiryNumber = rpcNumber;
-    insertedSuccessfully = true;
-  } else {
-    // 2. Direct client insert using the standard user/session client
-    let customerId: string | null = null;
-    if (customer.email) {
-      const { data: cust } = await supabase
+  let customerId: string | null = null;
+  const targetEmail = parsed.data.email.trim().toLowerCase();
+
+  try {
+    if (customer?.email) {
+      const { data: cust } = await serviceSupabase
         .from('customers')
         .select('id')
-        .eq('email', customer.email)
+        .eq('email', customer.email.trim().toLowerCase())
         .maybeSingle();
       customerId = cust?.id ?? null;
     }
 
-    const payload = {
-      customer_id: customerId,
-      customer_name: parsed.data.customer_name,
-      phone: parsed.data.phone,
-      whatsapp_number: parsed.data.whatsapp_number || null,
-      email: parsed.data.email || customer.email || null,
-      package_id: parsed.data.package_id || null,
-      destination: parsed.data.destination || null,
-      travel_date: parsed.data.travel_date || null,
-      number_of_adults: parsed.data.number_of_adults,
-      number_of_children: parsed.data.number_of_children,
-      number_of_infants: parsed.data.number_of_infants,
-      budget: parsed.data.budget || null,
-      message: parsed.data.message || null,
-      source: 'website' as const,
-      status: 'new' as const, // Pending
-      priority: initialPriority,
-      is_deleted: false,
-    };
+    if (!customerId) {
+      const { data: existingCust } = await serviceSupabase
+        .from('customers')
+        .select('id')
+        .eq('email', targetEmail)
+        .maybeSingle();
 
-    // Try direct insert with select
-    const { data: directData, error: directError } = await supabase
+      if (existingCust) {
+        customerId = existingCust.id;
+      } else {
+        // Create customer record so team can view and reach out
+        const { data: newCust } = await serviceSupabase
+          .from('customers')
+          .insert({
+            full_name: parsed.data.customer_name,
+            email: targetEmail,
+            phone: parsed.data.phone,
+            source: 'website',
+            is_active: true,
+            is_deleted: false,
+          } as any)
+          .select('id')
+          .maybeSingle();
+
+        customerId = newCust?.id ?? null;
+      }
+    }
+  } catch (custErr) {
+    console.warn('Could not associate customer record:', custErr);
+  }
+
+  const initialPriority = computePriorityFromDate(parsed.data.travel_date);
+  let enquiryNumber = `ENQ-${new Date().getFullYear()}-${Math.floor(10000 + Math.random() * 90000)}`;
+
+  const payload = {
+    customer_id: customerId,
+    customer_name: parsed.data.customer_name,
+    phone: parsed.data.phone,
+    whatsapp_number: parsed.data.whatsapp_number || null,
+    email: targetEmail,
+    package_id: parsed.data.package_id || null,
+    destination: parsed.data.destination || null,
+    travel_date: parsed.data.travel_date || null,
+    number_of_adults: parsed.data.number_of_adults,
+    number_of_children: parsed.data.number_of_children,
+    number_of_infants: parsed.data.number_of_infants,
+    budget: parsed.data.budget || null,
+    message: parsed.data.message || null,
+    source: 'website' as const,
+    status: 'new' as const,
+    priority: initialPriority,
+    is_deleted: false,
+  };
+
+  let insertData: any = null;
+  let insertError: any = null;
+
+  try {
+    const res = await serviceSupabase
       .from('enquiries')
       .insert(payload)
       .select('enquiry_number')
       .maybeSingle();
+    insertData = res.data;
+    insertError = res.error;
+  } catch (err: any) {
+    insertError = err;
+  }
 
-    if (!directError && directData?.enquiry_number) {
-      enquiryNumber = directData.enquiry_number;
-      insertedSuccessfully = true;
-    } else {
-      // If select failed (RLS on read-back), do direct insert without select
-      const { error: rawInsertError } = await supabase
+  if (insertError) {
+    console.warn('serviceSupabase insert failed, attempting fallback to customer client:', insertError);
+    try {
+      const customerSupabase = await createCustomerClient();
+      const { data: fbData, error: fbError } = await customerSupabase
         .from('enquiries')
-        .insert(payload);
+        .insert(payload)
+        .select('enquiry_number')
+        .maybeSingle();
 
-      if (!rawInsertError) {
-        insertedSuccessfully = true;
-      } else {
-        console.error('submitEnquiry direct insert failed:', rawInsertError.message, rawInsertError.code);
-        return { error: 'Something went wrong on our end. Please try again or WhatsApp us directly.' };
+      if (fbError) {
+        console.error('Customer client fallback insert error:', fbError);
+        return { error: 'Failed to save enquiry. Please try again or reach out to us on WhatsApp.' };
       }
+      insertData = fbData;
+    } catch (fbErr) {
+      console.error('Customer client fallback caught error:', fbErr);
+      return { error: 'Failed to save enquiry. Please try again or reach out to us on WhatsApp.' };
     }
   }
 
-  if (!insertedSuccessfully) {
-    return { error: 'Something went wrong on our end. Please try again or WhatsApp us directly.' };
+  if (insertData?.enquiry_number) {
+    enquiryNumber = insertData.enquiry_number;
   }
 
   revalidatePath('/travinco_dashboard/enquiries');
   return { success: true, enquiryNumber };
+}
+
+/**
+ * Backward-compatible wrapper for standard form submissions if called directly.
+ */
+export async function submitEnquiry(
+  _prev: EnquirySubmitState,
+  formData: FormData
+): Promise<EnquirySubmitState> {
+  const otp = formData.get('otp')?.toString() || '';
+  if (!otp) {
+    const reqResult = await requestEnquiryOtp(formData);
+    if (reqResult.error) return { error: reqResult.error };
+    return { error: 'Please verify the OTP code sent to your email.' };
+  }
+
+  return verifyEnquiryOtpAndSubmit(formData, otp);
 }

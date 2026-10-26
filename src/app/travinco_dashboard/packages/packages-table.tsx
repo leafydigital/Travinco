@@ -1,117 +1,118 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useTransition, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { Search, X, SlidersHorizontal, RotateCcw, Package } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Search, X, RotateCcw, Package, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { formatCurrency } from '@/lib/utils/format';
 import { PackageRowActions } from './package-row-actions';
+import type { PackageTableItem } from './actions';
 
-export interface PackageItem {
-  id: string;
-  title: string;
-  slug: string;
-  status: string;
-  base_price: number;
-  discount_price: number | null;
-  currency: string;
-  duration_days: number;
-  duration_nights: number;
-  cover_image_url: string | null;
-  is_featured: boolean;
-  destination_id: string | null;
-  is_deleted?: boolean;
-}
-
-import type { DestinationOption } from './bulk-create-modal';
+export type PackageItem = PackageTableItem;
 
 interface Props {
-  initialPackages: PackageItem[];
-  destinationsMap: Record<string, string>;
-  destinations?: DestinationOption[];
+  packages: PackageTableItem[];
+  totalCount: number;
+  totalPages: number;
+  currentPage: number;
+  pageSize: number;
   isAdmin: boolean;
+  initialSearch?: string;
+  initialStatus?: string;
 }
 
-const PAGE_SIZE = 15;
-
 export function PackagesTable({
-  initialPackages,
-  destinationsMap,
-  destinations = [],
+  packages = [],
+  totalCount = 0,
+  totalPages = 1,
+  currentPage = 1,
+  pageSize = 20,
   isAdmin,
+  initialSearch = '',
+  initialStatus = 'all',
 }: Props) {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [currentPage, setCurrentPage] = useState(1);
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [isPending, startTransition] = useTransition();
 
-  // Instant in-memory filtering (0ms latency!)
-  const filteredPackages = useMemo(() => {
-    let result = initialPackages.filter((pkg) => pkg.is_deleted !== true);
+  const [searchTerm, setSearchTerm] = useState(initialSearch);
+  const [statusFilter, setStatusFilter] = useState(initialStatus);
 
-    if (statusFilter && statusFilter !== 'all') {
-      result = result.filter((pkg) => pkg.status === statusFilter);
+  useEffect(() => {
+    setSearchTerm(searchParams.get('q') ?? '');
+    setStatusFilter(searchParams.get('status') ?? 'all');
+  }, [searchParams]);
+
+  function updateParams(newParams: Record<string, string | null | undefined>) {
+    const params = new URLSearchParams(searchParams.toString());
+    Object.entries(newParams).forEach(([key, val]) => {
+      if (val === null || val === undefined || val === '' || val === 'all') {
+        params.delete(key);
+      } else {
+        params.set(key, val);
+      }
+    });
+
+    if ('q' in newParams || 'status' in newParams) {
+      params.delete('page');
     }
 
-    if (searchTerm.trim()) {
-      const q = searchTerm.toLowerCase().trim();
-      result = result.filter((pkg) => {
-        const destName = pkg.destination_id ? destinationsMap[pkg.destination_id]?.toLowerCase() ?? '' : '';
-        return (
-          pkg.title.toLowerCase().includes(q) ||
-          destName.includes(q) ||
-          pkg.slug.toLowerCase().includes(q)
-        );
-      });
-    }
-
-    return result;
-  }, [initialPackages, destinationsMap, statusFilter, searchTerm]);
-
-  // Pagination calculation
-  const totalItems = filteredPackages.length;
-  const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
-  const safeCurrentPage = Math.min(currentPage, totalPages);
-  const startIndex = (safeCurrentPage - 1) * PAGE_SIZE;
-  const paginatedPackages = filteredPackages.slice(startIndex, startIndex + PAGE_SIZE);
-
-  function handleSearchChange(val: string) {
-    setSearchTerm(val);
-    setCurrentPage(1);
+    startTransition(() => {
+      router.push(`?${params.toString()}`);
+    });
   }
 
-  function handleStatusChange(val: string) {
-    setStatusFilter(val);
-    setCurrentPage(1);
+  function handleSearchSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    updateParams({ q: searchTerm.trim() });
+  }
+
+  function handleStatusChange(newStatus: string) {
+    setStatusFilter(newStatus);
+    updateParams({ status: newStatus });
   }
 
   function handleClearAll() {
     setSearchTerm('');
     setStatusFilter('all');
-    setCurrentPage(1);
+    startTransition(() => {
+      router.push('?');
+    });
   }
 
-  const hasActiveFilters = Boolean(searchTerm.trim() || statusFilter !== 'all');
+  function goToPage(page: number) {
+    if (page < 1 || page > totalPages) return;
+    updateParams({ page: String(page) });
+  }
+
+  const hasActiveFilters = Boolean(searchTerm.trim() || (statusFilter && statusFilter !== 'all'));
+  const startIndex = (currentPage - 1) * pageSize;
 
   return (
     <div className="space-y-4">
-      {/* 1. Fast Client Filter Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center gap-2.5 sm:gap-3">
+      {/* 1. Fast Filter & Search Bar */}
+      <form onSubmit={handleSearchSubmit} className="flex flex-col sm:flex-row sm:items-center gap-2.5 sm:gap-3">
         {/* Search Input */}
         <div className="relative flex-1 min-w-0 sm:min-w-[240px]">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" />
           <input
             type="text"
             value={searchTerm}
-            onChange={(e) => handleSearchChange(e.target.value)}
-            placeholder="Search by package name or destination…"
+            onChange={(e) => setSearchTerm(e.target.value)}
+            onBlur={() => updateParams({ q: searchTerm.trim() })}
+            placeholder="Search by package name or slug…"
             className="input pl-9 pr-8 text-sm w-full"
           />
           {searchTerm && (
             <button
               type="button"
-              onClick={() => handleSearchChange('')}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-ink-400 hover:text-ink-700"
+              onClick={() => {
+                setSearchTerm('');
+                updateParams({ q: '' });
+              }}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-ink-400 hover:text-ink-700 cursor-pointer"
               title="Clear search"
             >
               <X className="h-3.5 w-3.5" />
@@ -136,21 +137,25 @@ export function PackagesTable({
             <button
               type="button"
               onClick={handleClearAll}
-              className="inline-flex items-center gap-1 text-xs font-medium text-ink-500 hover:text-brand-700 transition px-2 py-1.5 whitespace-nowrap"
+              className="inline-flex items-center gap-1 text-xs font-medium text-ink-500 hover:text-brand-700 transition px-2 py-1.5 whitespace-nowrap cursor-pointer"
             >
               <RotateCcw className="h-3 w-3" />
               <span>Clear</span>
             </button>
           )}
+
+          {isPending && (
+            <Loader2 className="h-4 w-4 animate-spin text-brand-600 shrink-0 ml-1" />
+          )}
         </div>
-      </div>
+      </form>
 
       {/* 2. Packages Table */}
       <div className="card overflow-hidden">
         <div className="w-full overflow-x-auto">
           <table className="w-full min-w-[720px] text-sm table-auto">
             <thead>
-              <tr className="border-b border-ink-100 text-left text-xs uppercase tracking-wide text-ink-400">
+              <tr className="border-b border-ink-100 text-left text-xs uppercase tracking-wide text-ink-400 bg-sand-50/40">
                 <th className="w-14 px-3 sm:px-4 py-3 font-semibold">Image</th>
                 <th className="px-3 sm:px-4 py-3 font-semibold">Package</th>
                 <th className="px-3 sm:px-4 py-3 font-semibold">Destination</th>
@@ -162,21 +167,22 @@ export function PackagesTable({
               </tr>
             </thead>
             <tbody className="divide-y divide-ink-50">
-              {paginatedPackages.length === 0 && (
+              {packages.length === 0 && (
                 <tr>
                   <td colSpan={8} className="px-5 py-12 text-center text-ink-400">
                     <Package className="mx-auto h-8 w-8 text-ink-300 mb-2" />
                     <p className="font-medium text-ink-600">No packages found</p>
                     <p className="text-xs text-ink-400 mt-1">
                       {hasActiveFilters
-                        ? 'Try clearing or modifying your search filters.'
+                        ? 'Try modifying your search or status filter.'
                         : 'No active packages in the system.'}
                     </p>
                   </td>
                 </tr>
               )}
-              {paginatedPackages.map((pkg) => (
+              {packages.map((pkg) => (
                 <tr key={pkg.id} className="border-b border-ink-50 last:border-0 hover:bg-ink-50/50 transition-colors">
+                  {/* 1. Image */}
                   <td className="w-14 px-3 sm:px-4 py-3">
                     <div className="relative h-10 w-12 overflow-hidden rounded-lg bg-ink-100 shadow-2xs">
                       {pkg.cover_image_url ? (
@@ -195,20 +201,30 @@ export function PackagesTable({
                       )}
                     </div>
                   </td>
+
+                  {/* 2. Package */}
                   <td className="px-3 sm:px-4 py-3">
                     <Link
                       href={`/travinco_dashboard/packages/${pkg.id}`}
+                      prefetch={true}
                       className="font-medium text-ink-900 hover:text-brand-700 transition-colors line-clamp-1"
+                      title={pkg.title}
                     >
                       {pkg.title}
                     </Link>
                   </td>
-                  <td className="px-3 sm:px-4 py-3 text-ink-600">
-                    {pkg.destination_id ? destinationsMap[pkg.destination_id] ?? '—' : '—'}
+
+                  {/* 3. Destination */}
+                  <td className="px-3 sm:px-4 py-3 text-ink-600 whitespace-nowrap">
+                    {pkg.destination_name || '—'}
                   </td>
+
+                  {/* 4. Duration */}
                   <td className="px-3 sm:px-4 py-3 text-ink-600 whitespace-nowrap">
                     {pkg.duration_days}D / {pkg.duration_nights}N
                   </td>
+
+                  {/* 5. Price */}
                   <td className="px-3 sm:px-4 py-3 text-ink-700 whitespace-nowrap">
                     {pkg.discount_price ? (
                       <div>
@@ -225,9 +241,13 @@ export function PackagesTable({
                       </span>
                     )}
                   </td>
+
+                  {/* 6. Status */}
                   <td className="px-3 sm:px-4 py-3 whitespace-nowrap">
                     <StatusBadge status={pkg.status} />
                   </td>
+
+                  {/* 7. Featured */}
                   <td className="px-3 sm:px-4 py-3 whitespace-nowrap">
                     {pkg.is_featured ? (
                       <span className="badge badge-accent">Featured</span>
@@ -235,6 +255,8 @@ export function PackagesTable({
                       <span className="text-xs text-ink-300">—</span>
                     )}
                   </td>
+
+                  {/* 8. Actions */}
                   <td className="w-[1%] whitespace-nowrap px-3 sm:px-4 py-3 text-right">
                     <PackageRowActions
                       id={pkg.id}
@@ -250,28 +272,38 @@ export function PackagesTable({
           </table>
         </div>
 
-        {/* 3. Pagination */}
+        {/* 3. Pagination Controls */}
         {totalPages > 1 && (
-          <div className="flex items-center justify-between border-t border-ink-100 px-5 py-3 text-sm text-ink-500">
+          <div className="flex flex-col sm:flex-row items-center justify-between border-t border-ink-100 px-5 py-3 text-sm text-ink-500 gap-3">
             <span>
-              Showing {startIndex + 1}–{Math.min(startIndex + PAGE_SIZE, totalItems)} of {totalItems} packages
+              Showing <span className="font-semibold text-ink-800">{startIndex + 1}</span>–
+              <span className="font-semibold text-ink-800">
+                {Math.min(startIndex + pageSize, totalCount)}
+              </span> of <span className="font-semibold text-ink-800">{totalCount}</span> packages
             </span>
-            <div className="flex gap-2">
+            <div className="flex items-center gap-1.5">
               <button
                 type="button"
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                disabled={safeCurrentPage <= 1}
-                className="btn-outline px-3 py-1.5 text-xs font-medium disabled:opacity-40"
+                onClick={() => goToPage(currentPage - 1)}
+                disabled={currentPage <= 1 || isPending}
+                className="btn-outline px-3 py-1.5 text-xs font-medium inline-flex items-center gap-1 disabled:opacity-40 cursor-pointer"
               >
-                Previous
+                <ChevronLeft className="h-3.5 w-3.5" />
+                <span>Previous</span>
               </button>
+
+              <span className="px-2 text-xs font-medium text-ink-600">
+                Page {currentPage} of {totalPages}
+              </span>
+
               <button
                 type="button"
-                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                disabled={safeCurrentPage >= totalPages}
-                className="btn-outline px-3 py-1.5 text-xs font-medium disabled:opacity-40"
+                onClick={() => goToPage(currentPage + 1)}
+                disabled={currentPage >= totalPages || isPending}
+                className="btn-outline px-3 py-1.5 text-xs font-medium inline-flex items-center gap-1 disabled:opacity-40 cursor-pointer"
               >
-                Next
+                <span>Next</span>
+                <ChevronRight className="h-3.5 w-3.5" />
               </button>
             </div>
           </div>

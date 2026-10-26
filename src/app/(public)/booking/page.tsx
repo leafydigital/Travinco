@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server';
 import type { Metadata } from 'next';
 import { EnquiryForm } from '@/components/public/enquiry-form';
-import { requireCustomer } from '@/lib/supabase/customer-auth-helpers';
+import { getCustomer } from '@/lib/supabase/customer-auth-helpers';
 import { getPageTitlesContent } from '@/lib/page-titles-content';
 
 export const dynamic = 'force-dynamic';
@@ -16,9 +16,15 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-export default async function BookingPage() {
-  // Enforces valid customer session; redirects unauthenticated visitors to customer login
-  const customer = await requireCustomer('/booking');
+export default async function BookingPage({
+  searchParams,
+}: {
+  searchParams?: { packageId?: string; package?: string };
+}) {
+  // Optional customer session: logged-in customers have details prefilled,
+  // but guests/non-logged-in users can freely fill and submit with OTP verification.
+  const customer = await getCustomer();
+  const selectedPackageId = searchParams?.packageId || searchParams?.package || '';
 
   const supabase = await createClient();
   const { data: packages } = await supabase
@@ -76,10 +82,11 @@ export default async function BookingPage() {
             )}
 
             <EnquiryForm
-              buttonLabel="Request a quote"
-              isLoggedIn={true}
-              defaultName={customer.full_name || ''}
-              defaultEmail={customer.email || ''}
+              buttonLabel="Send Quote"
+              isLoggedIn={Boolean(customer)}
+              defaultName={customer?.full_name || ''}
+              defaultEmail={customer?.email || ''}
+              packageId={selectedPackageId}
               layout="split"
               availablePackages={packages || []}
             />

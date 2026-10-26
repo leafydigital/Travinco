@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useTransition, useRef, useId } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useTransition, useRef, useId, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import {
   Plus,
@@ -16,11 +16,14 @@ import {
   Loader2,
   Layers,
   Search,
+  X,
   HelpCircle,
   ShieldCheck,
   RotateCcw,
   Power,
   PowerOff,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { ConfirmDeleteDialog } from '@/components/admin/confirm-delete-dialog';
 import {
@@ -34,11 +37,19 @@ import {
   updatePlugin,
   deletePlugin,
   togglePluginStatus,
+  getPluginById,
+  type PluginTableItem,
 } from './actions';
 import type { Plugin, PluginSlot } from '@/types/database';
 
 interface PluginsClientProps {
-  initialPlugins: Plugin[];
+  initialPlugins?: PluginTableItem[];
+  totalCount?: number;
+  totalPages?: number;
+  currentPage?: number;
+  pageSize?: number;
+  initialSearch?: string;
+  initialSlot?: string;
 }
 
 const SLOT_LABELS: Record<PluginSlot, { label: string; description: string; badge: string }> = {
@@ -59,70 +70,138 @@ const SLOT_LABELS: Record<PluginSlot, { label: string; description: string; badg
   },
 };
 
-export function PluginsClient({ initialPlugins }: PluginsClientProps) {
+export function PluginsClient({
+  initialPlugins = [],
+  totalCount = 0,
+  totalPages = 1,
+  currentPage = 1,
+  pageSize = 20,
+  initialSearch = '',
+  initialSlot = 'all',
+}: PluginsClientProps) {
   const router = useRouter();
-  const [plugins, setPlugins] = useState<Plugin[]>(initialPlugins);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [slotFilter, setSlotFilter] = useState<'all' | PluginSlot>('all');
+  const searchParams = useSearchParams();
+  const [plugins, setPlugins] = useState<PluginTableItem[]>(initialPlugins);
+  const [searchQuery, setSearchQuery] = useState(initialSearch);
+  const [slotFilter, setSlotFilter] = useState<'all' | PluginSlot>((initialSlot as any) || 'all');
 
   // Form Modal State
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingPlugin, setEditingPlugin] = useState<Plugin | null>(null);
+  const [loadingEditId, setLoadingEditId] = useState<number | null>(null);
 
   // Delete Dialog State
-  const [pluginToDelete, setPluginToDelete] = useState<Plugin | null>(null);
+  const [pluginToDelete, setPluginToDelete] = useState<PluginTableItem | null>(null);
   const [togglingId, setTogglingId] = useState<number | null>(null);
 
   // Pending transition state
   const [isPending, startTransition] = useTransition();
 
-  // Filter plugins
-  const filteredPlugins = plugins.filter((p) => {
-    const matchesSearch =
-      p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (p.description && p.description.toLowerCase().includes(searchQuery.toLowerCase()));
-    const matchesSlot = slotFilter === 'all' || p.slot === slotFilter;
-    return matchesSearch && matchesSlot;
-  });
+  // Sync state when server data reloads
+  useEffect(() => {
+    setPlugins(initialPlugins);
+  }, [initialPlugins]);
+
+  // Sync search and slot when URL searchParams change
+  useEffect(() => {
+    setSearchQuery(searchParams.get('q') ?? '');
+    setSlotFilter(((searchParams.get('slot') as PluginSlot) || 'all'));
+  }, [searchParams]);
+
+  function updateParams(newParams: Record<string, string | null | undefined>) {
+    const params = new URLSearchParams(searchParams.toString());
+    Object.entries(newParams).forEach(([key, val]) => {
+      if (val === null || val === undefined || val === '' || val === 'all') {
+        params.delete(key);
+      } else {
+        params.set(key, val);
+      }
+    });
+
+    if ('q' in newParams || 'slot' in newParams) {
+      params.delete('page');
+    }
+
+    startTransition(() => {
+      router.push(`?${params.toString()}`);
+    });
+  }
+
+  function handleSearchSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    updateParams({ q: searchQuery.trim() });
+  }
+
+  function handleSlotChange(newSlot: string) {
+    setSlotFilter(newSlot as any);
+    updateParams({ slot: newSlot });
+  }
+
+  function handleClearAll() {
+    setSearchQuery('');
+    setSlotFilter('all');
+    startTransition(() => {
+      router.push('?');
+    });
+  }
+
+  function goToPage(page: number) {
+    if (page < 1 || page > totalPages) return;
+    updateParams({ page: String(page) });
+  }
 
   const handleOpenAdd = () => {
     setEditingPlugin(null);
     setIsFormOpen(true);
   };
 
-  const handleOpenEdit = (plugin: Plugin) => {
-    setEditingPlugin(plugin);
-    setIsFormOpen(true);
+  // On-demand fetch of complete plugin details (including raw code) when clicking Edit
+  const handleOpenEdit = async (pluginId: number) => {
+    setLoadingEditId(pluginId);
+    try {
+      const res = await getPluginById(pluginId);
+      if (res.error || !res.plugin) {
+        toast.error(res.error || 'Failed to fetch plugin details.');
+        return;
+      }
+      setEditingPlugin(res.plugin);
+      setIsFormOpen(true);
+    } catch (err) {
+      console.error('Error fetching plugin:', err);
+      toast.error('Could not load plugin details.');
+    } finally {
+      setLoadingEditId(null);
+    }
   };
 
-  const handleToggle = (plugin: Plugin) => {
+  // Toggle status with guaranteed order: loading state -> DB update -> visual state change -> toast snackbar
+  const handleToggle = async (plugin: PluginTableItem) => {
     const newStatus = !plugin.active;
     setTogglingId(plugin.id);
 
-    startTransition(async () => {
-      // Optimistic update
+    try {
+      const res = await togglePluginStatus(plugin.id, newStatus);
+      if (res.error) {
+        toast.error(res.error);
+        return;
+      }
+
+      // 1. Visually update state so the switch toggles and status pill flips in the DOM
       setPlugins((prev) =>
         prev.map((p) => (p.id === plugin.id ? { ...p, active: newStatus } : p))
       );
 
-      try {
-        const res = await togglePluginStatus(plugin.id, newStatus);
-        if (res.error) {
-          toast.error(res.error);
-          // Rollback
-          setPlugins((prev) =>
-            prev.map((p) => (p.id === plugin.id ? { ...p, active: !newStatus } : p))
-          );
-        } else {
-          toast.success(
-            `Plugin "${plugin.name}" ${newStatus ? 'activated' : 'deactivated'}`
-          );
-          router.refresh();
-        }
-      } finally {
-        setTogglingId(null);
-      }
-    });
+      // 2. Display snackbar notification strictly after status change has completed in UI
+      requestAnimationFrame(() => {
+        toast.success(
+          `Plugin "${plugin.name}" ${newStatus ? 'activated' : 'deactivated'}`
+        );
+      });
+    } catch {
+      toast.error('Failed to change plugin status.');
+    } finally {
+      setTogglingId(null);
+    }
   };
 
   const handleDeleteConfirm = () => {
@@ -141,6 +220,9 @@ export function PluginsClient({ initialPlugins }: PluginsClientProps) {
       }
     });
   };
+
+  const hasActiveFilters = Boolean(searchQuery.trim() || (slotFilter && slotFilter !== 'all'));
+  const startIndex = (currentPage - 1) * pageSize;
 
   return (
     <div className="space-y-6">
@@ -166,32 +248,64 @@ export function PluginsClient({ initialPlugins }: PluginsClientProps) {
       </div>
 
       {/* Filter and Search Bar */}
-      <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
+      <form
+        onSubmit={handleSearchSubmit}
+        className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between"
+      >
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-400" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
+            onBlur={() => updateParams({ q: searchQuery.trim() })}
             placeholder="Search plugins by name or description…"
-            className="input pl-9 text-sm w-full bg-white"
+            className="input pl-9 pr-8 text-sm w-full bg-white"
           />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearchQuery('');
+                updateParams({ q: '' });
+              }}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-400 hover:text-ink-600 p-0.5 cursor-pointer"
+              title="Clear search"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <label className="text-xs font-medium text-ink-600 whitespace-nowrap">Filter Slot:</label>
           <select
             value={slotFilter}
-            onChange={(e) => setSlotFilter(e.target.value as any)}
-            className="input text-xs sm:text-sm py-1.5 px-3 bg-white w-auto"
+            onChange={(e) => handleSlotChange(e.target.value)}
+            className="input text-xs sm:text-sm py-1.5 px-3 bg-white w-auto cursor-pointer"
           >
-            <option value="all">All Slots ({plugins.length})</option>
+            <option value="all">All Slots</option>
             <option value="home-top">Home Top</option>
             <option value="home-middle">Home Middle</option>
             <option value="home-bottom">Home Bottom</option>
           </select>
+
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={handleClearAll}
+              className="inline-flex items-center gap-1 text-xs font-medium text-ink-500 hover:text-brand-700 transition px-2 py-1.5 whitespace-nowrap cursor-pointer"
+            >
+              <RotateCcw className="h-3 w-3" />
+              <span>Clear</span>
+            </button>
+          )}
+
+          {isPending && (
+            <Loader2 className="h-4 w-4 animate-spin text-brand-600 shrink-0 ml-1" />
+          )}
         </div>
-      </div>
+      </form>
 
       {/* Plugins Table */}
       <div className="overflow-hidden rounded-xl border border-ink-200/80 bg-white shadow-2xs">
@@ -208,7 +322,7 @@ export function PluginsClient({ initialPlugins }: PluginsClientProps) {
               </tr>
             </thead>
             <tbody className="divide-y divide-ink-100">
-              {filteredPlugins.length === 0 ? (
+              {plugins.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-6 py-12 text-center">
                     <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-ink-100 text-ink-400 mb-3">
@@ -216,17 +330,14 @@ export function PluginsClient({ initialPlugins }: PluginsClientProps) {
                     </div>
                     <p className="text-base font-semibold text-ink-800">No plugins found</p>
                     <p className="mt-1 text-xs text-ink-500 max-w-sm mx-auto">
-                      {searchQuery || slotFilter !== 'all'
+                      {hasActiveFilters
                         ? 'No plugins match your current filters. Try resetting the search or filter.'
                         : 'Get started by creating your first widget embed (such as a Travelpayouts flight search).'}
                     </p>
-                    {searchQuery || slotFilter !== 'all' ? (
+                    {hasActiveFilters ? (
                       <button
                         type="button"
-                        onClick={() => {
-                          setSearchQuery('');
-                          setSlotFilter('all');
-                        }}
+                        onClick={handleClearAll}
                         className="btn-outline mt-4 text-xs"
                       >
                         Reset filters
@@ -243,7 +354,7 @@ export function PluginsClient({ initialPlugins }: PluginsClientProps) {
                   </td>
                 </tr>
               ) : (
-                filteredPlugins.map((plugin) => {
+                plugins.map((plugin) => {
                   const slotMeta = SLOT_LABELS[plugin.slot] || {
                     label: plugin.slot,
                     description: '',
@@ -255,6 +366,7 @@ export function PluginsClient({ initialPlugins }: PluginsClientProps) {
                       key={plugin.id}
                       className="hover:bg-ink-50/60 transition-colors"
                     >
+                      {/* 1. Plugin / Widget */}
                       <td className="px-5 py-4">
                         <div className="font-semibold text-ink-900">{plugin.name}</div>
                         {plugin.description && (
@@ -262,11 +374,9 @@ export function PluginsClient({ initialPlugins }: PluginsClientProps) {
                             {plugin.description}
                           </div>
                         )}
-                        <div className="mt-1 text-[11px] font-mono text-ink-400">
-                          {new TextEncoder().encode(plugin.code).length} bytes
-                        </div>
                       </td>
 
+                      {/* 2. Slot Location */}
                       <td className="px-4 py-4 whitespace-nowrap">
                         <span
                           className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold border ${slotMeta.badge}`}
@@ -277,12 +387,14 @@ export function PluginsClient({ initialPlugins }: PluginsClientProps) {
                         </span>
                       </td>
 
+                      {/* 3. Position */}
                       <td className="px-4 py-4 text-center whitespace-nowrap">
                         <span className="inline-flex items-center justify-center h-6 min-w-6 px-1.5 rounded-md bg-ink-100 font-mono text-xs font-semibold text-ink-700">
                           {plugin.position}
                         </span>
                       </td>
 
+                      {/* 4. Status */}
                       <td className="px-4 py-4 text-center whitespace-nowrap">
                         <span
                           className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${
@@ -305,6 +417,7 @@ export function PluginsClient({ initialPlugins }: PluginsClientProps) {
                         </span>
                       </td>
 
+                      {/* 5. Created */}
                       <td className="px-4 py-4 text-xs text-ink-500 whitespace-nowrap">
                         {new Date(plugin.created_at).toLocaleDateString('en-GB', {
                           day: '2-digit',
@@ -313,15 +426,16 @@ export function PluginsClient({ initialPlugins }: PluginsClientProps) {
                         })}
                       </td>
 
+                      {/* 6. Actions */}
                       <td className="px-5 py-4 text-right whitespace-nowrap">
                         <div className="flex items-center justify-end gap-1.5">
-                          {/* Enable / Disable Toggle Switch in Action Column */}
+                          {/* Enable / Disable Toggle Switch */}
                           <button
                             type="button"
                             role="switch"
                             aria-checked={plugin.active}
                             onClick={() => handleToggle(plugin)}
-                            disabled={isPending || togglingId === plugin.id}
+                            disabled={togglingId === plugin.id}
                             className="inline-flex items-center gap-1.5 cursor-pointer select-none group mr-1 disabled:opacity-50 disabled:cursor-not-allowed"
                             title={plugin.active ? 'Enabled — click to disable' : 'Disabled — click to enable'}
                           >
@@ -349,16 +463,23 @@ export function PluginsClient({ initialPlugins }: PluginsClientProps) {
                             </div>
                           </button>
 
+                          {/* Edit Button with On-Demand Loading Spinner */}
                           <button
                             type="button"
-                            onClick={() => handleOpenEdit(plugin)}
-                            className="inline-flex items-center gap-1 rounded-lg border border-ink-200 bg-white px-2.5 py-1.5 text-xs font-medium text-ink-700 hover:bg-ink-50 hover:text-ink-900 transition cursor-pointer"
+                            onClick={() => handleOpenEdit(plugin.id)}
+                            disabled={loadingEditId === plugin.id}
+                            className="inline-flex items-center gap-1 rounded-lg border border-ink-200 bg-white px-2.5 py-1.5 text-xs font-medium text-ink-700 hover:bg-ink-50 hover:text-ink-900 transition cursor-pointer disabled:opacity-50"
                             title="Edit plugin"
                           >
-                            <Pencil className="h-3.5 w-3.5 text-ink-500" />
+                            {loadingEditId === plugin.id ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin text-brand-600" />
+                            ) : (
+                              <Pencil className="h-3.5 w-3.5 text-ink-500" />
+                            )}
                             <span>Edit</span>
                           </button>
 
+                          {/* Delete Button */}
                           <button
                             type="button"
                             onClick={() => setPluginToDelete(plugin)}
@@ -377,6 +498,43 @@ export function PluginsClient({ initialPlugins }: PluginsClientProps) {
             </tbody>
           </table>
         </div>
+
+        {/* Pagination Footer */}
+        {totalPages > 1 && (
+          <div className="flex flex-col sm:flex-row items-center justify-between border-t border-ink-100 bg-white px-5 py-3 text-sm text-ink-500 gap-3">
+            <span>
+              Showing <span className="font-semibold text-ink-800">{startIndex + 1}</span>–
+              <span className="font-semibold text-ink-800">
+                {Math.min(startIndex + pageSize, totalCount)}
+              </span> of <span className="font-semibold text-ink-800">{totalCount}</span> plugins
+            </span>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => goToPage(currentPage - 1)}
+                disabled={currentPage <= 1 || isPending}
+                className="btn-outline px-3 py-1.5 text-xs font-medium inline-flex items-center gap-1 disabled:opacity-40 cursor-pointer"
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+                <span>Previous</span>
+              </button>
+
+              <span className="px-2 text-xs font-medium text-ink-600">
+                Page {currentPage} of {totalPages}
+              </span>
+
+              <button
+                type="button"
+                onClick={() => goToPage(currentPage + 1)}
+                disabled={currentPage >= totalPages || isPending}
+                className="btn-outline px-3 py-1.5 text-xs font-medium inline-flex items-center gap-1 disabled:opacity-40 cursor-pointer"
+              >
+                <span>Next</span>
+                <ChevronRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Add / Edit Form Modal */}
@@ -387,12 +545,21 @@ export function PluginsClient({ initialPlugins }: PluginsClientProps) {
           onClose={() => setIsFormOpen(false)}
           onSuccess={(saved) => {
             setIsFormOpen(false);
+            const tableItem: PluginTableItem = {
+              id: saved.id,
+              name: saved.name,
+              description: saved.description,
+              slot: saved.slot,
+              position: saved.position,
+              active: saved.active,
+              created_at: saved.created_at,
+            };
             setPlugins((prev) => {
               const exists = prev.some((p) => p.id === saved.id);
               if (exists) {
-                return prev.map((p) => (p.id === saved.id ? saved : p));
+                return prev.map((p) => (p.id === saved.id ? tableItem : p));
               }
-              return [saved, ...prev];
+              return [tableItem, ...prev];
             });
             router.refresh();
           }}
@@ -430,7 +597,7 @@ function PluginFormModal({
   onSuccess,
 }: {
   plugin: Plugin | null;
-  existingPlugins: Plugin[];
+  existingPlugins: { id: number; name: string; slot: string; code?: string }[];
   onClose: () => void;
   onSuccess: (saved: Plugin) => void;
 }) {

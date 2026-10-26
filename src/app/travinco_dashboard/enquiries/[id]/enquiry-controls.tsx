@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useState, useEffect, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import {
@@ -49,7 +49,41 @@ export function EnquiryControls({
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [status, setStatus] = useState<EnquiryStatus>(currentStatus);
+  const [priority, setPriority] = useState<EnquiryPriority>(currentPriority);
+  const [assignee, setAssignee] = useState<string | null>(currentAssignee);
   const [followupDate, setFollowupDate] = useState(currentFollowupDate ?? '');
+
+  // Keep state in sync if server props change (e.g. after router.refresh())
+  useEffect(() => {
+    setStatus(currentStatus);
+  }, [currentStatus]);
+
+  useEffect(() => {
+    setPriority(currentPriority);
+  }, [currentPriority]);
+
+  useEffect(() => {
+    setAssignee(currentAssignee);
+  }, [currentAssignee]);
+
+  useEffect(() => {
+    setFollowupDate(currentFollowupDate ?? '');
+  }, [currentFollowupDate]);
+
+  // Real-time synchronization with top EnquiryStatusSelector or other components
+  useEffect(() => {
+    function onStatusChange(e: Event) {
+      const customEvent = e as CustomEvent<{ enquiryId: string; status: EnquiryStatus }>;
+      if (customEvent.detail?.enquiryId === enquiryId) {
+        setStatus(customEvent.detail.status);
+      }
+    }
+    window.addEventListener('travinco:enquiry-status-changed', onStatusChange);
+    return () => {
+      window.removeEventListener('travinco:enquiry-status-changed', onStatusChange);
+    };
+  }, [enquiryId]);
 
   function handle(promise: Promise<{ error?: string }>, successMsg?: string) {
     if (!canEdit) return;
@@ -63,8 +97,39 @@ export function EnquiryControls({
     });
   }
 
+  function handleStatusChange(newStatus: EnquiryStatus) {
+    if (!canEdit) return;
+    const previousStatus = status;
+    setStatus(newStatus);
+    window.dispatchEvent(
+      new CustomEvent('travinco:enquiry-status-changed', {
+        detail: { enquiryId, status: newStatus },
+      })
+    );
+    startTransition(async () => {
+      const result = await updateEnquiryStatus(enquiryId, newStatus);
+      if (result.error) {
+        toast.error(result.error);
+        setStatus(previousStatus);
+        window.dispatchEvent(
+          new CustomEvent('travinco:enquiry-status-changed', {
+            detail: { enquiryId, status: previousStatus },
+          })
+        );
+      } else {
+        toast.success('Status updated');
+        router.refresh();
+      }
+    });
+  }
+
   function handleFollowupDateChange(newDate: string) {
     if (!canEdit) return;
+    const todayStr = new Date().toISOString().slice(0, 10);
+    if (newDate && newDate < todayStr) {
+      toast.error('Next follow-up date cannot be in the past.');
+      return;
+    }
     setFollowupDate(newDate);
     handle(
       updateEnquiryFollowupDate(enquiryId, newDate || null),
@@ -72,19 +137,16 @@ export function EnquiryControls({
     );
   }
 
+  const todayStr = new Date().toISOString().slice(0, 10);
+
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
       <div>
         <label className="label">Status</label>
         <select
-          defaultValue={currentStatus}
+          value={status}
           disabled={isPending || !canEdit}
-          onChange={(e) =>
-            handle(
-              updateEnquiryStatus(enquiryId, e.target.value as EnquiryStatus),
-              'Status updated'
-            )
-          }
+          onChange={(e) => handleStatusChange(e.target.value as EnquiryStatus)}
           className="input"
         >
           {statusDisplayList.map((s) => (
@@ -97,14 +159,13 @@ export function EnquiryControls({
       <div>
         <label className="label">Priority</label>
         <select
-          defaultValue={currentPriority}
+          value={priority}
           disabled={isPending || !canEdit}
-          onChange={(e) =>
-            handle(
-              updateEnquiryPriority(enquiryId, e.target.value as EnquiryPriority),
-              'Priority updated'
-            )
-          }
+          onChange={(e) => {
+            const newPri = e.target.value as EnquiryPriority;
+            setPriority(newPri);
+            handle(updateEnquiryPriority(enquiryId, newPri), 'Priority updated');
+          }}
           className="input"
         >
           {priorityDisplayList.map((p) => (
@@ -119,6 +180,7 @@ export function EnquiryControls({
         <input
           type="date"
           value={followupDate}
+          min={todayStr}
           disabled={isPending || !canEdit}
           onChange={(e) => handleFollowupDateChange(e.target.value)}
           className="input"
@@ -127,11 +189,13 @@ export function EnquiryControls({
       <div>
         <label className="label">Assigned to</label>
         <select
-          defaultValue={currentAssignee ?? ''}
+          value={assignee ?? ''}
           disabled={isPending || !canEdit}
-          onChange={(e) =>
-            handle(assignEnquiry(enquiryId, e.target.value || null), 'Assignee updated')
-          }
+          onChange={(e) => {
+            const val = e.target.value || null;
+            setAssignee(val);
+            handle(assignEnquiry(enquiryId, val), 'Assignee updated');
+          }}
           className="input"
         >
           <option value="">Unassigned</option>

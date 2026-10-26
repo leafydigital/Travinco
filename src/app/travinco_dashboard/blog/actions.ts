@@ -194,3 +194,106 @@ export async function bulkCreateBlogPosts(
 
   return { count: data?.length ?? payload.length, ids: (data || []).map((d: any) => d.id) };
 }
+
+export interface BlogTableItem {
+  id: string;
+  title: string;
+  slug: string;
+  cover_image_url: string | null;
+  created_at: string;
+  status: ContentStatus;
+}
+
+export interface BlogTableQueryResult {
+  posts: BlogTableItem[];
+  totalCount: number;
+  totalPages: number;
+  page: number;
+  pageSize: number;
+}
+
+/**
+ * Fast, lean query fetching strictly the 4 display columns:
+ * Image, Title (id/slug), Created, Status.
+ * Excludes heavy 'content' article bodies and 'excerpt' markdown.
+ */
+export async function getBlogTableList({
+  page = 1,
+  pageSize = 20,
+  q = '',
+  status = 'all',
+}: {
+  page?: number;
+  pageSize?: number;
+  q?: string;
+  status?: string;
+} = {}): Promise<BlogTableQueryResult> {
+  const profile = await requireProfile();
+  await checkModulePermission(profile, 'blog', 'view');
+
+  const supabase = await createClient();
+
+  const currentPage = Math.max(1, page);
+  const from = (currentPage - 1) * pageSize;
+  const to = from + pageSize - 1;
+
+  let query = supabase
+    .from('blog_posts')
+    .select(
+      'id, title, slug, cover_image_url, created_at, status, is_deleted',
+      { count: 'exact' }
+    )
+    .order('created_at', { ascending: false });
+
+  if (status && status !== 'all') {
+    query = query.eq('status', status as any);
+  } else {
+    // Default: exclude archived posts in main view
+    query = query.neq('status', 'archived');
+  }
+
+  if (q && q.trim()) {
+    const term = q.trim();
+    query = query.or(`title.ilike.%${term}%,slug.ilike.%${term}%`);
+  }
+
+  const [postsRes, deletedSettingsRes] = await Promise.all([
+    query.range(from, to),
+    supabase.from('website_settings').select('key').like('key', 'deleted_blog_%'),
+  ]);
+
+  const deletedBlogKeys = new Set(
+    (deletedSettingsRes.data || []).map((s: { key: string }) => s.key.replace('deleted_blog_', ''))
+  );
+
+  const rawRows = postsRes.data || [];
+  const activeRows = rawRows.filter(
+    (p: any) =>
+      p &&
+      p.is_deleted !== true &&
+      p.is_deleted !== 'true' &&
+      p.is_deleted !== 1 &&
+      !deletedBlogKeys.has(p.id)
+  );
+
+  const items: BlogTableItem[] = activeRows.map((post: any) => ({
+    id: post.id,
+    title: post.title,
+    slug: post.slug,
+    cover_image_url: post.cover_image_url || null,
+    created_at: post.created_at,
+    status: post.status as ContentStatus,
+  }));
+
+  const totalCount = postsRes.count ?? items.length;
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+
+  return {
+    posts: items,
+    totalCount,
+    totalPages,
+    page: currentPage,
+    pageSize,
+  };
+}
+

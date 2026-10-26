@@ -75,7 +75,7 @@ export async function getMasterRatesFromDb(
     minPrice,
     maxPrice,
     page = 1,
-    pageSize = 25,
+    pageSize = 20,
     sortBy = 'location',
     sortOrder = 'asc',
   } = params;
@@ -83,7 +83,10 @@ export async function getMasterRatesFromDb(
   const supabase = await createClient();
   let query = supabase
     .from('v_rate_master')
-    .select('*', { count: 'exact' });
+    .select(
+      'rate_id, hotel_name, location, hotel_category, season, date_range, room_category, cp_cost, map_cost, extra_adult_cp, extra_adult_map, child_bed_cost, child_no_bed_cost, notes, mandatory_surcharges',
+      { count: 'exact' }
+    );
 
   // Location filter
   if (location && location.trim()) {
@@ -175,6 +178,30 @@ export async function getMasterRatesFromDb(
     pageSize,
     totalPages,
   };
+}
+
+/**
+ * Fetch complete rate details for a single row by ID on-demand (used when editing).
+ */
+export async function getMasterRateByIdFromDb(
+  rateId: string | number
+): Promise<MasterHotelRateItem | null> {
+  const idNum = typeof rateId === 'string' ? parseInt(rateId, 10) : rateId;
+  if (isNaN(idNum)) return null;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from('v_rate_master')
+    .select('*')
+    .eq('rate_id', idNum)
+    .single();
+
+  if (error || !data) {
+    console.error('Error fetching rate by ID from DB:', error);
+    return null;
+  }
+
+  return mapDbRowToMasterItem(data);
 }
 
 /**

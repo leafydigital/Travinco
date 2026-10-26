@@ -6,6 +6,7 @@ import { getNavbarFooterContent } from '@/lib/navbar-footer-content';
 import { getPageTitlesContent } from '@/lib/page-titles-content';
 import { createClient } from '@/lib/supabase/server';
 import { getCustomer } from '@/lib/supabase/customer-auth-helpers';
+import { AuthToastNotifier } from '@/components/public/auth-toast-notifier';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -66,6 +67,7 @@ export default async function PublicLayout({ children }: { children: React.React
 
   return (
     <div className="flex min-h-screen flex-col">
+      <AuthToastNotifier />
       {pageTitlesContent.favicon_url && (
         <link rel="icon" href={pageTitlesContent.favicon_url} />
       )}

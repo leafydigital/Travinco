@@ -10,7 +10,7 @@ import {
   MAX_PLUGIN_CODE_BYTES,
   findDuplicatePlugin,
 } from '@/lib/plugins/validation';
-import type { Plugin } from '@/types/database';
+import type { Plugin, PluginSlot } from '@/types/database';
 
 /**
  * Ensures the caller is authenticated as an admin or super_admin.
@@ -238,3 +238,110 @@ export async function deletePlugin(id: number): Promise<{ error?: string }> {
   revalidatePluginCaches();
   return {};
 }
+
+export interface PluginTableItem {
+  id: number;
+  name: string;
+  description: string | null;
+  slot: PluginSlot;
+  position: number;
+  active: boolean;
+  created_at: string;
+}
+
+export interface PluginsTableQueryResult {
+  plugins: PluginTableItem[];
+  totalCount: number;
+  totalPages: number;
+  page: number;
+  pageSize: number;
+}
+
+/**
+ * Fast, lean query fetching strictly the 5 display columns:
+ * Plugin / Widget (name, description), Slot, Position, Status, Created (+ id).
+ * Excludes heavy widget 'code' HTML/JS snippets.
+ */
+export async function getPluginsTableList({
+  page = 1,
+  pageSize = 20,
+  q = '',
+  slot = 'all',
+}: {
+  page?: number;
+  pageSize?: number;
+  q?: string;
+  slot?: string;
+} = {}): Promise<PluginsTableQueryResult> {
+  const auth = await verifyAdminCaller();
+  if (auth.error) {
+    return { plugins: [], totalCount: 0, totalPages: 1, page: 1, pageSize };
+  }
+
+  const supabase = await getAdminSupabase();
+
+  const currentPage = Math.max(1, page);
+  const from = (currentPage - 1) * pageSize;
+  const to = from + pageSize - 1;
+
+  let query = supabase
+    .from('plugins')
+    .select('id, name, description, slot, position, active, created_at', { count: 'exact' })
+    .order('slot', { ascending: true })
+    .order('position', { ascending: true })
+    .order('created_at', { ascending: false });
+
+  if (slot && slot !== 'all') {
+    query = query.eq('slot', slot as PluginSlot);
+  }
+
+  if (q && q.trim()) {
+    const term = q.trim();
+    query = query.or(`name.ilike.%${term}%,description.ilike.%${term}%`);
+  }
+
+  const { data, count, error } = await query.range(from, to);
+
+  if (error) {
+    console.error('getPluginsTableList error:', error.message);
+    return { plugins: [], totalCount: 0, totalPages: 1, page: currentPage, pageSize };
+  }
+
+  const totalCount = count ?? (data?.length || 0);
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+
+  return {
+    plugins: (data as PluginTableItem[]) || [],
+    totalCount,
+    totalPages,
+    page: currentPage,
+    pageSize,
+  };
+}
+
+/**
+ * Fetches the full plugin details including raw code on demand (used when opening the edit modal).
+ */
+export async function getPluginById(id: number): Promise<{ plugin?: Plugin; error?: string }> {
+  const auth = await verifyAdminCaller();
+  if (auth.error) return { error: auth.error };
+
+  if (!id || typeof id !== 'number') {
+    return { error: 'Invalid plugin ID.' };
+  }
+
+  const supabase = await getAdminSupabase();
+  const { data, error } = await supabase
+    .from('plugins')
+    .select('*')
+    .eq('id', id)
+    .single();
+
+  if (error || !data) {
+    console.error('getPluginById error:', error?.message);
+    return { error: 'Could not fetch plugin details.' };
+  }
+
+  return { plugin: data as Plugin };
+}
+

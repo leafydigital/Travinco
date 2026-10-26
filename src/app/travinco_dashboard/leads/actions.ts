@@ -13,7 +13,7 @@ async function checkLeadPermission(action: 'view' | 'edit' = 'edit') {
   const profile = await requireProfile();
   const perm = await checkModulePermission(profile, 'leads' as any, action);
   if (!perm.allowed && !['super_admin', 'admin', 'sales_staff', 'accounts_staff'].includes(profile.role)) {
-    return { error: 'You do not have permission to manage leads.' };
+    return { error: 'Access restricted: Your user role does not have permission to manage leads. Please contact an administrator.' };
   }
   return { profile };
 }
@@ -32,15 +32,50 @@ export async function updateLeadStatus(
 }
 
 const leadRowSchema = z.object({
-  contact_name: z.string().min(1, 'Contact name is required').max(120),
-  contact_number: z.string().min(4, 'Contact number is required').max(30),
-  email: z.string().email('Invalid email').optional().or(z.literal('')),
-  package: z.string().max(200).optional().or(z.literal('')),
-  number_of_days: z.coerce.number().int().min(0).optional().nullable(),
-  budget: z.coerce.number().min(0).optional().nullable(),
+  contact_name: z
+    .string({ required_error: 'Contact Name is required' })
+    .trim()
+    .min(1, 'Contact Name is required')
+    .max(120, 'Contact Name must be under 120 characters'),
+  contact_number: z
+    .string({ required_error: 'Contact Number is required' })
+    .trim()
+    .min(4, 'Contact Number is too short (minimum 4 digits)')
+    .max(30, 'Contact Number must be under 30 characters'),
+  email: z
+    .string()
+    .trim()
+    .email('Please enter a valid email address (e.g. name@example.com)')
+    .optional()
+    .or(z.literal('')),
+  package: z
+    .string()
+    .trim()
+    .max(200, 'Package title must be under 200 characters')
+    .optional()
+    .or(z.literal('')),
+  number_of_days: z
+    .preprocess((val) => {
+      if (val === '' || val === null || val === undefined) return null;
+      const n = Number(String(val).trim());
+      return isNaN(n) ? val : n;
+    }, z.number({ invalid_type_error: 'Number of Days must be a number' }).int('Number of Days must be a whole number').min(0, 'Number of Days cannot be negative').nullable().optional()),
+  budget: z
+    .preprocess((val) => {
+      if (val === '' || val === null || val === undefined) return null;
+      if (typeof val === 'number') return isNaN(val) ? val : val;
+      const clean = String(val).replace(/[₹$€,\s]/g, '').replace(/rs\.?/gi, '').trim();
+      const n = Number(clean);
+      return isNaN(n) ? val : n;
+    }, z.number({ invalid_type_error: 'Budget must be a valid number (e.g. 25000)' }).min(0, 'Budget cannot be negative').nullable().optional()),
   from_date: z.string().optional().nullable(),
   to_date: z.string().optional().nullable(),
-  number_of_people: z.coerce.number().int().min(0).optional().nullable(),
+  number_of_people: z
+    .preprocess((val) => {
+      if (val === '' || val === null || val === undefined) return null;
+      const n = Number(String(val).trim());
+      return isNaN(n) ? val : n;
+    }, z.number({ invalid_type_error: 'Number of People must be a number' }).int('Number of People must be a whole number').min(0, 'Number of People cannot be negative').nullable().optional()),
 });
 
 export type LeadImportRow = z.infer<typeof leadRowSchema>;
@@ -64,7 +99,8 @@ export async function importLeads(rows: LeadImportRow[]): Promise<{
   for (let i = 0; i < rows.length; i++) {
     const parsed = leadRowSchema.safeParse(rows[i]);
     if (!parsed.success) {
-      errors.push(`Row ${i + 1}: ${parsed.error.issues[0]?.message ?? 'Invalid data'}`);
+      const issue = parsed.error.issues[0];
+      errors.push(`Row ${i + 1}: ${issue?.message ?? 'Please check the entered data.'}`);
       continue;
     }
     const d = parsed.data;
@@ -108,7 +144,13 @@ export async function importLeads(rows: LeadImportRow[]): Promise<{
 
   if (newRows.length > 0) {
     const { error: insertError } = await supabase.from('leads').insert(newRows);
-    if (insertError) return { error: insertError.message };
+    if (insertError) {
+      console.error('Lead import database error:', insertError.message);
+      return {
+        error:
+          'We were unable to save the leads to the database. Please verify your data formatting and try again.',
+      };
+    }
   }
 
   revalidatePath(LEADS_PATH);
@@ -205,3 +247,108 @@ export async function bulkUpdateLeadStatus(
   revalidatePath(LEADS_PATH);
   return { count: leadIds.length };
 }
+
+export interface LeadTableItem {
+  id: string;
+  contact_name: string;
+  contact_number: string;
+  email: string | null;
+  package: string | null;
+  number_of_days: number | null;
+  budget: number | null;
+  from_date: string | null;
+  to_date: string | null;
+  number_of_people: number | null;
+  status: LeadStatus;
+  created_at: string;
+}
+
+export interface LeadsTableQueryResult {
+  leads: LeadTableItem[];
+  totalCount: number;
+  totalPages: number;
+  page: number;
+  pageSize: number;
+}
+
+/**
+ * Fast, lean query for leads table with database pagination and filtering.
+ */
+export async function getLeadsTableList({
+  page = 1,
+  pageSize = 20,
+  q = '',
+  status = '',
+}: {
+  page?: number;
+  pageSize?: number;
+  q?: string;
+  status?: string;
+} = {}): Promise<LeadsTableQueryResult> {
+  const check = await checkLeadPermission('view');
+  if (check.error) {
+    throw new Error(check.error);
+  }
+
+  const supabase = await createClient();
+
+  const currentPage = Math.max(1, page);
+  const from = (currentPage - 1) * pageSize;
+  const to = from + pageSize - 1;
+
+  let query = supabase
+    .from('leads')
+    .select(
+      'id, contact_name, contact_number, email, package, number_of_days, budget, from_date, to_date, number_of_people, status, created_at, is_deleted',
+      { count: 'exact' }
+    )
+    .or('is_deleted.is.null,is_deleted.eq.false')
+    .order('created_at', { ascending: false });
+
+  if (q && q.trim()) {
+    const term = q.trim();
+    query = query.or(
+      `contact_name.ilike.%${term}%,contact_number.ilike.%${term}%,email.ilike.%${term}%,package.ilike.%${term}%`
+    );
+  }
+
+  if (status && status.trim()) {
+    query = query.eq('status', status.trim() as any);
+  }
+
+  const { data: leadsData, count, error } = await query.range(from, to);
+
+  if (error) {
+    console.error('getLeadsTableList query error:', error.message);
+  }
+
+  const rows = leadsData || [];
+  const visibleLeads = rows.filter((r: any) => r.is_deleted !== true);
+
+  const items: LeadTableItem[] = visibleLeads.map((row: any) => ({
+    id: row.id,
+    contact_name: row.contact_name,
+    contact_number: row.contact_number,
+    email: row.email || null,
+    package: row.package || null,
+    number_of_days: row.number_of_days ?? null,
+    budget: row.budget ? Number(row.budget) : null,
+    from_date: row.from_date || null,
+    to_date: row.to_date || null,
+    number_of_people: row.number_of_people ?? null,
+    status: row.status as LeadStatus,
+    created_at: row.created_at,
+  }));
+
+  const totalCount = count ?? items.length;
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+
+  return {
+    leads: items,
+    totalCount,
+    totalPages,
+    page: currentPage,
+    pageSize,
+  };
+}
+

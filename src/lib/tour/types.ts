@@ -299,6 +299,12 @@ export type HotelPick = {
   manual_rate: number | null;
   /** Additional cost added to this hotel stay price */
   additional_cost?: number | null;
+  /** Reason / explanation for the additional cost */
+  additional_cost_reason?: string | null;
+  /** Custom hotel name entered if custom / input + dropdown */
+  custom_hotel_name?: string | null;
+  /** Custom room type entered if custom / input + dropdown */
+  custom_room_name?: string | null;
 };
 
 export type StayInput = {

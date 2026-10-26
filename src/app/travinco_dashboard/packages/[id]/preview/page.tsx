@@ -8,6 +8,7 @@ import { formatCurrency, getVideoEmbedUrl } from '@/lib/utils/format';
 import { getTermsSettings } from '@/lib/settings';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { PublishFromPreviewButton } from '../publish-from-preview-button';
+import { ExpandableText } from '@/components/public/expandable-text';
 import type { Tables } from '@/types/database';
 
 type PackageWithDestination = Tables<'travel_packages'> & {
@@ -127,7 +128,9 @@ export default async function PackagePreviewPage({ params }: { params: { id: str
           {pkg.full_description && (
             <section>
               <h2 className="font-display text-xl font-semibold text-ink-900">Overview</h2>
-              <p className="mt-3 whitespace-pre-line text-ink-600">{pkg.full_description}</p>
+              <div className="mt-3">
+                <ExpandableText text={pkg.full_description} collapsedLines={4} />
+              </div>
             </section>
           )}
 
@@ -273,9 +276,13 @@ export default async function PackagePreviewPage({ params }: { params: { id: str
           {termsSettings.terms_and_conditions && (
             <section>
               <h2 className="font-display text-lg font-semibold text-ink-900">Terms & conditions</h2>
-              <p className="mt-2 whitespace-pre-line text-sm text-ink-500">
-                {termsSettings.terms_and_conditions}
-              </p>
+              <div className="mt-2 text-sm text-ink-500">
+                <ExpandableText
+                  text={termsSettings.terms_and_conditions}
+                  collapsedLines={4}
+                  className="text-sm text-ink-500"
+                />
+              </div>
             </section>
           )}
 
@@ -288,28 +295,30 @@ export default async function PackagePreviewPage({ params }: { params: { id: str
         </div>
 
         <aside className="lg:col-span-1">
-          <div className="card sticky top-24 space-y-4 p-5">
-            <div>
+          <div className="card sticky top-24 p-6 shadow-sm border border-ink-100 bg-white rounded-2xl">
+            <span className="text-xs font-semibold uppercase tracking-wider text-ink-400">
+              Package Price
+            </span>
+            <div className="mt-2">
               {pkg.discount_price ? (
                 <div>
                   <span className="text-sm text-ink-400 line-through">
                     {formatCurrency(pkg.base_price, pkg.currency)}
                   </span>
-                  <p className="text-2xl font-semibold text-brand-700">
+                  <p className="font-display text-3xl font-bold text-brand-700">
                     {formatCurrency(pkg.discount_price, pkg.currency)}{' '}
-                    <span className="text-sm font-normal text-ink-400">/ person</span>
+                    <span className="text-sm font-normal text-ink-500">/ person</span>
                   </p>
                 </div>
               ) : (
-                <p className="text-2xl font-semibold text-brand-700">
+                <p className="font-display text-3xl font-bold text-brand-700">
                   {formatCurrency(pkg.base_price, pkg.currency)}{' '}
-                  <span className="text-sm font-normal text-ink-400">/ person</span>
+                  <span className="text-sm font-normal text-ink-500">/ person</span>
                 </p>
               )}
             </div>
-            <p className="rounded-lg bg-ink-50 px-3 py-2 text-xs text-ink-500">
-              This is a preview — the enquiry form and contact buttons that customers would see
-              here are hidden, since this page isn&apos;t public yet.
+            <p className="mt-3 text-xs text-ink-400">
+              * Starting price per person • Taxes &amp; fees included
             </p>
           </div>
         </aside>

@@ -43,7 +43,10 @@ import {
   type DayLine,
   type DayOut,
   type EngineCtx,
+  type HotelIdx,
   type QuoteCalc,
+  type StayChoice,
+  type StayPrice,
 } from '@/lib/tour/engine';
 import type { DayEdit, HotelPick, QuoteInputs, RateRow, StayInput, TourMasters } from '@/lib/tour/types';
 import { getRatesForLocations, saveQuotation, searchCustomers } from '@/app/travinco_dashboard/quotations/actions';
@@ -420,202 +423,200 @@ export function QuotationBuilder({
         </div>
       </div>
 
-      {/* 2. TOP / MAIN SECTION: Unified Full-Width Form Card (High Density Admin Layout) */}
-      <div className="space-y-4">
-        <div className="card overflow-hidden border-ink-200 bg-white p-4 shadow-sm sm:p-6">
-          <div className="space-y-5">
-            {/* Quick 4-Dropdown Template Selector */}
-            <div className="rounded-xl border border-brand-200/80 bg-gradient-to-r from-brand-50/90 via-sky-50/60 to-sand-50/70 p-3 sm:p-4 shadow-2xs">
-              <div className="mb-2.5 flex items-center gap-1.5 text-xs font-semibold text-brand-900">
-                <Layers className="h-4 w-4 text-brand-700" />
-                <span>Choose Template to Autofill:</span>
-                <span className="hidden sm:inline text-[11px] font-normal text-ink-500">
-                  (Filter by Destination, Location, or Days to autofill route &amp; hotels)
-                </span>
-              </div>
-
-              {/* 4 Dropdowns in the same line */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 items-end">
-                {/* 1. Destination */}
-                <div>
-                  <label className="block text-[11px] font-semibold text-ink-700 mb-1">
-                    Destination
-                  </label>
-                  <select
-                    className="input h-9 w-full bg-white text-xs py-1.5 px-2.5 border-ink-200 shadow-2xs font-medium text-ink-900"
-                    value={selectedDestination}
-                    onChange={(e) => handleDestinationChange(e.target.value)}
-                    aria-label="Destination"
-                  >
-                    <option value="">All Destinations</option>
-                    {destinationOptions.map((dest) => (
-                      <option key={dest} value={dest}>
-                        {dest}
-                      </option>
-                    ))}
-                  </select>
+      {/* 2. MAIN 2-COLUMN SECTION: Left side (Details & Pricing) | Right side (Day-wise Itinerary) */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+        {/* LEFT COLUMN: Template Selector, 1. Guest & Trip Specifications, 2. Route & Hotel Selection, 4. Transport & Additional Inclusions, 5. Pricing Breakdown, and Total Package Price */}
+        <div className="lg:col-span-5 space-y-4">
+          <div className="card overflow-hidden border-ink-200 bg-white p-4 shadow-sm sm:p-5">
+            <div className="space-y-5">
+              {/* Quick 4-Dropdown Template Selector */}
+              <div className="rounded-xl border border-brand-200/80 bg-gradient-to-r from-brand-50/90 via-sky-50/60 to-sand-50/70 p-3 sm:p-4 shadow-2xs">
+                <div className="mb-2.5 flex items-center gap-1.5 text-xs font-semibold text-brand-900">
+                  <Layers className="h-4 w-4 text-brand-700" />
+                  <span>Choose Template to Autofill:</span>
+                  <span className="hidden sm:inline text-[11px] font-normal text-ink-500">
+                    (Filter by Destination, Location, or Days to autofill route &amp; hotels)
+                  </span>
                 </div>
 
-                {/* 2. Location */}
-                <div>
-                  <label className="block text-[11px] font-semibold text-ink-700 mb-1 flex items-center justify-between">
-                    <span>Location</span>
-                    {!selectedDestination && (
-                      <span className="text-[10px] font-normal text-ink-400">
-                        (Choose destination first)
-                      </span>
-                    )}
-                  </label>
-                  <select
-                    className={cn(
-                      'input h-9 w-full bg-white text-xs py-1.5 px-2.5 border-ink-200 shadow-2xs font-medium text-ink-900',
-                      !selectedDestination && 'bg-sand-50/70 text-ink-400 cursor-not-allowed border-dashed'
-                    )}
-                    value={selectedLocation}
-                    onChange={(e) => handleLocationChange(e.target.value)}
-                    disabled={!selectedDestination}
-                    aria-label="Location"
-                  >
-                    {!selectedDestination ? (
-                      <option value="">Select Destination first…</option>
-                    ) : (
-                      <>
-                        <option value="">
-                          {availableLocations.length === 0
-                            ? `No locations under ${selectedDestination}`
-                            : `All Locations in ${selectedDestination} (${availableLocations.length})`}
-                        </option>
-                        {availableLocations.map((loc) => (
-                          <option key={loc.id} value={String(loc.id)}>
-                            {loc.display_name || loc.name}
-                          </option>
-                        ))}
-                      </>
-                    )}
-                  </select>
-                </div>
-
-                {/* 3. Number of Days */}
-                <div>
-                  <label className="block text-[11px] font-semibold text-ink-700 mb-1">
-                    Number of Days
-                  </label>
-                  <select
-                    className="input h-9 w-full bg-white text-xs py-1.5 px-2.5 border-ink-200 shadow-2xs font-medium text-ink-900"
-                    value={selectedDays}
-                    onChange={(e) => handleDaysChange(e.target.value)}
-                    aria-label="Number of Days"
-                  >
-                    <option value="">All Durations</option>
-                    {availableDays.map((d) => (
-                      <option key={d} value={String(d)}>
-                        {d} Days ({d - 1} Nights)
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* 4. Choose Template with Clear filter button on right */}
-                <div>
-                  <label className="block text-[11px] font-semibold text-brand-900 mb-1 flex items-center justify-between">
-                    <span>Choose Template</span>
-                    <span className="text-[10px] font-normal text-brand-700">
-                      ({filteredTemplates.length} available)
-                    </span>
-                  </label>
-                  <div className="flex items-center gap-1.5">
+                {/* 4 Dropdowns arranged in 2x2 grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 items-end">
+                  {/* 1. Destination */}
+                  <div>
+                    <label className="block text-[11px] font-semibold text-ink-700 mb-1">
+                      Destination
+                    </label>
                     <select
-                      className="input h-9 flex-1 min-w-0 bg-white text-xs py-1.5 px-2.5 border-brand-300 shadow-2xs font-semibold text-brand-950 focus:border-brand-600 focus:ring-1 focus:ring-brand-500"
-                      value={selectedTemplateId}
-                      onChange={(e) => handleTemplateSelect(e.target.value)}
-                      aria-label="Choose Template"
+                      className="input h-9 w-full bg-white text-xs py-1.5 px-2.5 border-ink-200 shadow-2xs font-medium text-ink-900"
+                      value={selectedDestination}
+                      onChange={(e) => handleDestinationChange(e.target.value)}
+                      aria-label="Destination"
                     >
-                      <option value="">
-                        {filteredTemplates.length === 0
-                          ? 'No templates match filters'
-                          : 'Choose a template to autofill…'}
-                      </option>
-                      {filteredTemplates.map((t) => (
-                        <option key={t.id} value={t.idStr}>
-                          {t.name} ({t.totalDays}D / {t.totalNights}N)
+                      <option value="">All Destinations</option>
+                      {destinationOptions.map((dest) => (
+                        <option key={dest} value={dest}>
+                          {dest}
                         </option>
                       ))}
                     </select>
-                    {hasActiveFilter && (
-                      <button
-                        type="button"
-                        onClick={handleResetFilters}
-                        className="inline-flex items-center gap-1 h-9 px-2.5 rounded border border-ink-200 bg-white text-xs font-medium text-ink-600 hover:text-red-600 hover:border-red-200 shadow-2xs transition-colors shrink-0 cursor-pointer"
-                        title="Clear all filters"
+                  </div>
+
+                  {/* 2. Location */}
+                  <div>
+                    <label className="block text-[11px] font-semibold text-ink-700 mb-1 flex items-center justify-between">
+                      <span>Location</span>
+                      {!selectedDestination && (
+                        <span className="text-[10px] font-normal text-ink-400">
+                          (Choose destination first)
+                        </span>
+                      )}
+                    </label>
+                    <select
+                      className={cn(
+                        'input h-9 w-full bg-white text-xs py-1.5 px-2.5 border-ink-200 shadow-2xs font-medium text-ink-900',
+                        !selectedDestination && 'bg-sand-50/70 text-ink-400 cursor-not-allowed border-dashed'
+                      )}
+                      value={selectedLocation}
+                      onChange={(e) => handleLocationChange(e.target.value)}
+                      disabled={!selectedDestination}
+                      aria-label="Location"
+                    >
+                      {!selectedDestination ? (
+                        <option value="">Select Destination first…</option>
+                      ) : (
+                        <>
+                          <option value="">
+                            {availableLocations.length === 0
+                              ? `No locations under ${selectedDestination}`
+                              : `All Locations in ${selectedDestination} (${availableLocations.length})`}
+                          </option>
+                          {availableLocations.map((loc) => (
+                            <option key={loc.id} value={String(loc.id)}>
+                              {loc.display_name || loc.name}
+                            </option>
+                          ))}
+                        </>
+                      )}
+                    </select>
+                  </div>
+
+                  {/* 3. Number of Days */}
+                  <div>
+                    <label className="block text-[11px] font-semibold text-ink-700 mb-1">
+                      Number of Days
+                    </label>
+                    <select
+                      className="input h-9 w-full bg-white text-xs py-1.5 px-2.5 border-ink-200 shadow-2xs font-medium text-ink-900"
+                      value={selectedDays}
+                      onChange={(e) => handleDaysChange(e.target.value)}
+                      aria-label="Number of Days"
+                    >
+                      <option value="">All Durations</option>
+                      {availableDays.map((d) => (
+                        <option key={d} value={String(d)}>
+                          {d} Days ({d - 1} Nights)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* 4. Choose Template with Clear filter button on right */}
+                  <div>
+                    <label className="block text-[11px] font-semibold text-brand-900 mb-1 flex items-center justify-between">
+                      <span>Choose Template</span>
+                      <span className="text-[10px] font-normal text-brand-700">
+                        ({filteredTemplates.length} available)
+                      </span>
+                    </label>
+                    <div className="flex items-center gap-1.5">
+                      <select
+                        className="input h-9 flex-1 min-w-0 bg-white text-xs py-1.5 px-2.5 border-brand-300 shadow-2xs font-semibold text-brand-950 focus:border-brand-600 focus:ring-1 focus:ring-brand-500"
+                        value={selectedTemplateId}
+                        onChange={(e) => handleTemplateSelect(e.target.value)}
+                        aria-label="Choose Template"
                       >
-                        <RotateCcw className="h-3 w-3" />
-                        <span>Clear filter</span>
-                      </button>
-                    )}
+                        <option value="">
+                          {filteredTemplates.length === 0
+                            ? 'No templates match filters'
+                            : 'Choose a template to autofill…'}
+                        </option>
+                        {filteredTemplates.map((t) => (
+                          <option key={t.id} value={t.idStr}>
+                            {t.name} ({t.totalDays}D / {t.totalNights}N)
+                          </option>
+                        ))}
+                      </select>
+                      {hasActiveFilter && (
+                        <button
+                          type="button"
+                          onClick={handleResetFilters}
+                          className="inline-flex items-center gap-1 h-9 px-2.5 rounded border border-ink-200 bg-white text-xs font-medium text-ink-600 hover:text-red-600 hover:border-red-200 shadow-2xs transition-colors shrink-0 cursor-pointer"
+                          title="Clear all filters"
+                        >
+                          <RotateCcw className="h-3 w-3" />
+                          <span>Clear filter</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
 
-            {/* Section 1: Guest & Tour Specs (Dense 6-column grid) */}
-            <div>
-              <SectionHeader title="1. Guest & Trip Specifications" subtitle="Guest information, group composition, dates and category preference." />
-              <GuestSection m={m} inputs={inputs} upd={upd} />
-            </div>
+              {/* Section 1: Guest & Tour Specs */}
+              <div>
+                <SectionHeader title="1. Guest & Trip Specifications" subtitle="Guest information, group composition, dates and category preference." />
+                <GuestSection m={m} inputs={inputs} upd={upd} />
+              </div>
 
-            <hr className="border-ink-100" />
+              <hr className="border-ink-100" />
 
-            {/* Section 2: Route & Hotels */}
-            <div>
-              <SectionHeader title="2. Route & Hotel Selection" subtitle="Night allocations and hotel selections per destination from Rate Master." />
-              <StaysSection ctx={ctx} inputs={inputs} setInputs={setInputs} q1={q1} q2={q2} />
-            </div>
+              {/* Section 2: Route & Hotels */}
+              <div>
+                <SectionHeader title="2. Route & Hotel Selection" subtitle="Night allocations and hotel selections per destination from Rate Master." />
+                <StaysSection ctx={ctx} inputs={inputs} setInputs={setInputs} q1={q1} q2={q2} />
+              </div>
 
-            <hr className="border-ink-100" />
+              <hr className="border-ink-100" />
 
-            {/* Section 3: Day-wise Itinerary */}
-            <div>
-              <SectionHeader title="3. Day-wise Itinerary" subtitle="Drag to reorder days. Dates and day numbering automatically re-sequence." />
-              <DaysSection ctx={ctx} inputs={inputs} setInputs={setInputs} days={days} />
-            </div>
+              {/* Section 4: Transport & Other Costs */}
+              <div>
+                <SectionHeader title="4. Transport & Additional Inclusions" subtitle="Vehicle assignment, estimated mileage, tolls, and package inclusions." />
+                <TransportSection ctx={ctx} inputs={inputs} upd={upd} q1={q1} canOverrideMarkup={canOverrideMarkup} />
+              </div>
 
-            <hr className="border-ink-100" />
+              <hr className="border-ink-100" />
 
-            {/* Section 4: Transport & Other Costs */}
-            <div>
-              <SectionHeader title="4. Transport & Additional Inclusions" subtitle="Vehicle assignment, estimated mileage, tolls, and package inclusions." />
-              <TransportSection ctx={ctx} inputs={inputs} upd={upd} q1={q1} canOverrideMarkup={canOverrideMarkup} />
-            </div>
-
-            <hr className="border-ink-100" />
-
-            {/* Section 5: Financial Summary */}
-            <div>
-              <SectionHeader title="5. Pricing Breakdown" subtitle="Real-time cost, markup, and tax calculation." />
-              <PriceBreakdownSection q={q1} q2={q2} inputs={inputs} ctx={ctx} upd={upd} canOverrideMarkup={canOverrideMarkup} />
-            </div>
-          </div>
-        </div>
-
-        {/* Bottom Sticky Action Bar */}
-        <div className="card sticky bottom-4 z-20 border-ink-200 bg-white/95 p-3.5 shadow-lg backdrop-blur sm:p-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-400">Total Package Price</span>
-              <div className="flex items-baseline gap-2">
-                <span className="text-2xl font-bold tabular-nums text-brand-700">₹{inr(q1.total)}</span>
-                <span className="text-xs text-ink-500">₹{inr(q1.perPerson)} / adult</span>
-                {q2 && (
-                  <span className="text-xs font-semibold text-ocean-700">
-                    (Option 2: ₹{inr(q2.total)})
-                  </span>
-                )}
+              {/* Section 5: Financial Summary */}
+              <div>
+                <SectionHeader title="5. Pricing Breakdown" subtitle="Real-time cost, markup, and tax calculation." />
+                <PriceBreakdownSection q={q1} q2={q2} inputs={inputs} ctx={ctx} upd={upd} canOverrideMarkup={canOverrideMarkup} />
               </div>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
+          </div>
+
+          {/* Total Package Price Bar (Fully responsive with aligned buttons) */}
+          <div className="card sticky bottom-4 z-20 border-ink-200 bg-white/95 p-3.5 shadow-lg backdrop-blur sm:p-4">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-b border-ink-100 pb-2.5">
+              <div>
+                <span className="block text-[11px] font-semibold uppercase tracking-wider text-ink-400">Total Package Price</span>
+                <div className="flex flex-wrap items-baseline gap-2 mt-0.5">
+                  <span className="text-2xl font-bold tabular-nums text-brand-700">₹{inr(q1.total)}</span>
+                  <span className="text-xs font-medium text-ink-500">₹{inr(q1.perPerson)} / adult</span>
+                </div>
+              </div>
+              {q2 && (
+                <div className="rounded-md bg-ocean-50 border border-ocean-200 px-2 py-1 text-right">
+                  <span className="block text-[10px] font-medium text-ocean-600 uppercase tracking-wide">Option 2</span>
+                  <span className="text-xs font-bold text-ocean-800 tabular-nums">₹{inr(q2.total)}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-12 gap-2 pt-2.5 items-center">
+              {/* Back Button */}
               <button
                 type="button"
-                className="btn-ghost text-xs sm:text-sm py-2 px-3 text-ink-600 hover:bg-ink-100 hover:text-ink-900"
+                className="col-span-3 inline-flex items-center justify-center gap-1 h-9 px-2.5 rounded-lg border border-ink-200 bg-white text-xs font-medium text-ink-700 hover:bg-ink-50 hover:text-ink-900 transition-colors cursor-pointer shadow-2xs disabled:opacity-50"
                 onClick={() => {
                   if (typeof window !== 'undefined' && window.history.length > 1) {
                     router.back();
@@ -625,24 +626,51 @@ export function QuotationBuilder({
                 }}
                 disabled={saving}
               >
-                <ArrowLeft className="h-4 w-4 mr-1 inline" /> Back
+                <ArrowLeft className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">Back</span>
               </button>
+
+              {/* Save as draft / Save changes */}
               <button
                 type="button"
-                className="btn-outline text-xs sm:text-sm py-2 px-4"
-                disabled={saving}
-                onClick={() => save('sent')}
-              >
-                <Send className="h-4 w-4" /> Save Quotation
-              </button>
-              <button
-                type="button"
-                className="btn-primary min-w-[130px] text-xs sm:text-sm py-2 px-4"
+                className="col-span-4 inline-flex items-center justify-center gap-1.5 h-9 px-2 rounded-lg border border-brand-300 bg-white text-xs font-semibold text-brand-800 hover:bg-brand-50 hover:border-brand-400 transition-colors cursor-pointer shadow-2xs disabled:opacity-50"
                 disabled={saving}
                 onClick={() => save(quoteId ? undefined : 'draft')}
               >
-                <Save className="h-4 w-4" /> {saving ? 'Saving…' : quoteId ? 'Save changes' : 'Save as draft'}
+                <Save className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">{saving ? 'Saving…' : quoteId ? 'Save changes' : 'Save draft'}</span>
               </button>
+
+              {/* Save Quotation */}
+              <button
+                type="button"
+                className="col-span-5 inline-flex items-center justify-center gap-1.5 h-9 px-2.5 rounded-lg bg-emerald-600 text-xs font-semibold text-white shadow-sm hover:bg-emerald-500 hover:shadow transition-all cursor-pointer disabled:opacity-50"
+                disabled={saving}
+                onClick={() => save('sent')}
+              >
+                <Send className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">Save Quotation</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* RIGHT COLUMN: 3. Day-wise Itinerary (Wider and full content display with no scrollbar) */}
+        <div className="lg:col-span-7 space-y-4">
+          <div className="card overflow-hidden border-ink-200 bg-white p-4 shadow-sm sm:p-5">
+            <div className="mb-3.5 flex items-start justify-between gap-2 border-b border-ink-100 pb-3">
+              <div>
+                <SectionHeader
+                  title="3. Day-wise Itinerary"
+                  subtitle="Pick a plan per day, tick sightseeing, add spots or drag to reorder days."
+                />
+              </div>
+              <span className="shrink-0 rounded-full bg-brand-50 px-2.5 py-1 text-[11px] font-semibold text-brand-700 border border-brand-200">
+                {days.length} {days.length === 1 ? 'Day' : 'Days'}
+              </span>
+            </div>
+            <div>
+              <DaysSection ctx={ctx} inputs={inputs} setInputs={setInputs} days={days} />
             </div>
           </div>
         </div>
@@ -758,8 +786,8 @@ function GuestSection({
   const pickups = m.points.filter((p) => p.use_for_pickup);
   const drops = m.points.filter((p) => p.use_for_drop);
   return (
-    <div className="grid gap-1.5 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
-      <CustomerPicker inputs={inputs} upd={upd} className="col-span-1" />
+    <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-2 xl:grid-cols-3">
+      <CustomerPicker inputs={inputs} upd={upd} className="col-span-2 sm:col-span-2 md:col-span-2 lg:col-span-2 xl:col-span-2" />
       <Field label="Phone">
         <input className="input h-8 text-xs py-1 px-2" placeholder="Phone number" value={inputs.guest_phone} onChange={(e) => upd({ guest_phone: e.target.value })} />
       </Field>
@@ -871,7 +899,7 @@ function GuestSection({
           <span className="truncate">{inputs.gst_enabled ? `GST (${m.settings.gst_pct}%)` : 'GST'}</span>
         </label>
       </Field>
-      <Field label="Quotation title" hint="Auto if empty">
+      <Field label="Quotation title" hint="Auto if empty" className="col-span-2 sm:col-span-2 md:col-span-2 lg:col-span-2 xl:col-span-2">
         <input className="input h-8 text-xs py-1 px-2" placeholder="e.g. Kerala Package" value={inputs.title} onChange={(e) => upd({ title: e.target.value })} />
       </Field>
     </div>
@@ -973,50 +1001,63 @@ function StaysSection({
         </p>
       )}
       {inputs.stays.map((st, i) => (
-        <div key={st.uid} className="rounded-lg border border-ink-100 bg-ink-50/40 p-2.5">
-          <div className="flex flex-wrap items-end gap-2">
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-700 text-xs font-bold text-white">
-              {i + 1}
-            </span>
-            <Field label="Location" className="min-w-[160px] flex-1">
-              <div className="h-8 flex items-center justify-between px-2.5 rounded border border-ink-200 bg-white font-semibold text-xs text-ink-900 shadow-2xs">
-                <span className="truncate">
-                  {ctx.loc.get(st.location_id)?.display_name || ctx.loc.get(st.location_id)?.name || 'Location'}
-                  {ctx.loc.get(st.location_id)?.is_houseboat && (
-                    <span className="ml-1 text-[10px] text-brand-700 font-normal">(houseboat)</span>
-                  )}
-                </span>
-                {ctx.loc.get(st.location_id)?.state && (
-                  <span className="ml-2 text-[10px] text-ink-400 font-normal shrink-0">
-                    {ctx.loc.get(st.location_id)?.state}
+        <div key={st.uid} className="rounded-xl border border-ink-200 bg-ink-50/40 p-3 sm:p-3.5 space-y-2.5 shadow-2xs">
+          {/* Responsive stay header */}
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-ink-150/70 pb-2.5">
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-700 text-xs font-bold text-white shadow-2xs">
+                {i + 1}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-baseline gap-1.5 truncate">
+                  <span className="font-semibold text-xs text-ink-900 truncate">
+                    {ctx.loc.get(st.location_id)?.display_name || ctx.loc.get(st.location_id)?.name || 'Location'}
                   </span>
-                )}
+                  {ctx.loc.get(st.location_id)?.is_houseboat && (
+                    <span className="text-[10px] text-brand-700 font-medium">(houseboat)</span>
+                  )}
+                  {ctx.loc.get(st.location_id)?.state && (
+                    <span className="text-[10px] text-ink-400 font-normal">
+                      · {ctx.loc.get(st.location_id)?.state}
+                    </span>
+                  )}
+                </div>
+                <span className="text-[10px] text-ink-500 font-medium">
+                  {stayDates(inputs, i).length
+                    ? `${fmtDay(stayDates(inputs, i)[0]!)} (${st.nights} Night${st.nights > 1 ? 's' : ''})`
+                    : `${st.nights} Night${st.nights > 1 ? 's' : ''}`}
+                </span>
               </div>
-            </Field>
-            <Field label="Nights" className="w-20">
-              <CountInput
-                value={st.nights}
-                min={1}
-                className="input h-8 text-xs py-1 px-2 w-full font-medium"
-                onChange={(val) => setStay(i, { nights: val ?? 1 })}
-                ariaLabel="Nights"
-              />
-            </Field>
-            <div className="flex gap-1 pb-0.5">
-              <IconBtn title="Move up" onClick={() => move(i, -1)} disabled={i === 0}>
-                <ArrowUp className="h-3 w-3" />
-              </IconBtn>
-              <IconBtn title="Move down" onClick={() => move(i, 1)} disabled={i === inputs.stays.length - 1}>
-                <ArrowDown className="h-3 w-3" />
-              </IconBtn>
-              <IconBtn title="Remove" onClick={() => remove(i)} danger>
-                <Trash2 className="h-3 w-3" />
-              </IconBtn>
             </div>
-            <span className="pb-1 text-xs text-ink-400">
-              {stayDates(inputs, i).length ? `${fmtDay(stayDates(inputs, i)[0]!)} (${st.nights}N)` : ''}
-            </span>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-semibold text-ink-600">Nights:</span>
+                <div className="w-16">
+                  <CountInput
+                    value={st.nights}
+                    min={1}
+                    className="input h-7 text-xs py-0.5 px-2 w-full font-bold text-center"
+                    onChange={(val) => setStay(i, { nights: val ?? 1 })}
+                    ariaLabel="Nights"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-0.5 border-l border-ink-200 pl-1.5">
+                <IconBtn title="Move up" onClick={() => move(i, -1)} disabled={i === 0}>
+                  <ArrowUp className="h-3 w-3" />
+                </IconBtn>
+                <IconBtn title="Move down" onClick={() => move(i, 1)} disabled={i === inputs.stays.length - 1}>
+                  <ArrowDown className="h-3 w-3" />
+                </IconBtn>
+                <IconBtn title="Remove" onClick={() => remove(i)} danger>
+                  <Trash2 className="h-3 w-3" />
+                </IconBtn>
+              </div>
+            </div>
           </div>
+
           <HotelRow ctx={ctx} inputs={inputs} si={i} which={1} q={q1} setPick={(p) => setStay(i, { opt1: p })} />
           {q2 && <HotelRow ctx={ctx} inputs={inputs} si={i} which={2} q={q2} setPick={(p) => setStay(i, { opt2: p })} />}
         </div>
@@ -1039,7 +1080,15 @@ function StaysSection({
   );
 }
 
-const blankPick = (): HotelPick => ({ hotel_id: null, room_type_id: null, manual_rate: null, additional_cost: null });
+const blankPick = (): HotelPick => ({
+  hotel_id: null,
+  room_type_id: null,
+  manual_rate: null,
+  additional_cost: null,
+  additional_cost_reason: null,
+  custom_hotel_name: null,
+  custom_room_name: null,
+});
 
 function LocationOptions({ locs, states }: { locs: TourMasters['locations']; states: string[] }) {
   return (
@@ -1057,6 +1106,351 @@ function LocationOptions({ locs, states }: { locs: TourMasters['locations']; sta
         </optgroup>
       ))}
     </>
+  );
+}
+
+function HotelCombobox({
+  pick,
+  hotels,
+  categoryHotels,
+  otherCategoryGroups,
+  uncategorizedHotels,
+  catName,
+  catNames,
+  onSelect,
+  label,
+  className,
+}: {
+  pick: HotelPick;
+  hotels: ReturnType<typeof hotelsIn>;
+  categoryHotels: ReturnType<typeof hotelsIn>;
+  otherCategoryGroups: { category: TourMasters['categories'][number]; hotels: ReturnType<typeof hotelsIn> }[];
+  uncategorizedHotels: ReturnType<typeof hotelsIn>;
+  catName: string;
+  catNames: (h: ReturnType<typeof hotelsIn>[number]) => string;
+  onSelect: (patch: Partial<HotelPick>) => void;
+  label: string;
+  className?: string;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, []);
+
+  const selectedHotel = useMemo(() => {
+    if (pick.hotel_id && typeof pick.hotel_id === 'number') {
+      return hotels.find((h) => h.id === pick.hotel_id) || null;
+    }
+    return null;
+  }, [hotels, pick.hotel_id]);
+
+  const displayValue = useMemo(() => {
+    if (pick.custom_hotel_name) return pick.custom_hotel_name;
+    if (pick.hotel_id === 'tbc') return 'Similar category (TBC)';
+    if (selectedHotel) return selectedHotel.name;
+    return `Best value in ${catName || 'category'} (Auto)`;
+  }, [pick.custom_hotel_name, pick.hotel_id, selectedHotel, catName]);
+
+  const q = query.trim().toLowerCase();
+
+  const filteredCategoryHotels = useMemo(() => {
+    if (!q) return categoryHotels;
+    return categoryHotels.filter((h) => h.name.toLowerCase().includes(q));
+  }, [categoryHotels, q]);
+
+  const filteredOtherGroups = useMemo(() => {
+    if (!q) return otherCategoryGroups;
+    return otherCategoryGroups
+      .map((g) => ({
+        ...g,
+        hotels: g.hotels.filter((h) => h.name.toLowerCase().includes(q)),
+      }))
+      .filter((g) => g.hotels.length > 0);
+  }, [otherCategoryGroups, q]);
+
+  const filteredUncategorized = useMemo(() => {
+    if (!q) return uncategorizedHotels;
+    return uncategorizedHotels.filter((h) => h.name.toLowerCase().includes(q));
+  }, [uncategorizedHotels, q]);
+
+  return (
+    <Field label={label} className={cn('relative', className)}>
+      <div ref={containerRef} className="relative">
+        <div className="relative">
+          <input
+            type="text"
+            className="input h-8 w-full pr-8 text-xs font-semibold text-ink-900 border-ink-200 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 bg-white cursor-pointer"
+            placeholder="Search hotel or type custom name…"
+            value={isOpen ? query : displayValue}
+            title={displayValue}
+            onFocus={() => {
+              setQuery(pick.custom_hotel_name || (selectedHotel ? selectedHotel.name : ''));
+              setIsOpen(true);
+            }}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setIsOpen(true);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                if (query.trim()) {
+                  const match = hotels.find((h) => h.name.toLowerCase() === query.trim().toLowerCase());
+                  if (match) {
+                    onSelect({ hotel_id: match.id, custom_hotel_name: null, room_type_id: null });
+                  } else {
+                    onSelect({ hotel_id: null, custom_hotel_name: query.trim(), room_type_id: null });
+                  }
+                }
+                setIsOpen(false);
+              } else if (e.key === 'Escape') {
+                setIsOpen(false);
+              }
+            }}
+          />
+          {isOpen || pick.custom_hotel_name || pick.hotel_id ? (
+            <button
+              type="button"
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1 text-ink-400 hover:text-ink-700 rounded cursor-pointer"
+              onClick={() => {
+                onSelect({ hotel_id: null, custom_hotel_name: null, room_type_id: null });
+                setQuery('');
+                setIsOpen(false);
+              }}
+              title="Reset to Auto"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          ) : (
+            <button
+              type="button"
+              tabIndex={-1}
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1 text-ink-400 hover:text-ink-700 pointer-events-none"
+            >
+              <ChevronDown className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+
+        {isOpen && (
+          <div className="absolute left-0 z-40 mt-1 max-h-72 w-full min-w-[340px] sm:min-w-[420px] max-w-[min(540px,calc(100vw-2rem))] overflow-y-auto rounded-xl border border-ink-200 bg-white py-1.5 shadow-2xl text-xs space-y-1 ring-1 ring-black/5">
+            {/* If user typed a custom query */}
+            {query.trim().length > 0 && (
+              <button
+                type="button"
+                className="w-full text-left px-3 py-1.5 bg-brand-50/80 text-brand-900 font-semibold hover:bg-brand-100 flex items-center justify-between border-b border-brand-200 cursor-pointer"
+                onMouseDown={() => {
+                  onSelect({
+                    hotel_id: null,
+                    custom_hotel_name: query.trim(),
+                    room_type_id: null,
+                  });
+                  setIsOpen(false);
+                }}
+              >
+                <span>+ Use custom hotel: &quot;{query.trim()}&quot;</span>
+                <span className="text-[10px] text-brand-700 font-normal">Custom input</span>
+              </button>
+            )}
+
+            {/* Standard Auto option */}
+            <button
+              type="button"
+              className={cn(
+                'w-full text-left px-3 py-1.5 hover:bg-ink-50 flex items-center justify-between cursor-pointer',
+                !pick.hotel_id && !pick.custom_hotel_name && 'bg-brand-50 font-semibold text-brand-900'
+              )}
+              onMouseDown={() => {
+                onSelect({ hotel_id: null, custom_hotel_name: null, room_type_id: null });
+                setIsOpen(false);
+              }}
+            >
+              <span>Best value in {catName || 'category'} (Auto)</span>
+              <span className="text-[10px] text-emerald-700 font-semibold">Recommended</span>
+            </button>
+
+            {/* Category Hotels */}
+            {filteredCategoryHotels.length > 0 && (
+              <div>
+                <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-ink-400 bg-ink-50/60">
+                  {catName || 'Selected Category'} Hotels
+                </div>
+                {filteredCategoryHotels.map((h) => (
+                  <button
+                    key={h.id}
+                    type="button"
+                    className={cn(
+                      'w-full text-left px-3 py-1.5 hover:bg-ink-50 flex items-center justify-between cursor-pointer',
+                      pick.hotel_id === h.id && 'bg-brand-50 font-semibold text-brand-900'
+                    )}
+                    onMouseDown={() => {
+                      onSelect({ hotel_id: h.id, custom_hotel_name: null, room_type_id: null });
+                      setIsOpen(false);
+                    }}
+                  >
+                    <span className="truncate">{h.name}</span>
+                    {catNames(h) && <span className="text-[10px] text-ink-400 font-normal ml-2 shrink-0">{catNames(h)}</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Other Category Groups */}
+            {filteredOtherGroups.map((g) => (
+              <div key={g.category.id}>
+                <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-ink-400 bg-ink-50/60">
+                  {g.category.name} Hotels
+                </div>
+                {g.hotels.map((h) => (
+                  <button
+                    key={h.id}
+                    type="button"
+                    className={cn(
+                      'w-full text-left px-3 py-1.5 hover:bg-ink-50 flex items-center justify-between cursor-pointer',
+                      pick.hotel_id === h.id && 'bg-brand-50 font-semibold text-brand-900'
+                    )}
+                    onMouseDown={() => {
+                      onSelect({ hotel_id: h.id, custom_hotel_name: null, room_type_id: null });
+                      setIsOpen(false);
+                    }}
+                  >
+                    <span className="truncate">{h.name}</span>
+                    {catNames(h) && <span className="text-[10px] text-ink-400 font-normal ml-2 shrink-0">{catNames(h)}</span>}
+                  </button>
+                ))}
+              </div>
+            ))}
+
+            {/* Uncategorized Hotels */}
+            {filteredUncategorized.length > 0 && (
+              <div>
+                <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-ink-400 bg-ink-50/60">
+                  Other Hotels
+                </div>
+                {filteredUncategorized.map((h) => (
+                  <button
+                    key={h.id}
+                    type="button"
+                    className={cn(
+                      'w-full text-left px-3 py-1.5 hover:bg-ink-50 flex items-center justify-between cursor-pointer',
+                      pick.hotel_id === h.id && 'bg-brand-50 font-semibold text-brand-900'
+                    )}
+                    onMouseDown={() => {
+                      onSelect({ hotel_id: h.id, custom_hotel_name: null, room_type_id: null });
+                      setIsOpen(false);
+                    }}
+                  >
+                    <span className="truncate">{h.name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* TBC Option */}
+            <button
+              type="button"
+              className={cn(
+                'w-full text-left px-3 py-1.5 hover:bg-ink-50 flex items-center justify-between border-t border-ink-100 text-ink-700 cursor-pointer',
+                pick.hotel_id === 'tbc' && 'bg-brand-50 font-semibold text-brand-900'
+              )}
+              onMouseDown={() => {
+                onSelect({ hotel_id: 'tbc', custom_hotel_name: null, room_type_id: null });
+                setIsOpen(false);
+              }}
+            >
+              <span>Similar category (TBC) – custom rate</span>
+            </button>
+          </div>
+        )}
+      </div>
+    </Field>
+  );
+}
+
+function RoomCombobox({
+  ch,
+  pick,
+  onSelect,
+  className,
+}: {
+  ch?: StayChoice;
+  pick: HotelPick;
+  onSelect: (patch: Partial<HotelPick>) => void;
+  className?: string;
+}) {
+  const [isCustomMode, setIsCustomMode] = useState(Boolean(pick.custom_room_name));
+
+  const rooms = useMemo<{ id: number; name: string }[]>(() => {
+    if (!ch?.H) return [];
+    return Array.from(ch.H.rooms.values()).map((r) => ({ id: r.id, name: r.name }));
+  }, [ch?.H]);
+
+  // If Rate Master hotel is selected and user is NOT in custom mode
+  if (ch?.H && !isCustomMode && !pick.custom_hotel_name) {
+    return (
+      <Field label="Room type" className={className}>
+        <div className="flex items-center gap-1.5">
+          <select
+            className="input h-8 text-xs py-1 px-2 font-medium flex-1 min-w-0"
+            value={pick.room_type_id != null ? String(pick.room_type_id) : (ch.roomId != null ? String(ch.roomId) : '')}
+            onChange={(e) => {
+              const val = e.target.value;
+              if (val === '__custom__') {
+                setIsCustomMode(true);
+                onSelect({ room_type_id: null, custom_room_name: '' });
+              } else {
+                onSelect({ room_type_id: val ? Number(val) : null, custom_room_name: null });
+              }
+            }}
+          >
+            {rooms.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
+              </option>
+            ))}
+            <option value="__custom__">+ Enter custom room type…</option>
+          </select>
+        </div>
+      </Field>
+    );
+  }
+
+  // Custom mode or non-Rate-Master / custom hotel
+  return (
+    <Field label="Room type" className={className}>
+      <div className="flex items-center gap-1.5">
+        <input
+          type="text"
+          className="input h-8 text-xs py-1 px-2 font-medium flex-1 min-w-0"
+          placeholder="e.g. Deluxe Room, Pool Villa"
+          value={pick.custom_room_name ?? ''}
+          onChange={(e) => onSelect({ custom_room_name: e.target.value, room_type_id: null })}
+        />
+        {ch?.H && !pick.custom_hotel_name && (
+          <button
+            type="button"
+            className="btn-outline h-8 px-2 text-[11px] shrink-0 text-ink-600 hover:text-ink-900 cursor-pointer"
+            onClick={() => {
+              setIsCustomMode(false);
+              onSelect({ custom_room_name: null, room_type_id: rooms[0]?.id ?? null });
+            }}
+            title="Choose from Rate Master room list"
+          >
+            <RotateCcw className="h-3 w-3 mr-1 inline" />
+            <span className="hidden sm:inline">Rooms list</span>
+          </button>
+        )}
+      </div>
+    </Field>
   );
 }
 
@@ -1112,165 +1506,172 @@ function HotelRow({
   ]);
   const uncategorizedHotels = otherHotels.filter((h) => !groupedIds.has(h.id));
 
+  const handlePatch = (patch: Partial<HotelPick>) => {
+    setPick({
+      ...pick,
+      ...patch,
+    });
+  };
+
+  const isCustomOrManual = Boolean(!ch?.H || pick.hotel_id === 'tbc' || pick.custom_hotel_name);
+
   return (
     <div
       className={cn(
-        'mt-2 grid gap-2 rounded-lg border p-2 sm:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_120px_auto]',
-        which === 2 ? 'border-ocean-200 bg-ocean-50/60' : 'border-ink-100 bg-white'
+        'mt-2.5 rounded-xl border p-3 sm:p-3.5 space-y-3 transition-colors shadow-2xs',
+        which === 2 ? 'border-ocean-200 bg-ocean-50/50' : 'border-ink-200 bg-white'
       )}
     >
-      <Field label={which === 2 ? `Option 2 hotel (${catName})` : `Hotel (${catName})`}>
-        <select
-          className="input h-8 text-xs py-1 px-2"
-          value={pick.hotel_id == null ? '' : String(pick.hotel_id)}
-          onChange={(e) => {
-            const v = e.target.value;
-            setPick({
-              hotel_id: v === '' ? null : v === 'tbc' ? 'tbc' : Number(v),
-              room_type_id: null,
-              manual_rate: pick.manual_rate,
-              additional_cost: pick.additional_cost,
-            });
-          }}
-        >
-          <option value="">
-            Best value in {catName || 'category'} (Auto)
-          </option>
-
-          {categoryHotels.length > 0 && (
-            <optgroup label={`${catName || 'Selected Category'} Hotels`}>
-              {categoryHotels.map((h) => (
-                <option key={h.id} value={h.id}>
-                  {h.name} {catNames(h) ? `(${catNames(h)})` : ''}
-                </option>
-              ))}
-            </optgroup>
-          )}
-
-          {otherCategoryGroups.map((g) => (
-            <optgroup key={g.category.id} label={`${g.category.name} Hotels`}>
-              {g.hotels.map((h) => (
-                <option key={h.id} value={h.id}>
-                  {h.name} {catNames(h) ? `(${catNames(h)})` : ''}
-                </option>
-              ))}
-            </optgroup>
-          ))}
-
-          {uncategorizedHotels.length > 0 && (
-            <optgroup label="Other Categories / Hotels">
-              {uncategorizedHotels.map((h) => (
-                <option key={h.id} value={h.id}>
-                  {h.name}
-                </option>
-              ))}
-            </optgroup>
-          )}
-
-          <option value="tbc">Similar category (TBC) – enter custom rate</option>
-        </select>
-
-        {ch?.auto && ch.H && (
-          <div className="mt-1 flex items-center justify-between rounded bg-emerald-50 px-2 py-1 text-[11px] text-emerald-800 border border-emerald-200">
-            <span className="truncate pr-2">
-              <b>Auto:</b> {ch.H.name} {ch.roomName ? `· ${ch.roomName}` : ''}
-            </span>
-            <span className="font-semibold tabular-nums shrink-0">
-              Budget ({st.nights}N): ₹{inr(sp?.total ?? 0)}
-            </span>
-          </div>
+      {/* Header bar: Option 1 / Option 2 pill */}
+      <div className="flex items-center justify-between pb-1 border-b border-ink-100">
+        <span className={cn('text-xs font-bold uppercase tracking-wider', which === 2 ? 'text-ocean-800' : 'text-brand-900')}>
+          {which === 2 ? `Option 2 Hotel (${catName})` : `Hotel Option 1 (${catName})`}
+        </span>
+        {pick.custom_hotel_name && (
+          <span className="badge py-0 px-2 text-[10px] bg-amber-50 text-amber-800 border border-amber-200 font-semibold">
+            Custom Hotel
+          </span>
         )}
-      </Field>
+      </div>
 
-      {ch?.H ? (
-        <Field label="Room">
-          <select
-            className="input h-8 text-xs py-1 px-2"
-            value={ch.roomId ?? ''}
-            onChange={(e) =>
-              setPick({
-                hotel_id: ch.H!.id,
-                room_type_id: Number(e.target.value),
-                manual_rate: null,
-                additional_cost: pick.additional_cost,
-              })
-            }
-          >
-            {Array.from(ch.H.rooms.values()).map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.name}
-              </option>
-            ))}
-          </select>
-        </Field>
-      ) : (
-        <Field label={`Rate / ${ctx.loc.get(st.location_id)?.is_houseboat ? 'boat' : 'room'} / night (₹)`}>
+      {/* Row 1: Hotel (Input + Dropdown) with expanded width & Room (Select or Type) */}
+      <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
+        <HotelCombobox
+          className="sm:col-span-7 xl:col-span-8"
+          pick={pick}
+          hotels={hotels}
+          categoryHotels={categoryHotels}
+          otherCategoryGroups={otherCategoryGroups}
+          uncategorizedHotels={uncategorizedHotels}
+          catName={catName}
+          catNames={catNames}
+          onSelect={handlePatch}
+          label={which === 2 ? `Option 2 hotel (${catName})` : `Hotel (${catName})`}
+        />
+
+        <RoomCombobox
+          className="sm:col-span-5 xl:col-span-4"
+          ch={ch}
+          pick={pick}
+          onSelect={handlePatch}
+        />
+      </div>
+
+      {/* Auto-selected budget notice banner if Auto is picked */}
+      {ch?.auto && ch.H && !pick.custom_hotel_name && (
+        <div className="flex items-center justify-between rounded-lg bg-emerald-50 px-2.5 py-1 text-[11px] text-emerald-800 border border-emerald-200">
+          <span className="truncate pr-2">
+            <b>Auto:</b> {ch.H.name} {ch.roomName ? `· ${ch.roomName}` : ''}
+          </span>
+          <span className="font-semibold tabular-nums shrink-0">
+            Budget ({st.nights}N): ₹{inr(sp?.total ?? 0)}
+          </span>
+        </div>
+      )}
+
+      {/* Row 2: Rate (if manual/custom), Additional Cost (₹), Reason, and Stay Total */}
+      <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end pt-1 border-t border-ink-100">
+        {/* If manual or custom rate is needed */}
+        {isCustomOrManual ? (
+          <Field label="Rate / night (₹)" className="sm:col-span-3">
+            <input
+              className="input h-8 text-xs py-1 px-2 font-medium"
+              type="number"
+              min={0}
+              placeholder="Rate per night"
+              value={pick.manual_rate ?? ''}
+              onChange={(e) =>
+                handlePatch({
+                  manual_rate: e.target.value === '' ? null : num(e.target.value),
+                })
+              }
+            />
+          </Field>
+        ) : null}
+
+        {/* Additional cost (₹) */}
+        <Field
+          label="Additional cost (₹)"
+          hint="Adds to stay"
+          className={isCustomOrManual ? 'sm:col-span-3' : 'sm:col-span-3'}
+        >
           <input
-            className="input h-8 text-xs py-1 px-2"
+            className="input h-8 text-xs py-1 px-2 font-medium"
             type="number"
             min={0}
-            value={pick.manual_rate ?? ''}
+            placeholder="0"
+            value={pick.additional_cost ?? ''}
             onChange={(e) =>
-              setPick({
-                ...pick,
-                manual_rate: e.target.value === '' ? null : num(e.target.value),
+              handlePatch({
+                additional_cost: e.target.value === '' ? null : Math.max(0, num(e.target.value)),
               })
             }
           />
         </Field>
-      )}
 
-      {/* Additional cost input field */}
-      <Field label="Additional cost (₹)" hint="Adds to stay">
-        <input
-          className="input h-8 text-xs py-1 px-2 font-medium"
-          type="number"
-          min={0}
-          placeholder="0"
-          value={pick.additional_cost ?? ''}
-          onChange={(e) =>
-            setPick({
-              ...pick,
-              additional_cost: e.target.value === '' ? null : Math.max(0, num(e.target.value)),
-            })
-          }
-        />
-      </Field>
+        {/* Additional cost reason (Text column) */}
+        <Field
+          label="Additional cost reason"
+          hint="Reason for surcharge"
+          className={isCustomOrManual ? 'sm:col-span-3' : 'sm:col-span-5'}
+        >
+          <input
+            className="input h-8 text-xs py-1 px-2"
+            type="text"
+            placeholder="e.g. Peak surcharge, Gala dinner, Balcony view"
+            value={pick.additional_cost_reason ?? ''}
+            onChange={(e) =>
+              handlePatch({
+                additional_cost_reason: e.target.value || null,
+              })
+            }
+          />
+        </Field>
 
-      <div className="min-w-[130px] text-right flex flex-col justify-between">
-        <div>
-          <p className="text-[11px] text-ink-400">
-            {st.nights} night{st.nights > 1 ? 's' : ''}
-          </p>
-          <p className="text-sm font-semibold tabular-nums text-ink-900">₹{inr(sp?.total ?? 0)}</p>
+        {/* Stay Total & Seasons */}
+        <div
+          className={cn(
+            'text-right flex flex-col justify-end',
+            isCustomOrManual ? 'sm:col-span-3' : 'sm:col-span-4'
+          )}
+        >
+          <div className="flex items-baseline justify-end gap-1.5">
+            <span className="text-[11px] text-ink-500 font-medium">{st.nights}N stay:</span>
+            <span className="text-sm font-bold tabular-nums text-brand-700">₹{inr(sp?.total ?? 0)}</span>
+          </div>
           {pick.additional_cost ? (
-            <p className="text-[10px] font-medium text-brand-700 tabular-nums">
-              (+₹{inr(pick.additional_cost)} addl)
-            </p>
-          ) : null}
-        </div>
-        <div className="mt-0.5 flex flex-wrap justify-end gap-1">
-          {seasons.map((s) => (
-            <span
-              key={s}
-              className={cn(
-                'badge py-0 px-1.5 text-[10px]',
-                s.includes('guessed')
-                  ? 'bg-sand-100 text-sand-800'
-                  : s.startsWith('Peak')
-                    ? 'bg-coral-50 text-coral-700'
-                    : s.startsWith('Lean')
-                      ? 'bg-brand-50 text-brand-800'
-                      : 'bg-ocean-50 text-ocean-800'
-              )}
-            >
-              {s}
+            <span className="text-[10px] font-medium text-emerald-700 tabular-nums">
+              (+₹{inr(pick.additional_cost)}
+              {pick.additional_cost_reason ? ` · ${pick.additional_cost_reason}` : ' addl'})
             </span>
-          ))}
+          ) : null}
+          {seasons.length > 0 && (
+            <div className="mt-0.5 flex flex-wrap justify-end gap-1">
+              {seasons.map((s) => (
+                <span
+                  key={s}
+                  className={cn(
+                    'badge py-0 px-1.5 text-[9px]',
+                    s.includes('guessed')
+                      ? 'bg-sand-100 text-sand-800'
+                      : s.startsWith('Peak')
+                        ? 'bg-coral-50 text-coral-700'
+                        : s.startsWith('Lean')
+                          ? 'bg-brand-50 text-brand-800'
+                          : 'bg-ocean-50 text-ocean-800'
+                  )}
+                >
+                  {s}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Night-by-night pricing breakdown details */}
       {sp && sp.nights.length > 0 && ch?.H && (
-        <details className="text-[11px] text-ink-500 sm:col-span-4">
+        <details className="text-[11px] text-ink-500 pt-1 border-t border-ink-100">
           <summary className="cursor-pointer select-none font-medium text-brand-700 hover:underline">
             Night-by-night pricing breakdown
           </summary>
@@ -1290,7 +1691,7 @@ function HotelRow({
               {pick.additional_cost ? (
                 <tr className="border-t border-ink-200 font-medium text-brand-800 bg-brand-50/50">
                   <td className="py-0.5 pr-2" colSpan={2}>
-                    Additional cost
+                    Additional cost {pick.additional_cost_reason ? `(${pick.additional_cost_reason})` : ''}
                   </td>
                   <td className="py-0.5 text-right tabular-nums">+₹{inr(pick.additional_cost)}</td>
                 </tr>
@@ -1699,7 +2100,7 @@ function DayCard({
   edited: boolean;
   titleEdit: string;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(index === 0);
 
   // Day's primary destination/location
   const dayLocationId = d.to ?? d.city ?? d.from ?? null;
@@ -1791,30 +2192,42 @@ function DayCard({
         'rounded-lg border transition-all duration-150',
         isDragging && 'opacity-40 ring-2 ring-brand-500 scale-[0.99]',
         isDragOver && 'border-brand-500 bg-brand-50/50 ring-2 ring-brand-500',
-        !isDragging && !isDragOver && 'border-ink-100 bg-white hover:border-ink-200'
+        !isDragging && !isDragOver && 'border-ink-150 bg-white hover:border-ink-250 shadow-2xs'
       )}
     >
-      <div className="flex items-center gap-1.5 px-2.5 py-1.5">
+      <div className="flex items-center gap-2 p-2 sm:p-2.5">
         {/* Drag handle */}
         <div
           className="cursor-grab p-1 text-ink-400 hover:text-ink-700 active:cursor-grabbing"
           title="Drag to reorder day"
         >
-          <GripVertical className="h-3.5 w-3.5" />
+          <GripVertical className="h-4 w-4" />
         </div>
 
-        <button type="button" className="flex min-w-0 flex-1 items-center gap-2 text-left" onClick={() => setOpen(!open)}>
-          <span className="shrink-0 rounded bg-brand-700 px-1.5 py-0.5 text-[10px] font-bold text-white">D{d.i + 1}</span>
-          <span className="min-w-0 flex-1">
-            <span className="block text-[10px] text-ink-400">
-              {fmtDay(d.date)} · {kindLabel}
-              {dayLocationId ? ` · ${locName(ctx, dayLocationId)}` : ''}
-            </span>
-            <span className="block truncate text-xs font-medium text-ink-800">{d.title}</span>
-          </span>
-          {d.stale && <span className="badge py-0 px-1 text-[9px] bg-sand-100 text-sand-800">route changed</span>}
-          {edited && <span className="badge py-0 px-1 text-[9px] bg-ocean-50 text-ocean-800">edited</span>}
-          <ChevronDown className={cn('h-3.5 w-3.5 text-ink-400 transition-transform', open && 'rotate-180')} />
+        <button type="button" className="flex min-w-0 flex-1 items-center gap-2.5 text-left" onClick={() => setOpen(!open)}>
+          {/* Green Day Badge (matching user reference) */}
+          <div className="flex shrink-0 flex-col items-center justify-center rounded-md bg-emerald-600 px-2 py-1 text-white min-w-[54px] text-center shadow-2xs">
+            <span className="text-sm font-bold leading-tight">{d.i + 1}</span>
+            <span className="text-[10px] font-medium leading-none opacity-95">{fmtDay(d.date)}</span>
+          </div>
+
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-1.5 mb-0.5">
+              <span className="rounded bg-sand-100 px-1.5 py-0.5 text-[10px] font-semibold text-sand-800">
+                {kindLabel}
+              </span>
+              {dayLocationId && (
+                <span className="text-[10px] text-ink-500 font-medium truncate">
+                  · {locName(ctx, dayLocationId)}
+                </span>
+              )}
+              {d.stale && <span className="badge py-0 px-1 text-[9px] bg-sand-100 text-sand-800">route changed</span>}
+              {edited && <span className="badge py-0 px-1 text-[9px] bg-ocean-50 text-ocean-800">edited</span>}
+            </div>
+            <span className="block truncate text-xs sm:text-sm font-semibold text-ink-900">{d.title}</span>
+          </div>
+
+          <ChevronDown className={cn('h-4 w-4 text-ink-400 transition-transform shrink-0', open && 'rotate-180')} />
         </button>
 
         {/* Quick move buttons */}
@@ -1824,18 +2237,18 @@ function DayCard({
             title="Move Day Up"
             disabled={index === 0}
             onClick={onMoveUp}
-            className="rounded p-0.5 text-ink-400 hover:bg-ink-100 hover:text-ink-700 disabled:opacity-20"
+            className="rounded p-1 text-ink-400 hover:bg-ink-100 hover:text-ink-700 disabled:opacity-20"
           >
-            <ArrowUp className="h-3 w-3" />
+            <ArrowUp className="h-3.5 w-3.5" />
           </button>
           <button
             type="button"
             title="Move Day Down"
             disabled={index === totalDays - 1}
             onClick={onMoveDown}
-            className="rounded p-0.5 text-ink-400 hover:bg-ink-100 hover:text-ink-700 disabled:opacity-20"
+            className="rounded p-1 text-ink-400 hover:bg-ink-100 hover:text-ink-700 disabled:opacity-20"
           >
-            <ArrowDown className="h-3 w-3" />
+            <ArrowDown className="h-3.5 w-3.5" />
           </button>
         </div>
       </div>
@@ -1987,8 +2400,13 @@ function DayCard({
 
           {d.tip && <p className="rounded-lg bg-sand-50 px-2 py-1 text-[11px] text-sand-900">{d.tip}</p>}
 
-          <Field label="Note for guest">
-            <input className="input h-8 text-xs py-1 px-2" value={d.note} onChange={(e) => edit({ note: e.target.value })} />
+          <Field label="Note for this day">
+            <input
+              className="input h-8 text-xs py-1 px-2"
+              placeholder="e.g. Guests prefer a late start; lunch at a veg restaurant"
+              value={d.note}
+              onChange={(e) => edit({ note: e.target.value })}
+            />
           </Field>
           <div className="flex items-center justify-between text-[11px] text-ink-400">
             <span>Meals: {d.meals}</span>
@@ -2034,7 +2452,7 @@ function TransportSection({
 
   return (
     <div className="space-y-3">
-      <div className="grid gap-1.5 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
+      <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-2 xl:grid-cols-3">
         <Field
           label="Vehicle"
           className="col-span-2 sm:col-span-2 md:col-span-2 lg:col-span-2 xl:col-span-2"
@@ -2108,7 +2526,7 @@ function TransportSection({
         <Field label="Valid until">
           <input className="input h-8 text-xs py-1 px-1.5" type="date" value={inputs.valid_until ?? ''} onChange={(e) => upd({ valid_until: e.target.value || null })} />
         </Field>
-        <Field label="Internal notes (private)" className="col-span-2 sm:col-span-3 md:col-span-2 lg:col-span-2 xl:col-span-1">
+        <Field label="Internal notes (private)" className="col-span-2 sm:col-span-3 md:col-span-2 lg:col-span-3 xl:col-span-2">
           <input className="input h-8 text-xs py-1 px-2" placeholder="Private internal notes" value={inputs.notes} onChange={(e) => upd({ notes: e.target.value })} />
         </Field>
       </div>
@@ -2222,7 +2640,7 @@ function PriceBreakdownSection({
   };
 
   return (
-    <div className="grid gap-2.5 md:grid-cols-2">
+    <div className={cn('grid gap-2.5', q2 ? 'grid-cols-1 xl:grid-cols-2' : 'grid-cols-1')}>
       <div className="rounded-lg border border-ink-100 bg-ink-50/40 p-2.5">
         <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-ink-600">
           Option 1 {cat(inputs.category_id) ? `(${cat(inputs.category_id)})` : ''}
@@ -2270,7 +2688,7 @@ function PriceBreakdownSection({
         </div>
       </div>
 
-      {q2 ? (
+      {q2 && (
         <div className="rounded-lg border border-ocean-200 bg-ocean-50/40 p-2.5">
           <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-ocean-700">
             Option 2 {cat(inputs.category2_id) ? `(${cat(inputs.category2_id)})` : ''}
@@ -2300,11 +2718,6 @@ function PriceBreakdownSection({
               </div>
             )}
           </div>
-        </div>
-      ) : (
-        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-ink-200 p-2.5 text-center text-xs text-ink-400">
-          <p className="font-medium text-ink-600">Single option quotation</p>
-          <p className="mt-0.5 text-[11px]">Select a 2nd category in the form above if you want to quote 2 options side-by-side.</p>
         </div>
       )}
     </div>

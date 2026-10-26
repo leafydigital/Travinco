@@ -62,7 +62,15 @@ export const uid = () => Math.random().toString(36).slice(2, 9);
 export const totalNights = (inputs: Pick<QuoteInputs, 'stays'>) =>
   inputs.stays.reduce((a, s) => a + Math.max(0, s.nights | 0), 0);
 
-export const emptyPick = (): HotelPick => ({ hotel_id: null, room_type_id: null, manual_rate: null, additional_cost: null });
+export const emptyPick = (): HotelPick => ({
+  hotel_id: null,
+  room_type_id: null,
+  manual_rate: null,
+  additional_cost: null,
+  additional_cost_reason: null,
+  custom_hotel_name: null,
+  custom_room_name: null,
+});
 export const newStay = (location_id: number, nights = 1): StayInput => ({
   uid: uid(),
   location_id,
@@ -828,15 +836,18 @@ export function buildSnapshot(ctx: EngineCtx, inputs: QuoteInputs, q1: QuoteCalc
   const hasHB = inputs.stays.some((s) => isHB(ctx, s.location_id));
   const vehicle = q1.vehicle.vehicleLabel || 'as per itinerary';
 
-  const hotelRows = (q: QuoteCalc): SnapshotRow[] => {
+  const hotelRows = (q: QuoteCalc, which: 1 | 2 = 1): SnapshotRow[] => {
     const rows: SnapshotRow[] = [];
     q.stays.forEach((sp, si) => {
       const st = inputs.stays[si]!;
+      const pick = which === 2 ? st.opt2 : st.opt1;
       const hb = isHB(ctx, st.location_id);
       stayDates(inputs, si).forEach((dt) => {
+        const hotelName = pick?.custom_hotel_name?.trim() || (sp.choice.H ? sp.choice.H.name : 'Similar category (TBC)');
+        const roomName = pick?.custom_room_name?.trim() || (sp.choice.H ? sp.choice.roomName : '—');
         rows.push([
-          sp.choice.H ? sp.choice.H.name : 'Similar category (TBC)',
-          sp.choice.H ? sp.choice.roomName : '—',
+          hotelName,
+          roomName,
           locName(ctx, sp.choice.H ? sp.choice.H.location_id : st.location_id),
           fmtNumDate(dt),
           hb ? 'L + D + B' : inputs.meal === 'MAP' ? 'B + D' : 'B',
@@ -875,7 +886,7 @@ export function buildSnapshot(ctx: EngineCtx, inputs: QuoteInputs, q1: QuoteCalc
     category: ix === 0 ? cat1 : cat2,
     total: q!.total,
     per_person: Math.round(q!.perPerson),
-    hotels: hotelRows(q!),
+    hotels: hotelRows(q!, (ix + 1) as 1 | 2),
   }));
 
   return {
@@ -1035,6 +1046,9 @@ export function normalizeInputs(raw: Partial<QuoteInputs>, m: TourMasters): Quot
     room_type_id: idOrNull(p?.room_type_id),
     manual_rate: p?.manual_rate == null || (p.manual_rate as unknown) === '' ? null : Math.max(0, num(p.manual_rate)),
     additional_cost: p?.additional_cost == null || (p.additional_cost as unknown) === '' ? null : Math.max(0, num(p.additional_cost)),
+    additional_cost_reason: p?.additional_cost_reason ? String(p.additional_cost_reason).slice(0, 150) : null,
+    custom_hotel_name: p?.custom_hotel_name ? String(p.custom_hotel_name).slice(0, 150) : null,
+    custom_room_name: p?.custom_room_name ? String(p.custom_room_name).slice(0, 100) : null,
   });
   i.stays = (Array.isArray(i.stays) ? i.stays : [])
     .filter((s) => s && m.locations.some((l) => l.id === Number(s.location_id)))

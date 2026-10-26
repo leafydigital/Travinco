@@ -19,19 +19,24 @@ async function logEnquiryActivity(
   enquiryId: string,
   activityType: string,
   description: string,
-  metadata: Record<string, unknown> = {}
+  metadata: Record<string, unknown> = {},
+  performedBy?: string | null
 ) {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  let userId = performedBy;
+  if (userId === undefined) {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    userId = user?.id ?? null;
+  }
 
   await supabase.from('enquiry_activities').insert({
     enquiry_id: enquiryId,
     activity_type: activityType,
     description,
     metadata,
-    performed_by: user?.id ?? null,
+    performed_by: userId,
   });
 }
 
@@ -79,80 +84,18 @@ export async function updateEnquiryStatus(
 
 /**
  * Staff-facing accept/reject actions, on top of updateEnquiryStatus.
- * Distinct from the general status dropdown so this specific decision
- * — the one a customer actually cares about and sees reflected in
- * their own account — is a clear, single action, and always emails
- * the customer when it happens (best-effort; email failure never
- * blocks the actual decision from being recorded).
+ * Automated email sending removed per workflow requirements.
  */
 export async function acceptEnquiry(enquiryId: string): Promise<{ error?: string }> {
-  const result = await updateEnquiryStatus(enquiryId, 'confirmed');
-  if (result.error) return result;
-
-  const supabase = await createClient();
-  const { data: enquiry } = await supabase
-    .from('enquiries')
-    .select('email, customer_name')
-    .eq('id', enquiryId)
-    .single();
-
-  if (enquiry?.email) {
-    try {
-      const { sendGmail, isGmailConfigured } = await import('@/lib/email/gmail');
-      if (!isGmailConfigured()) {
-        console.error(
-          'acceptEnquiry: GMAIL_USER/GMAIL_APP_PASSWORD not set — confirmation email not sent.'
-        );
-      } else {
-        const trackUrl = `${process.env.NEXT_PUBLIC_SITE_URL ?? ''}/account/bookings`;
-        const sendResult = await sendGmail({
-          to: enquiry.email,
-          subject: 'Your request has been accepted',
-          html: `<p>Hi ${enquiry.customer_name},</p><p>Good news — your enquiry has been accepted. You can track its status any time by logging in to <a href="${trackUrl}">your account</a>.</p><p>We'll be in touch with next steps shortly.</p>`,
-        });
-        if (sendResult.error) {
-          console.error('acceptEnquiry: sendGmail failed:', sendResult.error);
-        }
-      }
-    } catch (err) {
-      console.error('acceptEnquiry: email step threw:', err instanceof Error ? err.message : err);
-    }
-  } else {
-    console.error('acceptEnquiry: enquiry has no email on file — nothing to send to.');
-  }
-
-  return {};
+  return updateEnquiryStatus(enquiryId, 'confirmed');
 }
 
 export async function rejectEnquiry(enquiryId: string, reason?: string): Promise<{ error?: string }> {
   const result = await updateEnquiryStatus(enquiryId, 'lost');
   if (result.error) return result;
 
-  const supabase = await createClient();
-  const { data: enquiry } = await supabase
-    .from('enquiries')
-    .select('email, customer_name')
-    .eq('id', enquiryId)
-    .single();
-
   if (reason?.trim()) {
     await logEnquiryActivity(enquiryId, 'rejected', `Rejected: ${reason.trim()}`);
-  }
-
-  if (enquiry?.email) {
-    try {
-      const { sendGmail, isGmailConfigured } = await import('@/lib/email/gmail');
-      if (isGmailConfigured()) {
-        const trackUrl = `${process.env.NEXT_PUBLIC_SITE_URL ?? ''}/account/bookings`;
-        await sendGmail({
-          to: enquiry.email,
-          subject: 'Update on your request',
-          html: `<p>Hi ${enquiry.customer_name},</p><p>We're sorry — we're unable to move forward with this request${reason?.trim() ? `: ${reason.trim()}` : '.'}</p><p>You can view its status any time by logging in to <a href="${trackUrl}">your account</a>. Feel free to reach out or submit a new request if your plans change.</p>`,
-        });
-      }
-    } catch {
-      // Best-effort only.
-    }
   }
 
   return {};
@@ -263,6 +206,14 @@ export async function updateEnquiryFollowupDate(
 ): Promise<{ error?: string }> {
   const permCheck = await checkEnquiryEditPermission();
   if (permCheck.error) return { error: permCheck.error };
+
+  if (followupDate) {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    if (followupDate < todayStr) {
+      return { error: 'Next follow-up date cannot be in the past.' };
+    }
+  }
+
   const supabase = await createClient();
 
   const { error } = await supabase
@@ -276,7 +227,8 @@ export async function updateEnquiryFollowupDate(
     enquiryId,
     'followup_date_updated',
     followupDate ? `Follow-up date set to ${followupDate}` : 'Follow-up date cleared',
-    { next_followup_date: followupDate }
+    { next_followup_date: followupDate },
+    permCheck.profile?.id
   );
 
   revalidatePath(`/travinco_dashboard/enquiries/${enquiryId}`);
@@ -330,6 +282,11 @@ export async function scheduleFollowup(enquiryId: string, raw: unknown) {
   if (permCheck.error) return { error: permCheck.error };
   const parsed = followupSchema.safeParse(raw);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid follow-up.' };
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+  if (parsed.data.followup_date < todayStr) {
+    return { error: 'Follow-up date cannot be in the past.' };
+  }
 
   const supabase = await createClient();
   const {
@@ -547,8 +504,181 @@ export async function deleteEnquiry(enquiryId: string) {
     }
   }
 
-  await logEnquiryActivity(enquiryId, 'soft_deleted', 'Enquiry moved to trash (soft-deleted)');
+  await logEnquiryActivity(enquiryId, 'deleted', 'Enquiry deleted');
 
   revalidatePath('/travinco_dashboard/enquiries');
   return {};
 }
+
+export interface EnquiryTableItem {
+  id: string;
+  enquiry_number: string;
+  customer_name: string;
+  phone: string;
+  destination: string | null;
+  travel_date: string | null;
+  status: string;
+  priority: string;
+  next_followup_date: string | null;
+  assigned_staff: string | null;
+  assigned_staff_name: string;
+  created_at: string;
+}
+
+export interface EnquiriesTableQueryResult {
+  enquiries: EnquiryTableItem[];
+  totalCount: number;
+  totalPages: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface EnquiryTabCounts {
+  allCount: number;
+  todayCount: number;
+  overdueCount: number;
+}
+
+/**
+ * Fast, lean query fetching strictly the 8 table columns:
+ * Enquiry #, Customer, Destination/Travel, Status, Priority, Follow-up, Assigned, Date.
+ * Excludes heavy requirement notes, preferences, budget, package pricing, etc.
+ */
+export async function getEnquiriesTableList({
+  page = 1,
+  pageSize = 20,
+  q = '',
+  status = '',
+  priority = '',
+  view = '',
+}: {
+  page?: number;
+  pageSize?: number;
+  q?: string;
+  status?: string;
+  priority?: string;
+  view?: string;
+} = {}): Promise<EnquiriesTableQueryResult> {
+  const profile = await requireProfile();
+  await checkModulePermission(profile, 'enquiries', 'view');
+
+  const supabase = await createClient();
+
+  const currentPage = Math.max(1, page);
+  const from = (currentPage - 1) * pageSize;
+  const to = from + pageSize - 1;
+  const today = new Date().toISOString().slice(0, 10);
+
+  let query = supabase
+    .from('enquiries')
+    .select(
+      'id, enquiry_number, customer_name, phone, destination, travel_date, status, priority, next_followup_date, created_at, is_deleted, assigned_staff',
+      { count: 'exact' }
+    )
+    .or('is_deleted.is.null,is_deleted.eq.false')
+    .order('created_at', { ascending: false });
+
+  if (q && q.trim()) {
+    const term = q.trim();
+    query = query.or(
+      `customer_name.ilike.%${term}%,phone.ilike.%${term}%,enquiry_number.ilike.%${term}%,email.ilike.%${term}%`
+    );
+  }
+
+  if (status) {
+    let s = status;
+    if (s === 'pending') s = 'new';
+    if (s === 'not_interested') s = 'lost';
+    if (s === 'booked') {
+      query = query.or('status.eq.booked,status.eq.confirmed');
+    } else {
+      query = query.eq('status', s);
+    }
+  }
+
+  if (priority) {
+    query = query.eq('priority', priority);
+  }
+
+  if (view === 'followup_today') {
+    query = query.eq('next_followup_date', today);
+  } else if (view === 'overdue') {
+    query = query
+      .lt('next_followup_date', today)
+      .not('status', 'in', '("confirmed","booked","lost","closed")');
+  }
+
+  const [{ data: enquiries, count, error }, { data: staffList }] = await Promise.all([
+    query.range(from, to),
+    supabase.from('profiles').select('id, full_name'),
+  ]);
+
+  if (error) {
+    console.error('Error fetching enquiries table list:', error.message);
+  }
+
+  const staffMap = new Map((staffList ?? []).map((s) => [s.id, s.full_name]));
+  const visibleRows = (enquiries ?? []).filter((e: any) => e.is_deleted !== true);
+
+  const items: EnquiryTableItem[] = visibleRows.map((e: any) => ({
+    id: e.id,
+    enquiry_number: e.enquiry_number,
+    customer_name: e.customer_name,
+    phone: e.phone,
+    destination: e.destination || null,
+    travel_date: e.travel_date || null,
+    status: e.status,
+    priority: e.priority,
+    next_followup_date: e.next_followup_date || null,
+    assigned_staff: e.assigned_staff || null,
+    assigned_staff_name: e.assigned_staff ? staffMap.get(e.assigned_staff) ?? 'Staff' : 'Unassigned',
+    created_at: e.created_at,
+  }));
+
+  const totalCount = count ?? items.length;
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+
+  return {
+    enquiries: items,
+    totalCount,
+    totalPages,
+    page: currentPage,
+    pageSize,
+  };
+}
+
+/**
+ * Fetch tab counts (All, Follow-up Today, Overdue)
+ */
+export async function getEnquiryTabCounts(): Promise<EnquiryTabCounts> {
+  const profile = await requireProfile();
+  await checkModulePermission(profile, 'enquiries', 'view');
+
+  const supabase = await createClient();
+  const today = new Date().toISOString().slice(0, 10);
+
+  const [{ count: allCount }, { count: todayCount }, { count: overdueCount }] = await Promise.all([
+    supabase
+      .from('enquiries')
+      .select('*', { count: 'exact', head: true })
+      .or('is_deleted.is.null,is_deleted.eq.false'),
+    supabase
+      .from('enquiries')
+      .select('*', { count: 'exact', head: true })
+      .or('is_deleted.is.null,is_deleted.eq.false')
+      .eq('next_followup_date', today),
+    supabase
+      .from('enquiries')
+      .select('*', { count: 'exact', head: true })
+      .or('is_deleted.is.null,is_deleted.eq.false')
+      .lt('next_followup_date', today)
+      .not('status', 'in', '("confirmed","booked","lost","closed")'),
+  ]);
+
+  return {
+    allCount: allCount ?? 0,
+    todayCount: todayCount ?? 0,
+    overdueCount: overdueCount ?? 0,
+  };
+}
+

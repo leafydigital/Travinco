@@ -23,7 +23,7 @@ export function normalizePluginCode(code: string): string {
  * Checks whether a plugin with identical name or code already exists in the given collection.
  * Skips the plugin currently being edited (currentId).
  */
-export function findDuplicatePlugin<T extends { id: number; name: string; code: string; slot: string }>(
+export function findDuplicatePlugin<T extends { id: number; name: string; code?: string; slot: string }>(
   items: T[],
   current: { name: string; code: string },
   currentId?: number | null
@@ -45,7 +45,7 @@ export function findDuplicatePlugin<T extends { id: number; name: string; code: 
       };
     }
 
-    if (normCode && normCode.length > 20 && normalizePluginCode(item.code) === normCode) {
+    if (normCode && normCode.length > 20 && item.code && normalizePluginCode(item.code) === normCode) {
       return {
         isDuplicate: true,
         reason: 'code',

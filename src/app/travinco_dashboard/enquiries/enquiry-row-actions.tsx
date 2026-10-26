@@ -30,7 +30,7 @@ export function EnquiryRowActions({
         toast.error(result.error);
         return;
       }
-      toast.success('Enquiry moved to trash');
+      toast.success('Enquiry deleted');
       setIsDeleteOpen(false);
       router.refresh();
     });
@@ -42,6 +42,7 @@ export function EnquiryRowActions({
         {/* View Action */}
         <Link
           href={`/travinco_dashboard/enquiries/${id}`}
+          prefetch={true}
           className="rounded-lg p-1.5 text-brand-600 hover:bg-brand-50 hover:text-brand-800 transition-colors"
           aria-label="View enquiry"
           title="View enquiry details"
@@ -53,6 +54,7 @@ export function EnquiryRowActions({
         {canEdit && (
           <Link
             href={`/travinco_dashboard/enquiries/${id}?edit=true`}
+            prefetch={true}
             className="rounded-lg p-1.5 text-ink-500 hover:bg-ink-100 hover:text-ink-800 transition-colors"
             aria-label="Edit enquiry"
             title="Edit enquiry details"

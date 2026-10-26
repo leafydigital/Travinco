@@ -1,14 +1,17 @@
 import { Suspense } from 'react';
-import { createClient } from '@/lib/supabase/server';
 import { requireProfile, assertModulePermission, checkModulePermission } from '@/lib/supabase/auth-helpers';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { formatDate } from '@/lib/utils/format';
 import Link from 'next/link';
-import { Search, ArrowLeft, RotateCcw, Calendar, AlertCircle } from 'lucide-react';
+import { Search, ArrowLeft, RotateCcw, AlertCircle } from 'lucide-react';
 import { EnquiryRowActions } from './enquiry-row-actions';
 import { FollowupDateCell } from './followup-date-cell';
 import { EnquiryPagination } from './enquiry-pagination';
 import { AutoRefresh } from '@/components/admin/auto-refresh';
+import { getEnquiriesTableList, getEnquiryTabCounts } from './actions';
+
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 const statusFilterOptions = [
   { value: 'new', label: 'Pending' },
@@ -36,6 +39,86 @@ function buildHref(
     if (v) params.set(k, v);
   });
   return `?${params.toString()}`;
+}
+
+function TabCountersSkeleton() {
+  return (
+    <div className="flex flex-wrap gap-2 text-sm">
+      <div className="h-9 w-20 rounded-lg bg-ink-100 animate-pulse" />
+      <div className="h-9 w-36 rounded-lg bg-ink-100 animate-pulse" />
+      <div className="h-9 w-40 rounded-lg bg-ink-100 animate-pulse" />
+    </div>
+  );
+}
+
+async function EnquiryTabBadges({
+  searchParams,
+}: {
+  searchParams: Record<string, string | undefined>;
+}) {
+  const counts = await getEnquiryTabCounts();
+
+  return (
+    <div className="flex flex-wrap gap-2 text-sm">
+      <Link
+        href="/travinco_dashboard/enquiries"
+        className={`btn-outline flex items-center gap-2 ${
+          !searchParams.view ? 'bg-brand-50 border-brand-300 text-brand-700 font-medium' : ''
+        }`}
+      >
+        <span>All</span>
+        <span
+          className={`rounded-full px-1.5 py-0.5 text-xs ${
+            !searchParams.view ? 'bg-brand-200/80 text-brand-800' : 'bg-ink-100 text-ink-600'
+          }`}
+        >
+          {counts.allCount}
+        </span>
+      </Link>
+
+      <Link
+        href={buildHref(searchParams, { view: 'followup_today', page: undefined })}
+        className={`btn-outline flex items-center gap-2 ${
+          searchParams.view === 'followup_today'
+            ? 'bg-amber-50 border-amber-300 text-amber-800 font-medium'
+            : ''
+        }`}
+      >
+        <span>Follow-up Today</span>
+        <span
+          className={`rounded-full px-1.5 py-0.5 text-xs ${
+            searchParams.view === 'followup_today'
+              ? 'bg-amber-200/80 text-amber-900 font-semibold'
+              : 'bg-ink-100 text-ink-600'
+          }`}
+        >
+          {counts.todayCount}
+        </span>
+      </Link>
+
+      <Link
+        href={buildHref(searchParams, { view: 'overdue', page: undefined })}
+        className={`btn-outline flex items-center gap-2 ${
+          searchParams.view === 'overdue'
+            ? 'bg-red-50 border-red-300 text-red-700 font-medium'
+            : ''
+        }`}
+      >
+        <span>Overdue Follow-up</span>
+        <span
+          className={`rounded-full px-1.5 py-0.5 text-xs ${
+            searchParams.view === 'overdue'
+              ? 'bg-red-200 text-red-800 font-semibold'
+              : counts.overdueCount > 0
+              ? 'bg-red-100 text-red-700 font-semibold'
+              : 'bg-ink-100 text-ink-600'
+          }`}
+        >
+          {counts.overdueCount}
+        </span>
+      </Link>
+    </div>
+  );
 }
 
 function EnquiriesTableSkeleton() {
@@ -80,73 +163,25 @@ function EnquiriesTableSkeleton() {
 
 async function EnquiriesTableContent({
   searchParams,
+  isAdmin,
+  canEdit,
 }: {
   searchParams: { q?: string; status?: string; priority?: string; view?: string; page?: string; limit?: string };
+  isAdmin: boolean;
+  canEdit: boolean;
 }) {
-  const profile = await requireProfile();
-  await assertModulePermission(profile, 'enquiries', 'view');
-  const supabase = await createClient();
-
-  const pageSize = Math.max(1, Number(searchParams.limit ?? 10));
+  const pageSize = Math.max(1, Number(searchParams.limit ?? 20));
   const page = Math.max(1, Number(searchParams.page ?? 1));
-  const from = (page - 1) * pageSize;
-  const to = from + pageSize - 1;
   const today = new Date().toISOString().slice(0, 10);
 
-  let query = supabase
-    .from('enquiries')
-    .select(
-      'id, enquiry_number, customer_name, phone, email, destination, travel_date, status, priority, source, next_followup_date, created_at, is_deleted, assigned_staff',
-      { count: 'exact' }
-    )
-    .or('is_deleted.is.null,is_deleted.eq.false')
-    .order('created_at', { ascending: false })
-    .range(from, to);
-
-  if (searchParams.q?.trim()) {
-    const q = searchParams.q.trim();
-    query = query.or(
-      `customer_name.ilike.%${q}%,phone.ilike.%${q}%,enquiry_number.ilike.%${q}%,email.ilike.%${q}%`
-    );
-  }
-
-  if (searchParams.status) {
-    let s = searchParams.status;
-    if (s === 'pending') s = 'new';
-    if (s === 'not_interested') s = 'lost';
-    if (s === 'booked') {
-      query = query.or('status.eq.booked,status.eq.confirmed');
-    } else {
-      query = query.eq('status', s);
-    }
-  }
-
-  if (searchParams.priority) {
-    query = query.eq('priority', searchParams.priority);
-  }
-
-  if (searchParams.view === 'followup_today') {
-    query = query.eq('next_followup_date', today);
-  } else if (searchParams.view === 'overdue') {
-    query = query
-      .lt('next_followup_date', today)
-      .not('status', 'in', '("confirmed","booked","lost","closed")');
-  }
-
-  const [{ data: enquiries, count, error }, { data: staffList }] = await Promise.all([
-    query,
-    supabase.from('profiles').select('id, full_name'),
-  ]);
-
-  if (error) {
-    console.error('Error fetching enquiries table data:', error.message, error.details);
-  }
-
-  const staffMap = new Map((staffList ?? []).map((s) => [s.id, s.full_name]));
-  const visibleEnquiries = (enquiries ?? []).filter((e: any) => e.is_deleted !== true);
-
-  const isAdmin = profile.role === 'admin' || profile.role === 'super_admin';
-  const canEdit = isAdmin || (await checkModulePermission(profile, 'enquiries', 'edit')).allowed;
+  const result = await getEnquiriesTableList({
+    page,
+    pageSize,
+    q: searchParams.q ?? '',
+    status: searchParams.status ?? '',
+    priority: searchParams.priority ?? '',
+    view: searchParams.view ?? '',
+  });
 
   return (
     <>
@@ -166,7 +201,7 @@ async function EnquiriesTableContent({
             </tr>
           </thead>
           <tbody>
-            {visibleEnquiries.length === 0 && (
+            {result.enquiries.length === 0 && (
               <tr>
                 <td colSpan={9} className="px-5 py-12 text-center text-ink-400">
                   <AlertCircle className="mx-auto mb-2 h-7 w-7 text-ink-300" />
@@ -175,22 +210,28 @@ async function EnquiriesTableContent({
                 </td>
               </tr>
             )}
-            {visibleEnquiries.map((e) => {
+            {result.enquiries.map((e) => {
               const isTodayTravel = e.travel_date === today;
               return (
                 <tr key={e.id} className="border-b border-ink-50 last:border-0 hover:bg-ink-50/50">
+                  {/* 1. Enquiry # */}
                   <td className="px-5 py-3">
                     <Link
                       href={`/travinco_dashboard/enquiries/${e.id}`}
+                      prefetch={true}
                       className="font-medium text-ink-800 hover:text-brand-700 hover:underline"
                     >
                       {e.enquiry_number}
                     </Link>
                   </td>
+
+                  {/* 2. Customer */}
                   <td className="px-5 py-3">
                     <p className="font-medium text-ink-800">{e.customer_name}</p>
                     <p className="text-xs text-ink-400">{e.phone}</p>
                   </td>
+
+                  {/* 3. Destination / Travel */}
                   <td className="px-5 py-3">
                     <p className="text-ink-700">{e.destination || '—'}</p>
                     {e.travel_date && (
@@ -200,12 +241,18 @@ async function EnquiriesTableContent({
                       </p>
                     )}
                   </td>
+
+                  {/* 4. Status */}
                   <td className="px-5 py-3">
                     <StatusBadge status={e.status} />
                   </td>
+
+                  {/* 5. Priority */}
                   <td className="px-5 py-3">
                     <StatusBadge status={e.priority} />
                   </td>
+
+                  {/* 6. Follow-up */}
                   <td className="px-5 py-3">
                     <FollowupDateCell
                       enquiryId={e.id}
@@ -215,10 +262,16 @@ async function EnquiriesTableContent({
                       status={e.status}
                     />
                   </td>
+
+                  {/* 7. Assigned */}
                   <td className="px-5 py-3 text-ink-500">
-                    {e.assigned_staff ? staffMap.get(e.assigned_staff) ?? 'Staff' : 'Unassigned'}
+                    {e.assigned_staff_name}
                   </td>
+
+                  {/* 8. Date */}
                   <td className="px-5 py-3 text-ink-500">{formatDate(e.created_at)}</td>
+
+                  {/* 9. Actions */}
                   <td className="px-5 py-3 text-right">
                     <EnquiryRowActions
                       id={e.id}
@@ -235,9 +288,9 @@ async function EnquiriesTableContent({
       </div>
 
       <EnquiryPagination
-        totalCount={count ?? 0}
-        currentPage={page}
-        pageSize={pageSize}
+        totalCount={result.totalCount}
+        currentPage={result.page}
+        pageSize={result.pageSize}
       />
     </>
   );
@@ -250,37 +303,18 @@ export default async function AdminEnquiriesPage({
 }) {
   const profile = await requireProfile();
   await assertModulePermission(profile, 'enquiries', 'view');
-  const supabase = await createClient();
 
-  const today = new Date().toISOString().slice(0, 10);
-
-  // Tab count queries for rapid user overview (excludes soft-deleted enquiries)
-  const [{ count: allCount }, { count: todayCount }, { count: overdueCount }] = await Promise.all([
-    supabase
-      .from('enquiries')
-      .select('*', { count: 'exact', head: true })
-      .or('is_deleted.is.null,is_deleted.eq.false'),
-    supabase
-      .from('enquiries')
-      .select('*', { count: 'exact', head: true })
-      .or('is_deleted.is.null,is_deleted.eq.false')
-      .eq('next_followup_date', today),
-    supabase
-      .from('enquiries')
-      .select('*', { count: 'exact', head: true })
-      .or('is_deleted.is.null,is_deleted.eq.false')
-      .lt('next_followup_date', today)
-      .not('status', 'in', '("confirmed","booked","lost","closed")'),
-  ]);
+  const isAdmin = profile.role === 'admin' || profile.role === 'super_admin';
+  const canEdit = isAdmin || (await checkModulePermission(profile, 'enquiries', 'edit')).allowed;
 
   const hasFilters = Boolean(searchParams.q || searchParams.status || searchParams.priority);
-  const suspKey = `${searchParams.q ?? ''}-${searchParams.status ?? ''}-${searchParams.priority ?? ''}-${searchParams.view ?? ''}-${searchParams.page ?? '1'}-${searchParams.limit ?? '10'}`;
+  const suspKey = `${searchParams.q ?? ''}-${searchParams.status ?? ''}-${searchParams.priority ?? ''}-${searchParams.view ?? ''}-${searchParams.page ?? '1'}-${searchParams.limit ?? '20'}`;
 
   return (
     <div className="space-y-5">
       <AutoRefresh intervalMs={30000} />
 
-      {/* 1. Header Structure */}
+      {/* 1. Instant Header Structure (<50ms) */}
       <div>
         <Link
           href="/travinco_dashboard"
@@ -294,68 +328,12 @@ export default async function AdminEnquiriesPage({
         </p>
       </div>
 
-      {/* 2. View Tabs (All, Follow-up Today, Overdue Follow-up) */}
-      <div className="flex flex-wrap gap-2 text-sm">
-        <Link
-          href="/travinco_dashboard/enquiries"
-          className={`btn-outline flex items-center gap-2 ${
-            !searchParams.view ? 'bg-brand-50 border-brand-300 text-brand-700 font-medium' : ''
-          }`}
-        >
-          <span>All</span>
-          <span
-            className={`rounded-full px-1.5 py-0.5 text-xs ${
-              !searchParams.view ? 'bg-brand-200/80 text-brand-800' : 'bg-ink-100 text-ink-600'
-            }`}
-          >
-            {allCount ?? 0}
-          </span>
-        </Link>
+      {/* 2. Streaming View Tabs (All, Follow-up Today, Overdue Follow-up) */}
+      <Suspense fallback={<TabCountersSkeleton />}>
+        <EnquiryTabBadges searchParams={searchParams} />
+      </Suspense>
 
-        <Link
-          href={buildHref(searchParams, { view: 'followup_today', page: undefined })}
-          className={`btn-outline flex items-center gap-2 ${
-            searchParams.view === 'followup_today'
-              ? 'bg-amber-50 border-amber-300 text-amber-800 font-medium'
-              : ''
-          }`}
-        >
-          <span>Follow-up Today</span>
-          <span
-            className={`rounded-full px-1.5 py-0.5 text-xs ${
-              searchParams.view === 'followup_today'
-                ? 'bg-amber-200/80 text-amber-900 font-semibold'
-                : 'bg-ink-100 text-ink-600'
-            }`}
-          >
-            {todayCount ?? 0}
-          </span>
-        </Link>
-
-        <Link
-          href={buildHref(searchParams, { view: 'overdue', page: undefined })}
-          className={`btn-outline flex items-center gap-2 ${
-            searchParams.view === 'overdue'
-              ? 'bg-red-50 border-red-300 text-red-700 font-medium'
-              : ''
-          }`}
-        >
-          <span>Overdue Follow-up</span>
-          <span
-            className={`rounded-full px-1.5 py-0.5 text-xs ${
-              searchParams.view === 'overdue'
-                ? 'bg-red-200 text-red-800 font-semibold'
-                : (overdueCount ?? 0) > 0
-                ? 'bg-red-100 text-red-700 font-semibold'
-                : 'bg-ink-100 text-ink-600'
-            }`}
-          >
-            {overdueCount ?? 0}
-          </span>
-        </Link>
-      </div>
-
-      {/* 3. Search & Filter Bar */}
+      {/* 3. Instant Search & Filter Bar */}
       <form className="flex flex-wrap items-center gap-3" method="get">
         {searchParams.view && <input type="hidden" name="view" value={searchParams.view} />}
         {searchParams.limit && <input type="hidden" name="limit" value={searchParams.limit} />}
@@ -403,10 +381,14 @@ export default async function AdminEnquiriesPage({
         )}
       </form>
 
-      {/* 4. Table Card */}
+      {/* 4. Fast Streaming Table with Skeleton */}
       <div className="card overflow-hidden">
         <Suspense key={suspKey} fallback={<EnquiriesTableSkeleton />}>
-          <EnquiriesTableContent searchParams={searchParams} />
+          <EnquiriesTableContent
+            searchParams={searchParams}
+            isAdmin={isAdmin}
+            canEdit={canEdit}
+          />
         </Suspense>
       </div>
     </div>

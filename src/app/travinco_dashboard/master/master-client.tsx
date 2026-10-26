@@ -6,6 +6,7 @@ import type { RateMasterQueryResult, MasterFilterOptions } from '@/lib/services/
 import {
   uploadMasterExcelAction,
   getMasterRatesAction,
+  getMasterRateByIdAction,
   deleteMasterRateAction,
   updateMasterRateAction,
 } from './actions';
@@ -23,9 +24,10 @@ import {
   MapPin,
   Calendar,
   Database,
-  ArrowUpDown,
   Building2,
   SlidersHorizontal,
+  Download,
+  Loader2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -35,7 +37,7 @@ interface MasterClientProps {
   isAdmin?: boolean;
 }
 
-const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
+const PAGE_SIZE_OPTIONS = [20, 50, 100];
 
 function TableSkeletonRows({ count = 8, isAdmin = false }: { count?: number; isAdmin?: boolean }) {
   return (
@@ -102,6 +104,7 @@ export function MasterClient({ initialData, filterOptions, isAdmin = false }: Ma
     notes: '',
   });
   const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [loadingEditId, setLoadingEditId] = useState<string | null>(null);
 
   // Search & Filter states
   const [globalSearch, setGlobalSearch] = useState('');
@@ -114,7 +117,7 @@ export function MasterClient({ initialData, filterOptions, isAdmin = false }: Ma
 
   // Pagination & Sort states
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [pageSize, setPageSize] = useState(20);
   const [sortBy, setSortBy] = useState<string>('location');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
 
@@ -275,6 +278,74 @@ export function MasterClient({ initialData, filterOptions, isAdmin = false }: Ma
     }
   };
 
+  // Handle Download Sample Excel Template
+  const handleDownloadSampleTemplate = async () => {
+    try {
+      const XLSX = await import('xlsx');
+      const sampleData = [
+        {
+          'Location': 'Munnar',
+          'Hotel Name': 'Tea Valley Resort',
+          'Hotel Category': '4 Star',
+          'Season': 'Peak',
+          'Date Range': '01-10-2026 to 31-03-2027',
+          'Room Category': 'Deluxe Room',
+          'CP Cost': 4500,
+          'MAP Cost': 6000,
+          'Extra Adult CP': 1200,
+          'Extra Adult MAP': 1800,
+          'Child Bed Cost': 800,
+          'Child No Bed Cost': 400,
+          'Infant Policy': 'Free up to 5 yrs',
+          'Mandatory Surcharges': 'Xmas & New Year Gala Dinner extra',
+          'Notes': 'Includes breakfast and Wi-Fi',
+        },
+        {
+          'Location': 'Thekkady',
+          'Hotel Name': 'Elephant Court',
+          'Hotel Category': '5 Star',
+          'Season': 'Regular',
+          'Date Range': '01-10-2026 to 31-03-2027',
+          'Room Category': 'Executive Suite',
+          'CP Cost': 5500,
+          'MAP Cost': 7200,
+          'Extra Adult CP': 1500,
+          'Extra Adult MAP': 2200,
+          'Child Bed Cost': 1000,
+          'Child No Bed Cost': 500,
+          'Infant Policy': 'Free below 6 yrs',
+          'Mandatory Surcharges': '',
+          'Notes': 'Tariff includes taxes',
+        },
+        {
+          'Location': 'Alleppey',
+          'Hotel Name': 'Lake Palace Resort',
+          'Hotel Category': 'Luxury',
+          'Season': 'Peak',
+          'Date Range': '01-11-2026 to 15-01-2027',
+          'Room Category': 'Lake View Cottage',
+          'CP Cost': 8500,
+          'MAP Cost': 10500,
+          'Extra Adult CP': 2500,
+          'Extra Adult MAP': 3200,
+          'Child Bed Cost': 1500,
+          'Child No Bed Cost': 800,
+          'Infant Policy': 'Complimentary',
+          'Mandatory Surcharges': 'Peak surcharge applies',
+          'Notes': 'Complimentary boat transfer',
+        },
+      ];
+      const ws = XLSX.utils.json_to_sheet(sampleData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Rate Master');
+      XLSX.writeFile(wb, 'Rate_Master_Sample_Template.xlsx');
+      toast.success('Sample Rate Master template downloaded!');
+    } catch (err) {
+      console.error('Error generating sample template:', err);
+      toast.error('Could not generate sample template.');
+    }
+  };
+
   // Handle Confirm Delete Single Row
   const handleConfirmDeleteRow = () => {
     if (!itemToDelete?.id) return;
@@ -293,18 +364,35 @@ export function MasterClient({ initialData, filterOptions, isAdmin = false }: Ma
     });
   };
 
-  // Open Edit Modal
-  const handleOpenEdit = (item: MasterHotelRateItem) => {
-    setItemToEdit(item);
-    setEditForm({
-      cpCost: item.cpCost != null ? String(item.cpCost) : '',
-      mapCost: item.mapCost != null ? String(item.mapCost) : '',
-      extraAdultCP: item.extraAdultCP != null ? String(item.extraAdultCP) : '',
-      extraAdultMAP: item.extraAdultMAP != null ? String(item.extraAdultMAP) : '',
-      childBedCost: item.childBedCost != null ? String(item.childBedCost) : '',
-      childNoBedCost: item.childNoBedCost != null ? String(item.childNoBedCost) : '',
-      notes: item.notes || '',
-    });
+  // Open Edit Modal - fetches complete rate record on demand from DB
+  const handleOpenEdit = async (item: MasterHotelRateItem) => {
+    if (!item.id) return;
+    setLoadingEditId(item.id);
+
+    try {
+      const res = await getMasterRateByIdAction(item.id);
+      if (res.error || !res.data) {
+        toast.error(res.error || 'Failed to fetch rate details.');
+        return;
+      }
+
+      const fullItem = res.data;
+      setItemToEdit(fullItem);
+      setEditForm({
+        cpCost: fullItem.cpCost != null ? String(fullItem.cpCost) : '',
+        mapCost: fullItem.mapCost != null ? String(fullItem.mapCost) : '',
+        extraAdultCP: fullItem.extraAdultCP != null ? String(fullItem.extraAdultCP) : '',
+        extraAdultMAP: fullItem.extraAdultMAP != null ? String(fullItem.extraAdultMAP) : '',
+        childBedCost: fullItem.childBedCost != null ? String(fullItem.childBedCost) : '',
+        childNoBedCost: fullItem.childNoBedCost != null ? String(fullItem.childNoBedCost) : '',
+        notes: fullItem.notes || '',
+      });
+    } catch (err) {
+      console.error('Error fetching rate by id:', err);
+      toast.error('Could not load rate details.');
+    } finally {
+      setLoadingEditId(null);
+    }
   };
 
   // Save Edit
@@ -393,8 +481,8 @@ export function MasterClient({ initialData, filterOptions, isAdmin = false }: Ma
       {/* Upload Excel Modal */}
       {isUploadOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-950/60 p-4 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="card w-full max-w-lg overflow-hidden shadow-2xl rounded-2xl border border-ink-200/80 animate-in zoom-in-95 duration-200 bg-white">
-            <div className="flex items-center justify-between border-b border-ink-100 bg-sand-50/50 px-6 py-4">
+          <div className="card w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden shadow-2xl rounded-2xl border border-ink-200/80 animate-in zoom-in-95 duration-200 bg-white">
+            <div className="flex items-center justify-between border-b border-ink-100 bg-sand-50/50 px-6 py-4 shrink-0">
               <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-100/80 text-brand-800 shadow-xs">
                   <FileSpreadsheet className="h-5 w-5" />
@@ -411,15 +499,15 @@ export function MasterClient({ initialData, filterOptions, isAdmin = false }: Ma
               <button
                 type="button"
                 onClick={() => !isUploading && setIsUploadOpen(false)}
-                className="rounded-lg p-1.5 text-ink-400 hover:bg-ink-100 hover:text-ink-700 transition-colors"
+                className="rounded-lg p-1.5 text-ink-400 hover:bg-ink-100 hover:text-ink-700 transition-colors cursor-pointer"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            <form onSubmit={handleFileUpload} className="p-6 space-y-5">
+            <form onSubmit={handleFileUpload} className="p-6 space-y-4 overflow-y-auto flex-1">
               {/* File Dropzone */}
-              <div className="relative rounded-2xl border-2 border-dashed border-ink-200 bg-ink-50/40 p-8 text-center transition-all hover:border-brand-500 hover:bg-brand-50/30">
+              <div className="relative rounded-2xl border-2 border-dashed border-ink-200 bg-ink-50/40 p-6 sm:p-8 text-center transition-all hover:border-brand-500 hover:bg-brand-50/30">
                 <input
                   type="file"
                   accept=".xlsx, .xls, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel"
@@ -430,15 +518,15 @@ export function MasterClient({ initialData, filterOptions, isAdmin = false }: Ma
                   className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
                   disabled={isUploading}
                 />
-                <div className="flex flex-col items-center justify-center space-y-3">
-                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-50 text-brand-700 shadow-inner">
-                    <Upload className="h-7 w-7" />
+                <div className="flex flex-col items-center justify-center space-y-2.5">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-50 text-brand-700 shadow-inner">
+                    <Upload className="h-6 w-6" />
                   </div>
                   <div>
                     <p className="text-sm font-semibold text-ink-800">
                       {selectedFile ? selectedFile.name : 'Click to browse or drop Excel file here'}
                     </p>
-                    <p className="mt-1 text-xs text-ink-400">
+                    <p className="mt-0.5 text-xs text-ink-400">
                       {selectedFile
                         ? `${(selectedFile.size / 1024).toFixed(1)} KB`
                         : '.xlsx or .xls files up to 15MB'}
@@ -447,12 +535,88 @@ export function MasterClient({ initialData, filterOptions, isAdmin = false }: Ma
                 </div>
               </div>
 
+              {/* Sheet & Column Specifications */}
+              <div className="rounded-xl border border-ink-200/80 bg-ink-50/60 p-4 space-y-3 text-xs">
+                {/* Required Sheet Tab Banner & Sample Download Button */}
+                <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-ink-200/70">
+                  <div className="flex items-center gap-1.5 text-ink-800">
+                    <span className="font-semibold text-brand-900">Required Sheet Tab:</span>
+                    <span className="font-mono font-bold bg-brand-100 text-brand-900 px-2 py-0.5 rounded border border-brand-300">
+                      Rate Master
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleDownloadSampleTemplate}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-brand-200 bg-white px-2.5 py-1 text-xs font-semibold text-brand-800 hover:bg-brand-50 transition shadow-2xs cursor-pointer"
+                  >
+                    <Download className="h-3.5 w-3.5 text-brand-700" />
+                    Download Sample Template
+                  </button>
+                </div>
+
+                {/* Mandatory Columns Section */}
+                <div>
+                  <div className="flex items-center gap-1.5 font-bold text-coral-700 mb-1.5">
+                    <span className="h-2 w-2 rounded-full bg-coral-500 inline-block" />
+                    Mandatory Columns (Required in Excel):
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-1.5 pl-3 text-ink-800 font-medium">
+                    <span className="flex items-center gap-1.5">
+                      <span className="text-coral-600 font-bold">•</span>
+                      <span>Hotel Name</span>
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="text-coral-600 font-bold">•</span>
+                      <span>Location</span>
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="text-coral-600 font-bold">•</span>
+                      <span>Room Category</span>
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="text-coral-600 font-bold">•</span>
+                      <span>CP Cost <span className="text-[10px] text-ink-400 font-normal">(or MAP Cost)</span></span>
+                    </span>
+                    <span className="flex items-center gap-1.5 sm:col-span-2 md:col-span-1">
+                      <span className="text-coral-600 font-bold">•</span>
+                      <span>Date Range</span>
+                    </span>
+                  </div>
+                </div>
+
+                {/* Optional Columns Section */}
+                <div className="pt-2 border-t border-ink-200/70">
+                  <div className="flex items-center gap-1.5 font-semibold text-ink-700 mb-1.5">
+                    <span className="h-2 w-2 rounded-full bg-ink-400 inline-block" />
+                    Optional / Additional Columns:
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 pl-3 text-ink-600 text-[11px]">
+                    <span>• Hotel Category</span>
+                    <span>• Season</span>
+                    <span>• MAP Cost</span>
+                    <span>• Extra Adult CP</span>
+                    <span>• Extra Adult MAP</span>
+                    <span>• Child Bed Cost</span>
+                    <span>• Child No Bed Cost</span>
+                    <span>• Infant Policy</span>
+                    <span>• Mandatory Surcharges</span>
+                    <span>• Notes</span>
+                  </div>
+                </div>
+
+                {/* Flexible synonym notes */}
+                <p className="text-[11px] text-ink-400 italic pt-1 border-t border-ink-100">
+                  💡 Note: Common header variations (e.g. &quot;City&quot;, &quot;Property&quot;, &quot;Room Type&quot;, &quot;Validity&quot;) are automatically recognized.
+                </p>
+              </div>
+
               {/* Modal Actions */}
               <div className="flex items-center justify-end gap-3 pt-2">
                 <button
                   type="button"
                   onClick={() => setIsUploadOpen(false)}
-                  className="btn-ghost text-sm font-medium px-4 py-2"
+                  className="btn-ghost text-sm font-medium px-4 py-2 cursor-pointer"
                   disabled={isUploading}
                 >
                   Cancel
@@ -460,7 +624,7 @@ export function MasterClient({ initialData, filterOptions, isAdmin = false }: Ma
                 <button
                   type="submit"
                   disabled={!selectedFile || isUploading}
-                  className="btn-primary inline-flex items-center gap-2 text-sm font-medium px-5 py-2.5 rounded-xl shadow-xs"
+                  className="btn-primary inline-flex items-center gap-2 text-sm font-medium px-5 py-2.5 rounded-xl shadow-xs cursor-pointer"
                 >
                   {isUploading ? (
                     <>
@@ -736,41 +900,17 @@ export function MasterClient({ initialData, filterOptions, isAdmin = false }: Ma
             <table className="w-full border-collapse text-left text-xs">
               <thead className="sticky top-0 z-10 border-b border-ink-200 bg-sand-50/90 font-semibold text-ink-700 backdrop-blur-xs">
                 <tr>
-                  <th
-                    onClick={() => handleSort('hotelName')}
-                    className="py-3 px-3.5 cursor-pointer select-none hover:text-brand-700 transition-colors"
-                  >
-                    <div className="flex items-center gap-1">
-                      Hotel & Location
-                      <ArrowUpDown className="h-3 w-3 text-ink-400" />
-                    </div>
+                  <th className="py-3 px-3.5">
+                    Hotel & Location
                   </th>
-                  <th
-                    onClick={() => handleSort('season')}
-                    className="py-3 px-3.5 cursor-pointer select-none hover:text-brand-700 transition-colors"
-                  >
-                    <div className="flex items-center gap-1">
-                      Season & Dates
-                      <ArrowUpDown className="h-3 w-3 text-ink-400" />
-                    </div>
+                  <th className="py-3 px-3.5">
+                    Season & Dates
                   </th>
-                  <th
-                    onClick={() => handleSort('roomCategory')}
-                    className="py-3 px-3.5 cursor-pointer select-none hover:text-brand-700 transition-colors"
-                  >
-                    <div className="flex items-center gap-1">
-                      Room Category
-                      <ArrowUpDown className="h-3 w-3 text-ink-400" />
-                    </div>
+                  <th className="py-3 px-3.5">
+                    Room Category
                   </th>
-                  <th
-                    onClick={() => handleSort('cpCost')}
-                    className="py-3 px-3.5 text-right cursor-pointer select-none hover:text-brand-700 transition-colors"
-                  >
-                    <div className="flex items-center justify-end gap-1">
-                      Tariff (CP / MAP)
-                      <ArrowUpDown className="h-3 w-3 text-ink-400" />
-                    </div>
+                  <th className="py-3 px-3.5 text-right">
+                    Tariff (CP / MAP)
                   </th>
                   <th className="hidden sm:table-cell py-3 px-3.5 text-right">
                     Extra Guests
@@ -888,11 +1028,15 @@ export function MasterClient({ initialData, filterOptions, isAdmin = false }: Ma
                             <button
                               type="button"
                               onClick={() => handleOpenEdit(item)}
-                              disabled={isPending || isLoading}
-                              className="rounded-lg p-1.5 text-ink-500 hover:bg-brand-50 hover:text-brand-700 transition-colors"
+                              disabled={isPending || isLoading || loadingEditId === item.id}
+                              className="rounded-lg p-1.5 text-ink-500 hover:bg-brand-50 hover:text-brand-700 transition-colors disabled:opacity-50 cursor-pointer"
                               title="Edit this rate"
                             >
-                              <Pencil className="h-3.5 w-3.5" />
+                              {loadingEditId === item.id ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin text-brand-600" />
+                              ) : (
+                                <Pencil className="h-3.5 w-3.5" />
+                              )}
                             </button>
                             <button
                               type="button"

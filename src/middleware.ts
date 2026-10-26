@@ -259,16 +259,7 @@ export async function middleware(request: NextRequest) {
     return response;
   }
 
-  // 5. Booking Flow (/booking)
-  if (isBookingRoute) {
-    if (!isCustomer) {
-      // Admin session alone does not bypass customer auth: redirect to customer login
-      const redirectUrl = new URL('/account/login', request.url);
-      redirectUrl.searchParams.set('redirectTo', '/booking');
-      return createRedirect(redirectUrl);
-    }
-    return response;
-  }
+  // 5. Booking Flow (/booking) is now accessible to all visitors (authenticated & unauthenticated)
 
   return response;
 }

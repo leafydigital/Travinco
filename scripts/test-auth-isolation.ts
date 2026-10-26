@@ -100,21 +100,19 @@ runTest('Scenario 1: Admin logged in -> Open customer Login -> Customer login pa
   assert.strictEqual(destination, 'ALLOW_CUSTOMER_LOGIN', 'Should display customer login page');
 });
 
-// 4. Scenario 2: Admin logged in -> Click Book With Us -> Customer login must appear if no customer session exists
-runTest('Scenario 2: Admin logged in -> Click Book With Us -> Customer login must appear', () => {
-  const hasAdmin = true;
+// 4. Scenario 2: Visitor / Admin visits Book With Us -> Booking form is directly accessible without requiring login
+runTest('Scenario 2: Unauthenticated / Admin visits Book With Us -> Booking page is directly accessible', () => {
   const hasCustomer = false;
   const isBookingRoute = true;
 
-  let redirectTarget: string | null = null;
+  // With the new requirement, /booking is no longer gated:
+  let allowBooking = false;
   if (isBookingRoute) {
-    if (!hasCustomer) {
-      // Admin session alone does not bypass customer auth
-      redirectTarget = '/account/login?redirectTo=/booking';
-    }
+    // Both authenticated and non-authenticated visitors are allowed
+    allowBooking = true;
   }
 
-  assert.strictEqual(redirectTarget, '/account/login?redirectTo=/booking');
+  assert.strictEqual(allowBooking, true, 'Booking page must be accessible without requiring login');
 });
 
 // 5. Scenario 3: Customer logged in -> Click Login -> Customer account page should open

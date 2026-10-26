@@ -136,31 +136,6 @@ export async function checkLoginLockout(
     }
   }
 
-  // 3. Optional DB lookup (if login_attempts table exists)
-  try {
-    const supabase = await createClient();
-    const { data: dbData } = await supabase
-      .from('login_attempts')
-      .select('failed_attempts, locked_until, last_failed_at')
-      .eq('identifier', normalizedEmail)
-      .eq('portal', portal)
-      .maybeSingle();
-
-    if (dbData) {
-      const dbLockedUntil = dbData.locked_until ? new Date(dbData.locked_until).getTime() : null;
-      if (!record || (dbLockedUntil && (!record.lockedUntil || dbLockedUntil > record.lockedUntil))) {
-        record = {
-          failedAttempts: dbData.failed_attempts || 0,
-          lockedUntil: dbLockedUntil,
-          lastFailedAt: dbData.last_failed_at ? new Date(dbData.last_failed_at).getTime() : Date.now(),
-        };
-        store.set(cacheKey, record);
-      }
-    }
-  } catch {
-    // DB table might not exist yet, memory and cookie are active
-  }
-
   const now = Date.now();
 
   // If there's an active lockout
@@ -280,16 +255,4 @@ export async function clearLoginAttempts(
   store.delete(cacheKey);
 
   await setCookieState(normalizedEmail, portal, null);
-
-  // Optional: clear in DB
-  try {
-    const supabase = await createClient();
-    await supabase
-      .from('login_attempts')
-      .delete()
-      .eq('identifier', normalizedEmail)
-      .eq('portal', portal);
-  } catch {
-    // Graceful fallback
-  }
 }

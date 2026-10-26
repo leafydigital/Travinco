@@ -93,6 +93,20 @@ export function EnquiryStatusSelector({
     setCurrent(currentStatus as EnquiryStatus);
   }, [currentStatus]);
 
+  // Sync state if changed from EnquiryControls or other components
+  useEffect(() => {
+    function onStatusChange(e: Event) {
+      const customEvent = e as CustomEvent<{ enquiryId: string; status: EnquiryStatus }>;
+      if (customEvent.detail?.enquiryId === enquiryId && customEvent.detail.status !== current) {
+        setCurrent(customEvent.detail.status);
+      }
+    }
+    window.addEventListener('travinco:enquiry-status-changed', onStatusChange);
+    return () => {
+      window.removeEventListener('travinco:enquiry-status-changed', onStatusChange);
+    };
+  }, [enquiryId, current]);
+
   const activeConfig =
     ENQUIRY_STATUS_OPTIONS.find((o) => o.value === current) ?? {
       value: 'new' as EnquiryStatus,
@@ -132,12 +146,22 @@ export function EnquiryStatusSelector({
 
     const previousStatus = current;
     setCurrent(newStatus);
+    window.dispatchEvent(
+      new CustomEvent('travinco:enquiry-status-changed', {
+        detail: { enquiryId, status: newStatus },
+      })
+    );
 
     startTransition(async () => {
       const res = await updateEnquiryStatus(enquiryId, newStatus);
       if (res?.error) {
         toast.error(res.error);
         setCurrent(previousStatus);
+        window.dispatchEvent(
+          new CustomEvent('travinco:enquiry-status-changed', {
+            detail: { enquiryId, status: previousStatus },
+          })
+        );
         return;
       }
       const label = ENQUIRY_STATUS_OPTIONS.find((o) => o.value === newStatus)?.label || newStatus;

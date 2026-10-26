@@ -4,8 +4,7 @@ import { notFound } from 'next/navigation';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { formatCurrency, formatDate, formatDateTime } from '@/lib/utils/format';
 import { EnquiryControls } from './enquiry-controls';
-import { NotesPanel, FollowupsPanel } from './notes-followups';
-import { AcceptRejectButtons } from './accept-reject-buttons';
+import { NotesPanel } from './notes-followups';
 import { EnquiryDetailsEditForm } from './enquiry-details-edit-form';
 import { EnquiryStatusSelector } from '../enquiry-status-selector';
 import { Phone, Mail, MessageCircle } from 'lucide-react';
@@ -25,7 +24,7 @@ export default async function EnquiryDetailPage({
   const isEditing = searchParams?.edit === 'true' && canEdit;
   const supabase = await createClient();
 
-  const [{ data: enquiry }, { data: staff }, { data: followups }, { data: activities }] =
+  const [{ data: enquiry }, { data: staff }, { data: activities }] =
     await Promise.all([
       supabase
         .from('enquiries')
@@ -33,11 +32,6 @@ export default async function EnquiryDetailPage({
         .eq('id', params.id)
         .single(),
       supabase.from('profiles').select('id, full_name').eq('is_active', true).order('full_name'),
-      supabase
-        .from('enquiry_followups')
-        .select('*')
-        .eq('enquiry_id', params.id)
-        .order('followup_date', { ascending: false }),
       supabase
         .from('enquiry_activities')
         .select('*, profiles(full_name)')
@@ -72,7 +66,6 @@ export default async function EnquiryDetailPage({
           <p className="text-sm text-ink-500">{enquiry.customer_name}</p>
         </div>
         <div className="flex gap-2">
-          {canEdit && <AcceptRejectButtons enquiryId={enquiry.id} currentStatus={enquiry.status} />}
           <Link href={`/travinco_dashboard/quotations/new?enquiry=${enquiry.id}`} className="btn-outline">
             Create quotation
           </Link>
@@ -193,8 +186,6 @@ export default async function EnquiryDetailPage({
               )}
             </div>
           </div>
-
-          <FollowupsPanel enquiryId={enquiry.id} followups={followups ?? []} />
         </div>
       </div>
     </div>

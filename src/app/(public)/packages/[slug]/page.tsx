@@ -2,11 +2,12 @@ import { createClient } from '@/lib/supabase/server';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import Image from 'next/image';
-import { Clock, MapPin, Users, Check, X, MessageCircle, Phone } from 'lucide-react';
+import Link from 'next/link';
+import { Clock, MapPin, Users, Check, X, ArrowRight } from 'lucide-react';
 import { formatCurrency, getVideoEmbedUrl } from '@/lib/utils/format';
-import { EnquiryForm } from '@/components/public/enquiry-form';
 import { ImageLightbox } from '@/components/public/image-lightbox';
-import { getGeneralSettings, getTermsSettings } from '@/lib/settings';
+import { getTermsSettings } from '@/lib/settings';
+import { ExpandableText } from '@/components/public/expandable-text';
 import type { Tables } from '@/types/database';
 
 export const revalidate = 300;
@@ -115,13 +116,6 @@ export default async function PackageDetailPage({ params }: { params: { slug: st
   const result = await getPackage(params.slug);
   if (!result) notFound();
 
-  const supabaseForAuth = await createClient();
-  const {
-    data: { user },
-  } = await supabaseForAuth.auth.getUser();
-
-
-
   const { pkg, images, itinerary, inclusions, exclusions, videos, faqs, activeOffer } = result;
   const offerPrice = activeOffer
     ? activeOffer.discount_percent
@@ -135,7 +129,6 @@ export default async function PackageDetailPage({ params }: { params: { slug: st
     getVideoEmbedUrl(pkg.video_url),
     ...videos.map((v) => getVideoEmbedUrl(v.video_url)),
   ].filter((url): url is string => Boolean(url));
-  const settings = await getGeneralSettings();
   const termsSettings = await getTermsSettings();
   const destinationRaw = pkg.destinations as
     | { name: string; country: string | null }
@@ -196,7 +189,9 @@ export default async function PackageDetailPage({ params }: { params: { slug: st
           {pkg.full_description && (
             <section>
               <h2 className="font-display text-xl font-semibold text-ink-900">Overview</h2>
-              <p className="mt-3 whitespace-pre-line text-ink-600">{pkg.full_description}</p>
+              <div className="mt-3">
+                <ExpandableText text={pkg.full_description} collapsedLines={4} />
+              </div>
             </section>
           )}
 
@@ -316,16 +311,23 @@ export default async function PackageDetailPage({ params }: { params: { slug: st
           {termsSettings.terms_and_conditions && (
             <section>
               <h2 className="font-display text-lg font-semibold text-ink-900">Terms & conditions</h2>
-              <p className="mt-2 whitespace-pre-line text-sm text-ink-500">
-                {termsSettings.terms_and_conditions}
-              </p>
+              <div className="mt-2 text-sm text-ink-500">
+                <ExpandableText
+                  text={termsSettings.terms_and_conditions}
+                  collapsedLines={4}
+                  className="text-sm text-ink-500"
+                />
+              </div>
             </section>
           )}
         </div>
 
         <aside className="lg:col-span-1">
-          <div className="card sticky top-24 space-y-4 p-5">
-            <div>
+          <div className="card sticky top-24 p-6 shadow-sm border border-ink-100 bg-white rounded-2xl">
+            <span className="text-xs font-semibold uppercase tracking-wider text-ink-400">
+              Package Price
+            </span>
+            <div className="mt-2">
               {activeOffer && (
                 <span className="badge-discount mb-2 inline-flex font-semibold">
                   Special offer
@@ -336,49 +338,33 @@ export default async function PackageDetailPage({ params }: { params: { slug: st
                   <span className="text-sm text-ink-400 line-through">
                     {formatCurrency(pkg.base_price, pkg.currency)}
                   </span>
-                  <p className="text-2xl font-semibold text-brand-700">
+                  <p className="font-display text-3xl font-bold text-brand-700">
                     {formatCurrency(effectivePrice, pkg.currency)}{' '}
-                    <span className="text-sm font-normal text-ink-400">/ person</span>
+                    <span className="text-sm font-normal text-ink-500">/ person</span>
                   </p>
                 </div>
               ) : (
-                <p className="text-2xl font-semibold text-brand-700">
+                <p className="font-display text-3xl font-bold text-brand-700">
                   {formatCurrency(pkg.base_price, pkg.currency)}{' '}
-                  <span className="text-sm font-normal text-ink-400">/ person</span>
+                  <span className="text-sm font-normal text-ink-500">/ person</span>
                 </p>
               )}
             </div>
+            <p className="mt-3 text-xs text-ink-400">
+              * Starting price per person • Taxes &amp; fees included
+            </p>
 
-            <div className="flex gap-2">
-              {settings.whatsapp && (
-                <a
-                  href={`https://wa.me/${settings.whatsapp.replace(/\D/g, '')}?text=${encodeURIComponent(
-                    `Hi, I'm interested in ${pkg.title}`
-                  )}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="btn-outline flex-1"
-                >
-                  <MessageCircle className="h-4 w-4" /> WhatsApp
-                </a>
-              )}
-              {settings.phone && (
-                <a href={`tel:${settings.phone}`} className="btn-outline flex-1">
-                  <Phone className="h-4 w-4" /> Call
-                </a>
-              )}
-            </div>
-
-            <div className="border-t border-ink-100 pt-4">
-              <p className="mb-3 text-sm font-semibold text-ink-800">Enquire about this package</p>
-              <EnquiryForm
-                packageId={pkg.id}
-                destinationName={destination?.name}
-                buttonLabel="Enquire now"
-                isLoggedIn={Boolean(user)}
-                defaultName=""
-                defaultEmail=""
-              />
+            <div className="mt-5 border-t border-ink-100 pt-5">
+              <Link
+                href={`/booking?packageId=${encodeURIComponent(pkg.id)}`}
+                className="btn-primary flex w-full items-center justify-center gap-2 py-3.5 text-center text-sm font-semibold shadow-md transition-all hover:shadow-lg"
+              >
+                <span>Send Enquiry</span>
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+              <p className="mt-2.5 text-center text-[11px] text-ink-400">
+                Tailored itinerary &amp; customized quote
+              </p>
             </div>
           </div>
         </aside>

@@ -15,7 +15,7 @@ async function MasterContent() {
   const isAdmin = profile.role === 'admin' || profile.role === 'super_admin';
 
   const [initialData, filterOptions] = await Promise.all([
-    getMasterRatesFromDb({ page: 1, pageSize: 25 }),
+    getMasterRatesFromDb({ page: 1, pageSize: 20 }),
     getMasterFilterOptions(),
   ]);
 

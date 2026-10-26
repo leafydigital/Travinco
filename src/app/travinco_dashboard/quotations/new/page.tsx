@@ -20,24 +20,48 @@ function QuotationBuilderSkeleton() {
         </div>
       </div>
 
-      {/* Top Form Unified Card Skeleton */}
-      <div className="card p-5 space-y-5">
-        <div className="h-9 rounded-lg bg-ink-50" />
-        <div className="space-y-3">
-          <div className="h-4 w-44 rounded bg-ink-200/70" />
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2.5">
-            {Array.from({ length: 12 }).map((_, i) => (
-              <div key={i} className="space-y-1">
-                <div className="h-3 w-16 rounded bg-ink-100" />
-                <div className="h-8 rounded-lg bg-ink-100" />
+      {/* 2-Column Grid Skeleton */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+        {/* Left Column Skeleton */}
+        <div className="lg:col-span-5 space-y-4">
+          <div className="card p-5 space-y-5">
+            <div className="h-16 rounded-xl bg-ink-50" />
+            <div className="space-y-3">
+              <div className="h-4 w-44 rounded bg-ink-200/70" />
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <div key={i} className="space-y-1">
+                    <div className="h-3 w-16 rounded bg-ink-100" />
+                    <div className="h-8 rounded-lg bg-ink-100" />
+                  </div>
+                ))}
+              </div>
+            </div>
+            <hr className="border-ink-100" />
+            <div className="space-y-2">
+              <div className="h-4 w-36 rounded bg-ink-200/70" />
+              <div className="h-20 rounded-lg bg-ink-50" />
+            </div>
+          </div>
+          <div className="card p-4 h-16 rounded-lg bg-ink-50" />
+        </div>
+
+        {/* Right Column (Day-wise Itinerary) Skeleton */}
+        <div className="lg:col-span-7 space-y-4">
+          <div className="card p-5 space-y-3">
+            <div className="flex items-center justify-between border-b border-ink-100 pb-3">
+              <div className="h-4 w-36 rounded bg-ink-200/70" />
+              <div className="h-5 w-16 rounded-full bg-ink-100" />
+            </div>
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="h-20 rounded-lg border border-ink-100 bg-ink-50/50 p-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  <div className="h-9 w-12 rounded bg-ink-200/60" />
+                  <div className="h-4 w-32 rounded bg-ink-200/60" />
+                </div>
               </div>
             ))}
           </div>
-        </div>
-        <hr className="border-ink-100" />
-        <div className="space-y-2">
-          <div className="h-4 w-36 rounded bg-ink-200/70" />
-          <div className="h-16 rounded-lg bg-ink-50" />
         </div>
       </div>
 

@@ -1,11 +1,15 @@
 import { Suspense } from 'react';
-import { createClient } from '@/lib/supabase/server';
 import { requireProfile, assertModulePermission } from '@/lib/supabase/auth-helpers';
 import Link from 'next/link';
-import { Search, Plus } from 'lucide-react';
+import { Search, Plus, ArrowLeft } from 'lucide-react';
 import { CustomerRowActions } from './customer-row-actions';
+import { CustomerStatusBadge } from './customer-status-badge';
+import { getCustomersTableList } from './actions';
 
-const PAGE_SIZE = 25;
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
+const PAGE_SIZE = 20;
 
 function buildHref(sp: Record<string, string | undefined>, overrides: Record<string, string | undefined>) {
   const merged = { ...sp, ...overrides };
@@ -19,14 +23,14 @@ function CustomersTableSkeleton() {
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-ink-100 text-left text-xs uppercase tracking-wide text-ink-400">
-            <th className="px-5 py-3">Customer</th>
-            <th className="px-5 py-3">Phone</th>
-            <th className="px-5 py-3">Email</th>
-            <th className="px-5 py-3">City</th>
-            <th className="px-5 py-3">Source</th>
-            <th className="px-5 py-3">Status</th>
-            <th className="px-5 py-3 text-right">Actions</th>
+          <tr className="border-b border-ink-100 text-left text-xs uppercase tracking-wide text-ink-400 bg-sand-50/40">
+            <th className="px-5 py-3 font-semibold">Customer</th>
+            <th className="px-5 py-3 font-semibold">Phone</th>
+            <th className="px-5 py-3 font-semibold">Email</th>
+            <th className="px-5 py-3 font-semibold">City</th>
+            <th className="px-5 py-3 font-semibold">Source</th>
+            <th className="px-5 py-3 font-semibold">Status</th>
+            <th className="px-5 py-3 text-right font-semibold">Actions</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-ink-50">
@@ -38,7 +42,7 @@ function CustomersTableSkeleton() {
               <td className="px-5 py-3.5"><div className="h-4 w-20 rounded bg-ink-100" /></td>
               <td className="px-5 py-3.5"><div className="h-4 w-16 rounded bg-ink-100" /></td>
               <td className="px-5 py-3.5"><div className="h-6 w-16 rounded-full bg-ink-100" /></td>
-              <td className="px-5 py-3.5 text-right"><div className="h-8 w-24 rounded-lg bg-ink-100 ml-auto" /></td>
+              <td className="px-5 py-3.5 text-right"><div className="h-7 w-20 rounded-lg bg-ink-100 ml-auto" /></td>
             </tr>
           ))}
         </tbody>
@@ -49,190 +53,97 @@ function CustomersTableSkeleton() {
 
 async function CustomersTableContent({
   searchParams,
+  isAdmin,
+  canEdit,
 }: {
   searchParams: { q?: string; page?: string };
+  isAdmin: boolean;
+  canEdit: boolean;
 }) {
-  const profile = await requireProfile();
-  await assertModulePermission(profile, 'customers', 'view');
-  const isAdmin = ['admin', 'super_admin'].includes(profile.role);
-  const canEdit = isAdmin || profile.role === 'sales_staff';
-  const supabase = await createClient();
-
-  // Sync any customer_accounts that haven't been copied to customers yet
-  try {
-    const { data: unlinkedAccounts } = await supabase
-      .from('customer_accounts')
-      .select('full_name, email, created_at');
-
-    if (unlinkedAccounts && unlinkedAccounts.length > 0) {
-      const emails = unlinkedAccounts.map((a) => a.email).filter(Boolean);
-      const { data: existingCustomers } = await supabase
-        .from('customers')
-        .select('email')
-        .in('email', emails);
-
-      const existingEmails = new Set((existingCustomers || []).map((c) => c.email));
-      const toInsert = unlinkedAccounts
-        .filter((a) => a.email && !existingEmails.has(a.email))
-        .map((a) => ({
-          full_name: a.full_name || a.email.split('@')[0] || 'Customer',
-          email: a.email,
-          phone: '',
-          source: 'website',
-          is_active: true,
-          is_deleted: false,
-          created_at: a.created_at,
-        }));
-
-      if (toInsert.length > 0) {
-        await supabase.from('customers').insert(toInsert as any);
-      }
-    }
-  } catch {
-    // Non-blocking sync
-  }
-
   const page = Math.max(1, Number(searchParams.page ?? 1));
-  const from = (page - 1) * PAGE_SIZE;
-  const to = from + PAGE_SIZE - 1;
+  const q = searchParams.q ?? '';
 
-  let query = supabase
-    .from('customers')
-    .select(
-      'id, full_name, phone, whatsapp_number, email, city, state, country, source, notes, whatsapp_opt_in, is_active, is_deleted, created_at',
-      { count: 'exact' }
-    )
-    .order('created_at', { ascending: false })
-    .range(from, to);
+  const result = await getCustomersTableList({
+    page,
+    pageSize: PAGE_SIZE,
+    q,
+  });
 
-  if (searchParams.q) {
-    query = query.or(
-      `full_name.ilike.%${searchParams.q}%,phone.ilike.%${searchParams.q}%,email.ilike.%${searchParams.q}%`
-    );
-  }
-
-  const [{ data: customers, count, error: queryError }, { data: settingsData }] = await Promise.all([
-    query,
-    supabase
-      .from('website_settings')
-      .select('key, value')
-      .or('key.like.deleted_customer_%,key.like.customer_status_%'),
-  ]);
-
-  let customerRows: any[] | null = customers;
-  if (queryError && (queryError.message?.includes('is_deleted') || queryError.message?.includes('is_active'))) {
-    let fallbackQuery = supabase
-      .from('customers')
-      .select('id, full_name, phone, whatsapp_number, email, city, state, country, source, notes, whatsapp_opt_in, created_at', { count: 'exact' })
-      .order('created_at', { ascending: false })
-      .range(from, to);
-
-    if (searchParams.q) {
-      fallbackQuery = fallbackQuery.or(
-        `full_name.ilike.%${searchParams.q}%,phone.ilike.%${searchParams.q}%,email.ilike.%${searchParams.q}%`
-      );
-    }
-    const fallbackRes = await fallbackQuery;
-    customerRows = fallbackRes.data;
-  }
-
-  const deletedKeys = new Set(
-    (settingsData || [])
-      .filter((s: any) => s.key?.startsWith('deleted_customer_'))
-      .map((s: any) => s.key.replace('deleted_customer_', ''))
-  );
-  const statusOverrides = new Map<string, boolean>();
-  (settingsData || [])
-    .filter((s: any) => s.key?.startsWith('customer_status_'))
-    .forEach((s: any) => {
-      const id = s.key.replace('customer_status_', '');
-      if (s.value && typeof s.value.is_active === 'boolean') {
-        statusOverrides.set(id, s.value.is_active);
-      }
-    });
-
-  const visibleCustomers = (customerRows ?? []).filter(
-    (c: any) =>
-      c &&
-      c.is_deleted !== true &&
-      c.is_deleted !== 'true' &&
-      c.is_deleted !== 1 &&
-      !deletedKeys.has(c.id)
-  );
-  const totalPages = Math.max(1, Math.ceil((count ?? 0) / PAGE_SIZE));
+  const { customers, totalCount, totalPages } = result;
 
   return (
     <>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[720px] text-sm">
           <thead>
-            <tr className="border-b border-ink-100 text-left text-xs uppercase tracking-wide text-ink-400">
-              <th className="px-5 py-3">Customer</th>
-              <th className="px-5 py-3">Phone</th>
-              <th className="px-5 py-3">Email</th>
-              <th className="px-5 py-3">City</th>
-              <th className="px-5 py-3">Source</th>
-              <th className="px-5 py-3">Status</th>
-              <th className="px-5 py-3 text-right">Actions</th>
+            <tr className="border-b border-ink-100 text-left text-xs uppercase tracking-wide text-ink-400 bg-sand-50/40">
+              <th className="px-5 py-3 font-semibold">Customer</th>
+              <th className="px-5 py-3 font-semibold">Phone</th>
+              <th className="px-5 py-3 font-semibold">Email</th>
+              <th className="px-5 py-3 font-semibold">City</th>
+              <th className="px-5 py-3 font-semibold">Source</th>
+              <th className="px-5 py-3 font-semibold">Status</th>
+              <th className="px-5 py-3 text-right font-semibold">Actions</th>
             </tr>
           </thead>
-          <tbody>
-            {visibleCustomers.length === 0 && (
+          <tbody className="divide-y divide-ink-50">
+            {customers.length === 0 && (
               <tr>
                 <td colSpan={7} className="px-5 py-10 text-center text-ink-400">
                   No customers found.
                 </td>
               </tr>
             )}
-            {visibleCustomers.map((c) => {
-              const isActive = statusOverrides.has(c.id)
-                ? statusOverrides.get(c.id)!
-                : c.is_active !== false && c.is_active !== 'false' && (c as any).status !== 'inactive';
+            {customers.map((c) => (
+              <tr key={c.id} className="border-b border-ink-50 last:border-0 hover:bg-ink-50/50">
+                {/* 1. Customer */}
+                <td className="px-5 py-3">
+                  <span className="font-medium text-ink-900">{c.full_name}</span>
+                </td>
 
-              return (
-                <tr key={c.id} className="border-b border-ink-50 last:border-0 hover:bg-ink-50/50">
-                  <td className="px-5 py-3">
-                    <Link href={`/admin/customers/${c.id}`} className="font-medium text-ink-800 hover:text-brand-700">
-                      {c.full_name}
-                    </Link>
-                  </td>
-                  <td className="px-5 py-3 text-ink-600">{c.phone || '—'}</td>
-                  <td className="px-5 py-3 text-ink-500">{c.email || '—'}</td>
-                  <td className="px-5 py-3 text-ink-500">{c.city || '—'}</td>
-                  <td className="px-5 py-3 text-ink-500 capitalize">{c.source?.replace('_', ' ') || '—'}</td>
-                  <td className="px-5 py-3">
-                    {isActive ? (
-                      <span className="badge badge-success">Active</span>
-                    ) : (
-                      <span className="badge bg-amber-100 text-amber-800 border-amber-200">Deactivated</span>
-                    )}
-                  </td>
-                  <td className="px-5 py-3 text-right">
-                    <CustomerRowActions
-                      customer={c}
-                      isActive={isActive}
-                      canEdit={canEdit}
-                      isAdmin={isAdmin}
-                    />
-                  </td>
-                </tr>
-              );
-            })}
+                {/* 2. Phone */}
+                <td className="px-5 py-3 text-ink-600">{c.phone || '—'}</td>
+
+                {/* 3. Email */}
+                <td className="px-5 py-3 text-ink-500">{c.email || '—'}</td>
+
+                {/* 4. City */}
+                <td className="px-5 py-3 text-ink-500">{c.city || '—'}</td>
+
+                {/* 5. Source */}
+                <td className="px-5 py-3 text-ink-500 capitalize">{c.source?.replace('_', ' ') || '—'}</td>
+
+                {/* 6. Status */}
+                <td className="px-5 py-3">
+                  <CustomerStatusBadge customerId={c.id} initialActive={c.is_active} />
+                </td>
+
+                {/* 7. Actions */}
+                <td className="px-5 py-3 text-right">
+                  <CustomerRowActions
+                    customer={c}
+                    isActive={c.is_active}
+                    canEdit={canEdit}
+                    isAdmin={isAdmin}
+                  />
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
 
       {totalPages > 1 && (
         <div className="flex items-center justify-between border-t border-ink-100 px-5 py-3 text-sm text-ink-500">
-          <span>Page {page} of {totalPages} ({count ?? 0} total)</span>
+          <span>Page {page} of {totalPages} ({totalCount} total)</span>
           <div className="flex gap-2">
             {page > 1 && (
-              <Link href={buildHref(searchParams, { page: String(page - 1) })} className="btn-outline px-3 py-1.5">
+              <Link href={buildHref(searchParams, { page: String(page - 1) })} className="btn-outline px-3 py-1.5 text-xs">
                 Previous
               </Link>
             )}
             {page < totalPages && (
-              <Link href={buildHref(searchParams, { page: String(page + 1) })} className="btn-outline px-3 py-1.5">
+              <Link href={buildHref(searchParams, { page: String(page + 1) })} className="btn-outline px-3 py-1.5 text-xs">
                 Next
               </Link>
             )}
@@ -251,17 +162,26 @@ export default async function AdminCustomersPage({
   const profile = await requireProfile();
   await assertModulePermission(profile, 'customers', 'view');
 
+  const isAdmin = ['admin', 'super_admin'].includes(profile.role);
+  const canEdit = isAdmin || profile.role === 'sales_staff';
+
   const suspKey = `${searchParams.q ?? ''}-${searchParams.page ?? '1'}`;
 
   return (
     <div className="space-y-5">
-      {/* 1. Header Structure (Renders Instantly) */}
+      {/* 1. Header Structure (Renders Instantly <50ms) */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
+          <Link
+            href="/travinco_dashboard"
+            className="mb-1 inline-flex items-center gap-1 text-xs font-medium text-ink-500 hover:text-brand-700 transition"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" /> Back to dashboard
+          </Link>
           <h1 className="text-xl font-semibold text-ink-900">Customers</h1>
           <p className="text-sm text-ink-500">Directory of travel customers and leads</p>
         </div>
-        <Link href="/admin/customers/new" prefetch={true} className="btn-primary">
+        <Link href="/travinco_dashboard/customers/new" prefetch={true} className="btn-primary">
           <Plus className="h-4 w-4" /> New customer
         </Link>
       </div>
@@ -283,10 +203,14 @@ export default async function AdminCustomersPage({
         </button>
       </form>
 
-      {/* 3. Table Card (Header loads immediately, rows show skeleton only while fetching) */}
+      {/* 3. Table Card (Header loads immediately, rows stream via Suspense) */}
       <div className="card overflow-hidden">
         <Suspense key={suspKey} fallback={<CustomersTableSkeleton />}>
-          <CustomersTableContent searchParams={searchParams} />
+          <CustomersTableContent
+            searchParams={searchParams}
+            isAdmin={isAdmin}
+            canEdit={canEdit}
+          />
         </Suspense>
       </div>
     </div>

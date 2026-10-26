@@ -14,7 +14,7 @@ interface Props {
 export function LeadsFilterBar({
   initialSearch = '',
   initialStatus = '',
-  initialLimit = 25,
+  initialLimit = 20,
 }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -136,7 +136,7 @@ export function LeadsFilterBar({
             className="input w-auto min-w-[75px] pr-7 text-sm cursor-pointer"
           >
             <option value="10">10</option>
-            <option value="25">25</option>
+            <option value="20">20</option>
             <option value="50">50</option>
             <option value="100">100</option>
           </select>

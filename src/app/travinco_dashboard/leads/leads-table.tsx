@@ -205,7 +205,7 @@ export function LeadsTable({ leads, totalCount, currentPage, pageSize, isAdmin }
       )}
 
       {/* Main Table */}
-      <div className="overflow-x-auto min-h-[340px] pb-32">
+      <div className="overflow-x-auto min-h-[280px]">
         <table className="w-full min-w-[850px] text-sm">
           <thead>
             <tr className="border-b border-ink-100 text-left text-xs uppercase tracking-wide text-ink-400 bg-ink-50/50">
@@ -312,10 +312,11 @@ export function LeadsTable({ leads, totalCount, currentPage, pageSize, isAdmin }
             {/* First Page */}
             <Link
               href={buildPageHref(1)}
+              prefetch={true}
               className={`rounded p-1.5 transition ${
                 currentPage <= 1
                   ? 'pointer-events-none text-ink-200'
-                  : 'text-ink-600 hover:bg-ink-100 hover:text-ink-900'
+                  : 'text-ink-600 hover:bg-ink-100 hover:text-ink-900 cursor-pointer'
               }`}
               title="First Page"
             >
@@ -325,10 +326,11 @@ export function LeadsTable({ leads, totalCount, currentPage, pageSize, isAdmin }
             {/* Prev Page */}
             <Link
               href={buildPageHref(Math.max(1, currentPage - 1))}
+              prefetch={true}
               className={`rounded p-1.5 transition ${
                 currentPage <= 1
                   ? 'pointer-events-none text-ink-200'
-                  : 'text-ink-600 hover:bg-ink-100 hover:text-ink-900'
+                  : 'text-ink-600 hover:bg-ink-100 hover:text-ink-900 cursor-pointer'
               }`}
               title="Previous Page"
             >
@@ -350,7 +352,8 @@ export function LeadsTable({ leads, totalCount, currentPage, pageSize, isAdmin }
                   <Link
                     key={p}
                     href={buildPageHref(p)}
-                    className={`flex h-7 min-w-[28px] items-center justify-center rounded px-2 text-xs font-medium transition ${
+                    prefetch={true}
+                    className={`flex h-7 min-w-[28px] items-center justify-center rounded px-2 text-xs font-medium transition cursor-pointer ${
                       isActive
                         ? 'bg-brand-600 text-white font-semibold shadow-sm'
                         : 'text-ink-600 hover:bg-ink-100 hover:text-ink-900'
@@ -365,10 +368,11 @@ export function LeadsTable({ leads, totalCount, currentPage, pageSize, isAdmin }
             {/* Next Page */}
             <Link
               href={buildPageHref(Math.min(totalPages, currentPage + 1))}
+              prefetch={true}
               className={`rounded p-1.5 transition ${
                 currentPage >= totalPages
                   ? 'pointer-events-none text-ink-200'
-                  : 'text-ink-600 hover:bg-ink-100 hover:text-ink-900'
+                  : 'text-ink-600 hover:bg-ink-100 hover:text-ink-900 cursor-pointer'
               }`}
               title="Next Page"
             >
@@ -378,10 +382,11 @@ export function LeadsTable({ leads, totalCount, currentPage, pageSize, isAdmin }
             {/* Last Page */}
             <Link
               href={buildPageHref(totalPages)}
+              prefetch={true}
               className={`rounded p-1.5 transition ${
                 currentPage >= totalPages
                   ? 'pointer-events-none text-ink-200'
-                  : 'text-ink-600 hover:bg-ink-100 hover:text-ink-900'
+                  : 'text-ink-600 hover:bg-ink-100 hover:text-ink-900 cursor-pointer'
               }`}
               title="Last Page"
             >
