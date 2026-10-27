@@ -2,6 +2,8 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
 import { TextField, TextAreaField, SelectField } from '@/components/ui/form-fields';
 import { StringListEditor } from '@/components/admin/string-list-editor';
@@ -63,7 +65,7 @@ export function CustomerForm({
 
       toast.success(customerId ? 'Customer updated' : 'Customer created');
       if (!customerId && 'id' in result && result.id) {
-        router.push(`/admin/customers/${result.id}`);
+        router.push(`/travinco_dashboard/customers/${result.id}`);
       } else {
         router.refresh();
       }
@@ -190,7 +192,14 @@ export function CustomerForm({
         />
       </div>
 
-      <div className="flex justify-end">
+      <div className="flex items-center justify-between gap-3 pt-2">
+        <Link
+          href="/travinco_dashboard/customers"
+          className="btn-outline inline-flex items-center gap-2 text-ink-700 hover:text-ink-900"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          <span>Back</span>
+        </Link>
         <button type="submit" className="btn-primary" disabled={isPending}>
           {isPending ? 'Saving…' : customerId ? 'Save changes' : 'Create customer'}
         </button>

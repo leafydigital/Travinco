@@ -149,31 +149,33 @@ export default async function PackageDetailPage({ params }: { params: { slug: st
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
 
-      {/* Hero section placed cleanly under the navbar */}
-      <div className="pt-20 bg-ink-950">
-        <div className="relative h-[45vh] min-h-[340px] max-h-[520px] w-full overflow-hidden bg-ink-900">
+      {/* Hero section placed cleanly under the navbar - Full Width */}
+      <div className="pt-20 bg-ink-950 w-full overflow-hidden">
+        <div className="relative w-full h-[60vh] sm:h-[70vh] lg:h-[78vh] min-h-[380px] sm:min-h-[460px] max-h-[760px] overflow-hidden bg-ink-950">
           {pkg.cover_image_url && (
             <Image
               src={pkg.cover_image_url}
               alt={pkg.title}
               fill
-              className="object-cover"
+              className="w-full h-full object-cover object-center"
               priority
+              sizes="100vw"
             />
           )}
-          <div className="absolute inset-0 bg-gradient-to-t from-navy-950/90 via-navy-950/45 to-navy-950/20" />
-          <div className="container-page absolute inset-x-0 bottom-8 text-white">
+          <div className="absolute inset-0 bg-gradient-to-t from-navy-950/90 via-navy-950/40 to-transparent pointer-events-none" />
+
+          <div className="container-page absolute inset-x-0 bottom-6 sm:bottom-8 text-white z-10">
             {destination && (
-              <p className="flex items-center gap-1.5 text-sm font-medium text-brand-200 mb-2">
-                <MapPin className="h-4 w-4" /> {destination.name}
+              <p className="flex items-center gap-1.5 text-xs sm:text-sm font-medium text-brand-300 mb-2 drop-shadow">
+                <MapPin className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-brand-400" /> {destination.name}
                 {destination.country ? `, ${destination.country}` : ''}
               </p>
             )}
-            <h1 className="font-display text-3xl font-bold sm:text-4xl lg:text-5xl text-white drop-shadow-sm">
+            <h1 className="font-display text-3xl sm:text-4xl lg:text-5xl font-bold text-white drop-shadow-md break-words">
               {pkg.title}
             </h1>
             {pkg.short_description && (
-              <p className="mt-2.5 line-clamp-2 max-w-2xl text-sm sm:text-base text-white/90 font-normal">
+              <p className="mt-2.5 line-clamp-2 max-w-3xl text-sm sm:text-base text-white/90 font-normal drop-shadow break-words">
                 {pkg.short_description}
               </p>
             )}

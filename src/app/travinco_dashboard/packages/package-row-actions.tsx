@@ -129,7 +129,6 @@ export function PackageRowActions({
         <ActionButton
           label="Preview"
           href={`/travinco_dashboard/packages/${id}/preview`}
-          target="_blank"
           className="text-ink-500 hover:bg-ink-100 hover:text-ink-800"
         />
         {status !== 'published' && (

@@ -155,51 +155,49 @@ export function PackageDetailView({
   const visibleExclusions = showAllExclusions ? exclusions : exclusions.slice(0, 5);
 
   return (
-    <div>
+    <div className="w-full max-w-full overflow-x-hidden">
       {/* Sticky Tab Navigation Bar */}
-      <div className="sticky top-20 z-30 border-b border-ink-100 bg-white/95 backdrop-blur-md shadow-xs">
-        <div className="container-page">
-          <div className="flex items-center justify-between gap-2 overflow-x-auto py-2.5 no-scrollbar scroll-smooth">
-            <div className="flex items-center gap-1.5 sm:gap-2">
-              {tabsConfig.map((tab) => {
-                const isActive = activeTab === tab.id;
-                return (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    onClick={() => setActiveTab(tab.id)}
-                    className={`group relative flex shrink-0 items-center gap-2 rounded-full px-4 py-2 text-xs sm:text-sm font-medium transition-all duration-200 ${
-                      isActive
-                        ? 'bg-brand-600 text-white shadow-sm'
-                        : 'text-ink-600 hover:bg-ink-100/70 hover:text-ink-900'
-                    }`}
-                  >
-                    <span>{tab.label}</span>
-                    {typeof tab.count === 'number' && tab.count > 0 && (
-                      <span
-                        className={`rounded-full px-1.5 py-0.5 text-[11px] font-semibold ${
-                          isActive
-                            ? 'bg-white/20 text-white'
-                            : 'bg-ink-100 text-ink-500 group-hover:bg-ink-200'
-                        }`}
-                      >
-                        {tab.count}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
+      <div className="sticky top-20 z-30 w-full max-w-full border-b border-ink-100 bg-white/95 backdrop-blur-md shadow-xs">
+        <div className="container-page w-full max-w-full overflow-hidden">
+          <div className="flex w-full max-w-full items-center gap-1.5 sm:gap-2 overflow-x-auto py-2.5 no-scrollbar scroll-smooth overscroll-x-contain">
+            {tabsConfig.map((tab) => {
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`group relative flex shrink-0 items-center gap-2 rounded-full px-4 py-2 text-xs sm:text-sm font-medium transition-all duration-200 ${
+                    isActive
+                      ? 'bg-brand-600 text-white shadow-sm'
+                      : 'text-ink-600 hover:bg-ink-100/70 hover:text-ink-900'
+                  }`}
+                >
+                  <span>{tab.label}</span>
+                  {typeof tab.count === 'number' && tab.count > 0 && (
+                    <span
+                      className={`rounded-full px-1.5 py-0.5 text-[11px] font-semibold ${
+                        isActive
+                          ? 'bg-white/20 text-white'
+                          : 'bg-ink-100 text-ink-500 group-hover:bg-ink-200'
+                      }`}
+                    >
+                      {tab.count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
 
-              {/* Terms & Conditions Tab Button (Opens Modal) */}
-              <button
-                type="button"
-                onClick={() => setTermsModalOpen(true)}
-                className="group flex shrink-0 items-center gap-1.5 rounded-full border border-dashed border-ink-300 px-4 py-2 text-xs sm:text-sm font-medium text-ink-700 transition-all duration-200 hover:border-brand-500 hover:bg-brand-50 hover:text-brand-800"
-              >
-                <FileText className="h-3.5 w-3.5 text-brand-600" />
-                <span>Terms & conditions</span>
-              </button>
-            </div>
+            {/* Terms & Conditions Tab Button (Opens Modal) */}
+            <button
+              type="button"
+              onClick={() => setTermsModalOpen(true)}
+              className="group flex shrink-0 items-center gap-1.5 rounded-full border border-dashed border-ink-300 px-4 py-2 text-xs sm:text-sm font-medium text-ink-700 transition-all duration-200 hover:border-brand-500 hover:bg-brand-50 hover:text-brand-800"
+            >
+              <FileText className="h-3.5 w-3.5 text-brand-600" />
+              <span>Terms & conditions</span>
+            </button>
           </div>
         </div>
       </div>
@@ -429,26 +427,26 @@ export function PackageDetailView({
                               )}
 
                               {(day.hotel || day.meals || day.transport) && (
-                                <div className="grid gap-2 sm:flex sm:flex-wrap pt-2.5 border-t border-ink-100 text-xs">
+                                <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2 pt-2.5 border-t border-ink-100 text-xs">
                                   {day.hotel && (
-                                    <div className="flex items-start sm:items-center gap-2 rounded-xl bg-ink-50/90 px-3 py-1.5 text-ink-700 border border-ink-100/70">
-                                      <Hotel className="h-3.5 w-3.5 text-brand-600 shrink-0 mt-0.5 sm:mt-0" />
-                                      <span className="text-ink-500 shrink-0">Stay:</span>
-                                      <span className="font-medium text-ink-900 break-words">{day.hotel}</span>
+                                    <div className="flex items-start gap-2 rounded-xl bg-ink-50/90 px-3 py-2 text-ink-700 border border-ink-100/70 min-w-0">
+                                      <Hotel className="h-3.5 w-3.5 text-brand-600 shrink-0 mt-0.5" />
+                                      <span className="text-ink-500 shrink-0 font-medium">Stay:</span>
+                                      <span className="font-medium text-ink-900 break-words min-w-0 flex-1">{day.hotel}</span>
                                     </div>
                                   )}
                                   {day.meals && (
-                                    <div className="flex items-start sm:items-center gap-2 rounded-xl bg-ink-50/90 px-3 py-1.5 text-ink-700 border border-ink-100/70">
-                                      <Utensils className="h-3.5 w-3.5 text-amber-600 shrink-0 mt-0.5 sm:mt-0" />
-                                      <span className="text-ink-500 shrink-0">Meals:</span>
-                                      <span className="font-medium text-ink-900 break-words">{day.meals}</span>
+                                    <div className="flex items-start gap-2 rounded-xl bg-ink-50/90 px-3 py-2 text-ink-700 border border-ink-100/70 min-w-0">
+                                      <Utensils className="h-3.5 w-3.5 text-amber-600 shrink-0 mt-0.5" />
+                                      <span className="text-ink-500 shrink-0 font-medium">Meals:</span>
+                                      <span className="font-medium text-ink-900 break-words min-w-0 flex-1">{day.meals}</span>
                                     </div>
                                   )}
                                   {day.transport && (
-                                    <div className="flex items-start sm:items-center gap-2 rounded-xl bg-ink-50/90 px-3 py-1.5 text-ink-700 border border-ink-100/70">
-                                      <Car className="h-3.5 w-3.5 text-sky-600 shrink-0 mt-0.5 sm:mt-0" />
-                                      <span className="text-ink-500 shrink-0">Transport:</span>
-                                      <span className="font-medium text-ink-900 break-words">{day.transport}</span>
+                                    <div className="flex items-start gap-2 rounded-xl bg-ink-50/90 px-3 py-2 text-ink-700 border border-ink-100/70 min-w-0">
+                                      <Car className="h-3.5 w-3.5 text-sky-600 shrink-0 mt-0.5" />
+                                      <span className="text-ink-500 shrink-0 font-medium">Transport:</span>
+                                      <span className="font-medium text-ink-900 break-words min-w-0 flex-1">{day.transport}</span>
                                     </div>
                                   )}
                                 </div>
