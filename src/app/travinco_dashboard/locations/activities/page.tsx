@@ -1,17 +1,28 @@
 import type { Metadata } from 'next';
+import { Suspense } from 'react';
 import { createClient } from '@/lib/supabase/server';
 import { requireProfile } from '@/lib/supabase/auth-helpers';
 import { canEditMasters } from '@/lib/tour/access';
 import { ActivitiesClient } from './activities-client';
+import ActivitiesLoading from './loading';
 
 export const metadata: Metadata = { title: 'Sightseeing & Activities — Admin Portal' };
 
-export default async function ActivitiesPage() {
+async function ActivitiesContent() {
   const profile = await requireProfile();
   const supabase = await createClient();
   const [{ data: acts }, { data: locs }, { data: deletedActSettings }, { data: deletedLocSettings }] = await Promise.all([
-    supabase.from('location_activities').select('*').order('location_id').order('sort_order').order('name'),
-    supabase.from('locations').select('id, name, display_name').order('sort_order').order('name'),
+    supabase
+      .from('location_activities')
+      .select('id, location_id, name, category, kind, preferred_types, is_active, is_deleted')
+      .order('location_id')
+      .order('sort_order')
+      .order('name'),
+    supabase
+      .from('locations')
+      .select('id, name, display_name, is_deleted')
+      .order('sort_order')
+      .order('name'),
     supabase.from('website_settings').select('key').like('key', 'deleted_activity_%'),
     supabase.from('website_settings').select('key').like('key', 'deleted_location_%'),
   ]);
@@ -46,5 +57,13 @@ export default async function ActivitiesPage() {
       isAdmin={isAdmin}
       canEdit={canEdit}
     />
+  );
+}
+
+export default async function ActivitiesPage() {
+  return (
+    <Suspense fallback={<ActivitiesLoading />}>
+      <ActivitiesContent />
+    </Suspense>
   );
 }

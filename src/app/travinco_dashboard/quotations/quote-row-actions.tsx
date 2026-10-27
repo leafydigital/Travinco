@@ -43,14 +43,16 @@ export function QuoteRowActions({
       <div className="flex items-center justify-end gap-1.5">
         {!isLocked && (
           <Link
-            href={`/admin/quotations/${id}/edit`}
+            href={`/travinco_dashboard/quotations/${id}/edit`}
+            prefetch={true}
             className="btn-outline h-8 px-2.5 text-xs text-brand-700 hover:bg-brand-50"
           >
             Edit
           </Link>
         )}
         <Link
-          href={`/admin/quotations/${id}`}
+          href={`/travinco_dashboard/quotations/${id}`}
+          prefetch={true}
           className="btn-ghost h-8 px-2 text-xs text-ink-500 hover:text-ink-900"
         >
           View

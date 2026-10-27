@@ -25,7 +25,9 @@ import {
   Check,
   AlertTriangle,
   CopyX,
+  Loader2,
 } from 'lucide-react';
+import { getActivityById } from './actions';
 import { ConfirmDeleteDialog } from '@/components/admin/confirm-delete-dialog';
 import {
   saveActivity,
@@ -222,12 +224,13 @@ export function ActivitiesClient({
   });
 
   // Pagination
-  const [pageSize, setPageSize] = useState<number>(50);
+  const [pageSize, setPageSize] = useState<number>(20);
   const [currentPage, setCurrentPage] = useState<number>(1);
 
   // Modals state
   const [uploadOpen, setUploadOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<ActivityItem | null>(null);
+  const [loadingEditId, setLoadingEditId] = useState<number | string | null>(null);
   const [isNewOpen, setIsNewOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<ActivityItem | null>(null);
 
@@ -252,6 +255,28 @@ export function ActivitiesClient({
         toast.success('Activities data refreshed');
       }, 500);
     });
+  };
+
+  // On-demand fetch when user clicks Edit
+  const handleOpenEdit = async (act: ActivityItem) => {
+    setLoadingEditId(act.id);
+    try {
+      const res = await getActivityById(act.id);
+      if (res.error || !res.activity) {
+        toast.error(res.error || 'Failed to fetch activity details');
+        setEditingItem(act);
+      } else {
+        setEditingItem({
+          ...act,
+          ...res.activity,
+        });
+      }
+    } catch {
+      toast.error('Failed to fetch activity details');
+      setEditingItem(act);
+    } finally {
+      setLoadingEditId(null);
+    }
   };
 
   // Active filters count
@@ -697,12 +722,17 @@ export function ActivitiesClient({
                           {/* Edit Action (Staff with canEdit) */}
                           {canEdit && (
                             <button
-                              onClick={() => setEditingItem(act)}
-                              className="rounded-lg p-1.5 text-ink-500 hover:bg-sand-100 hover:text-ink-900 transition-colors"
+                              onClick={() => handleOpenEdit(act)}
+                              disabled={loadingEditId === act.id}
+                              className="rounded-lg p-1.5 text-ink-500 hover:bg-sand-100 hover:text-ink-900 transition-colors disabled:opacity-50"
                               title="Edit Activity"
                               type="button"
                             >
-                              <Pencil className="h-4 w-4" />
+                              {loadingEditId === act.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin text-brand-600" />
+                              ) : (
+                                <Pencil className="h-4 w-4" />
+                              )}
                             </button>
                           )}
 
@@ -740,7 +770,7 @@ export function ActivitiesClient({
                   setCurrentPage(1);
                 }}
               >
-                <option value={25}>25</option>
+                <option value={20}>20</option>
                 <option value={50}>50</option>
                 <option value={100}>100</option>
                 <option value={999999}>All ({filteredActivities.length})</option>

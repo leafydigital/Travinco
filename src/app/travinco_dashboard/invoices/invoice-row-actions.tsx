@@ -40,7 +40,8 @@ export function InvoiceRowActions({
     <>
       <div className="flex items-center justify-end gap-1.5">
         <Link
-          href={`/admin/invoices/${id}`}
+          href={`/travinco_dashboard/invoices/${id}`}
+          prefetch={true}
           className="btn-outline h-8 px-3 text-xs text-brand-700 hover:bg-brand-50"
         >
           View &amp; Print

@@ -434,6 +434,7 @@ export async function cancelInvoice(id: string) {
   const { error } = await s.supabase.from('invoices').update({ status: 'cancelled' }).eq('id', id);
   if (error) return { error: 'Could not cancel the invoice.' };
   if (inv.quotation_id) await s.supabase.from('quotations').update({ status: 'accepted' }).eq('id', inv.quotation_id);
+  revalidatePath(`/travinco_dashboard/invoices/${id}`);
   revalidatePath(`/admin/invoices/${id}`);
   revalidatePath('/travinco_dashboard/invoices');
   return {};
@@ -500,9 +501,153 @@ export async function deleteInvoice(id: string): Promise<{ error?: string }> {
   }
 
   revalidatePath('/travinco_dashboard/invoices');
+  revalidatePath(`/travinco_dashboard/invoices/${id}`);
   revalidatePath('/admin/invoices');
   revalidatePath(`/admin/invoices/${id}`);
   revalidatePath('/travinco_dashboard/quotations');
   revalidatePath('/travinco_dashboard/income');
   return {};
+}
+
+export interface InvoiceTableItem {
+  id: string;
+  invoice_number: string;
+  quote_number: string | null;
+  bill_to_name: string;
+  bill_to_phone: string | null;
+  invoice_date: string;
+  due_date: string | null;
+  total_amount: number;
+  amount_paid: number;
+  balance_amount: number;
+  status: string;
+}
+
+export interface InvoicesTableQueryResult {
+  invoices: InvoiceTableItem[];
+  totalCount: number;
+  totalPages: number;
+  page: number;
+  pageSize: number;
+}
+
+/**
+ * Fast, lean query fetching strictly the 8 visible columns for the invoices table:
+ * Invoice (invoice_number), Quote # (quotations.quote_number), Bill to (bill_to_name, bill_to_phone),
+ * Date (invoice_date, due_date), Total (total_amount), Paid (amount_paid), Balance (balance_amount), Status (status).
+ * Excludes heavy 'items' (JSON), notes, terms, tax breakdowns, and bank details.
+ */
+export async function getInvoicesTableList({
+  page = 1,
+  pageSize = 20,
+  q = '',
+  status = '',
+}: {
+  page?: number;
+  pageSize?: number;
+  q?: string;
+  status?: string;
+} = {}): Promise<InvoicesTableQueryResult> {
+  const profile = await requireProfile();
+  if (!canAccess(profile, 'invoices')) {
+    return { invoices: [], totalCount: 0, totalPages: 1, page: 1, pageSize };
+  }
+
+  const supabase = await createClient();
+  const currentPage = Math.max(1, page);
+  const from = (currentPage - 1) * pageSize;
+  const to = from + pageSize - 1;
+
+  let query = supabase
+    .from('invoices')
+    .select(
+      'id, invoice_number, status, bill_to_name, bill_to_phone, invoice_date, due_date, total_amount, amount_paid, balance_amount, is_deleted, quotations(quote_number)',
+      { count: 'exact' }
+    )
+    .order('invoice_date', { ascending: false })
+    .order('created_at', { ascending: false });
+
+  const term = q.replace(/[,()%*]/g, ' ').trim();
+  if (term) {
+    query = query.or(
+      `invoice_number.ilike.%${term}%,bill_to_name.ilike.%${term}%,bill_to_phone.ilike.%${term}%`
+    );
+  }
+
+  const validStatuses = ['issued', 'partially_paid', 'paid', 'cancelled'];
+  if (status && validStatuses.includes(status)) {
+    query = query.eq('status', status);
+  }
+
+  const [{ data: rows, count, error: queryError }, { data: deletedSettingsData }] = await Promise.all([
+    query.range(from, to),
+    supabase.from('website_settings').select('key').like('key', 'deleted_invoice_%'),
+  ]);
+
+  let invoiceRows: any[] | null = rows;
+  if (queryError && queryError.message?.includes('is_deleted')) {
+    let fallbackQuery = supabase
+      .from('invoices')
+      .select(
+        'id, invoice_number, status, bill_to_name, bill_to_phone, invoice_date, due_date, total_amount, amount_paid, balance_amount, quotations(quote_number)',
+        { count: 'exact' }
+      )
+      .order('invoice_date', { ascending: false })
+      .order('created_at', { ascending: false });
+
+    if (term) {
+      fallbackQuery = fallbackQuery.or(
+        `invoice_number.ilike.%${term}%,bill_to_name.ilike.%${term}%,bill_to_phone.ilike.%${term}%`
+      );
+    }
+    if (status && validStatuses.includes(status)) {
+      fallbackQuery = fallbackQuery.eq('status', status);
+    }
+    const fallbackRes = await fallbackQuery.range(from, to);
+    invoiceRows = fallbackRes.data;
+  }
+
+  const deletedKeys = new Set(
+    (deletedSettingsData || []).map((s: { key: string }) => s.key.replace('deleted_invoice_', ''))
+  );
+
+  const activeRows = (invoiceRows ?? []).filter(
+    (r: any) =>
+      r &&
+      r.is_deleted !== true &&
+      r.is_deleted !== 'true' &&
+      r.is_deleted !== 1 &&
+      !deletedKeys.has(r.id)
+  );
+
+  const items: InvoiceTableItem[] = activeRows.map((r: any) => {
+    const q = (Array.isArray(r.quotations) ? r.quotations[0] : r.quotations) as
+      | { quote_number: string }
+      | null
+      | undefined;
+    return {
+      id: r.id,
+      invoice_number: r.invoice_number,
+      quote_number: q?.quote_number || null,
+      bill_to_name: r.bill_to_name,
+      bill_to_phone: r.bill_to_phone || null,
+      invoice_date: r.invoice_date,
+      due_date: r.due_date || null,
+      total_amount: Number(r.total_amount) || 0,
+      amount_paid: Number(r.amount_paid) || 0,
+      balance_amount: Number(r.balance_amount) || 0,
+      status: r.status,
+    };
+  });
+
+  const totalCount = count ?? items.length;
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+
+  return {
+    invoices: items,
+    totalCount,
+    totalPages,
+    page: currentPage,
+    pageSize,
+  };
 }

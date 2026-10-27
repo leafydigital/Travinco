@@ -1,110 +1,124 @@
 import type { Metadata } from 'next';
-import { createClient } from '@/lib/supabase/server';
-import { requireProfile, assertPageAccess } from '@/lib/supabase/auth-helpers';
-import { assertTourAccess, canEditMasters } from '@/lib/tour/access';
-import { EntityManager, type FieldDef, type ColumnDef } from '@/components/admin/entity-manager';
-import { saveTransportVehicle, deleteTransportVehicle } from '@/lib/tour/master-actions';
 import { Suspense } from 'react';
+import { requireProfile, assertPageAccess } from '@/lib/supabase/auth-helpers';
+import { assertTourAccess, canEditMasters, isAdminRole } from '@/lib/tour/access';
+import { getTransportVehiclesTableList } from './actions';
+import { TransportClient } from './transport-client';
 
 export const metadata: Metadata = { title: 'Transportation — Admin Portal' };
 
-const CAR_TYPES = [
-  'Sedan (Dzire / Etios)',
-  'Ertiga',
-  'Innova',
-  'Innova Crysta',
-  'Tempo Traveller (12 seater)',
-  'Tempo Traveller (17 seater)',
-  'Mini Bus (26 seater)',
-  'Coach (35+ seater)',
-];
+const PAGE_SIZE = 20;
 
-const fields: FieldDef[] = [
-  { name: 'vehicle_type', label: 'Car type', type: 'text', required: true, placeholder: 'e.g. Innova Crysta', hint: 'Use the same name across companies so quotes can match them.' },
-  { name: 'company_name', label: 'Company name', type: 'text', required: true },
-  { name: 'contact_person', label: 'Contact person', type: 'text' },
-  { name: 'contact_number', label: 'Contact number', type: 'tel', required: true },
-  { name: 'alt_contact_number', label: 'Alternate number', type: 'tel' },
-  { name: 'seats', label: 'Seats', type: 'number', step: '1' },
-  {
-    name: 'rate_basis', label: 'Amount is charged', type: 'select', required: true,
-    options: [{ value: 'per_day', label: 'Per day' }, { value: 'per_trip', label: 'Per trip (whole package)' }],
-  },
-  { name: 'amount', label: 'Amount given (₹)', type: 'number', required: true },
-  { name: 'free_km', label: 'Free kilometres', type: 'number', step: '1', required: true, hint: 'Per day when charged per day; total when charged per trip.' },
-  { name: 'extra_per_km', label: 'Extra amount per km (₹)', type: 'number', required: true },
-  { name: 'driver_bata_per_day', label: 'Driver bata per day (₹)', type: 'number', hint: 'Leave 0 if included in the amount.' },
-  { name: 'is_ac', label: 'Air-conditioned', type: 'checkbox' },
-  { name: 'notes', label: 'Notes', type: 'textarea', placeholder: 'Night halt, permits, parking, toll terms…' },
-  { name: 'is_active', label: 'Active (offered in quotations)', type: 'checkbox' },
-];
-
-const columns: ColumnDef[] = [
-  { key: 'vehicle_type', label: 'Car type', sub: 'seats_label' },
-  { key: 'company_name', label: 'Company', sub: 'contact_person' },
-  { key: 'contact_number', label: 'Contact', sub: 'alt_contact_number' },
-  { key: 'rate_label', label: 'Amount', align: 'right' },
-  { key: 'free_label', label: 'Free km', align: 'right' },
-  { key: 'extra_per_km', label: 'Extra / km', format: 'money', align: 'right' },
-  { key: 'driver_bata_per_day', label: 'Bata / day', format: 'money', align: 'right' },
-  { key: 'is_active', label: 'Active', format: 'bool', align: 'center' },
-];
-
-/* ── data (streamed) ──────────────────────────────────────── */
-async function TransportContent({ canEdit, canDelete }: { canEdit: boolean; canDelete: boolean }) {
-  const supabase = await createClient();
-  const [{ data }, { data: deletedSettingsData }] = await Promise.all([
-    supabase.from('transport_vehicles').select('*').order('vehicle_type').order('company_name'),
-    supabase.from('website_settings').select('key').like('key', 'deleted_transport_vehicle_%'),
-  ]);
-
-  const deletedKeys = new Set(
-    (deletedSettingsData || []).map((s: { key: string }) => s.key.replace('deleted_transport_vehicle_', ''))
+function TransportTableSkeleton() {
+  return (
+    <div className="card overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[900px] text-sm">
+          <thead>
+            <tr className="border-b border-ink-100 text-left text-xs uppercase tracking-wide text-ink-400">
+              <th className="px-5 py-3">Car type</th>
+              <th className="px-5 py-3">Company</th>
+              <th className="px-5 py-3">Contact</th>
+              <th className="px-5 py-3 text-right">Amount</th>
+              <th className="px-5 py-3 text-right">Free km</th>
+              <th className="px-5 py-3 text-right">Extra / km</th>
+              <th className="px-5 py-3 text-right">Bata / day</th>
+              <th className="px-5 py-3 text-center">Active</th>
+              <th className="px-5 py-3 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {Array.from({ length: 8 }).map((_, i) => (
+              <tr key={i} className="border-b border-ink-50 last:border-0">
+                <td className="px-5 py-3">
+                  <div className="h-4 w-28 animate-pulse rounded bg-ink-200/70 mb-1.5" />
+                  <div className="h-3 w-20 animate-pulse rounded bg-ink-100" />
+                </td>
+                <td className="px-5 py-3">
+                  <div className="h-4 w-28 animate-pulse rounded bg-ink-200/70 mb-1.5" />
+                  <div className="h-3 w-20 animate-pulse rounded bg-ink-100" />
+                </td>
+                <td className="px-5 py-3">
+                  <div className="h-4 w-24 animate-pulse rounded bg-ink-200/70 mb-1.5" />
+                  <div className="h-3 w-20 animate-pulse rounded bg-ink-100" />
+                </td>
+                <td className="px-5 py-3 text-right">
+                  <div className="h-4 w-16 animate-pulse rounded bg-ink-100 ml-auto" />
+                </td>
+                <td className="px-5 py-3 text-right">
+                  <div className="h-4 w-16 animate-pulse rounded bg-ink-100 ml-auto" />
+                </td>
+                <td className="px-5 py-3 text-right">
+                  <div className="h-4 w-12 animate-pulse rounded bg-ink-100 ml-auto" />
+                </td>
+                <td className="px-5 py-3 text-right">
+                  <div className="h-4 w-12 animate-pulse rounded bg-ink-100 ml-auto" />
+                </td>
+                <td className="px-5 py-3 text-center">
+                  <div className="h-5 w-12 animate-pulse rounded-full bg-ink-100 mx-auto" />
+                </td>
+                <td className="px-5 py-3 text-right">
+                  <div className="h-8 w-16 animate-pulse rounded bg-ink-100 ml-auto" />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
+}
 
-  const activeVehicles = (data ?? []).filter(
-    (v: any) =>
-      v &&
-      v.is_deleted !== true &&
-      v.is_deleted !== 'true' &&
-      v.is_deleted !== 1 &&
-      !deletedKeys.has(String(v.id))
-  );
+async function TransportContent({
+  canEdit,
+  canDelete,
+  searchParams,
+}: {
+  canEdit: boolean;
+  canDelete: boolean;
+  searchParams: { q?: string; vehicle_type?: string; page?: string };
+}) {
+  const page = Math.max(1, Number(searchParams.page ?? 1));
 
-  const rows = activeVehicles.map((v) => ({
-    ...v,
-    rate_label: `₹${Math.round(Number(v.amount)).toLocaleString('en-IN')} ${v.rate_basis === 'per_day' ? '/ day' : '/ trip'}`,
-    free_label: `${v.free_km} km ${v.rate_basis === 'per_day' ? '/ day' : '/ trip'}`,
-    seats_label: [v.seats ? `${v.seats} seats` : null, v.is_ac ? 'A/C' : 'Non A/C'].filter(Boolean).join(' · '),
-  }));
-  const types = Array.from(new Set([...CAR_TYPES, ...rows.map((r) => r.vehicle_type)]));
+  const {
+    vehicles,
+    totalCount,
+    totalPages,
+    carTypes,
+  } = await getTransportVehiclesTableList({
+    page,
+    pageSize: PAGE_SIZE,
+    q: searchParams.q,
+    vehicleType: searchParams.vehicle_type,
+  });
 
   return (
-    <EntityManager
-      rows={rows}
-      fields={fields}
-      columns={columns}
+    <TransportClient
+      vehicles={vehicles}
+      totalCount={totalCount}
+      totalPages={totalPages}
+      page={page}
+      pageSize={PAGE_SIZE}
+      carTypes={carTypes}
       canEdit={canEdit}
       canDelete={canDelete}
-      saveAction={saveTransportVehicle}
-      deleteAction={deleteTransportVehicle}
-      searchKeys={['vehicle_type', 'company_name', 'contact_person', 'contact_number']}
-      filters={[{ key: 'vehicle_type', label: 'Car types', options: types.map((t) => ({ value: t, label: t })) }]}
-      newLabel="Add vehicle"
-      entityName="vehicle"
-      emptyText="No vehicles yet. Add your transport companies and their car types."
-      defaults={{ rate_basis: 'per_day', is_ac: true, is_active: true, free_km: 250, extra_per_km: 0, driver_bata_per_day: 0 }}
+      searchParams={searchParams}
     />
   );
 }
 
-/* ── page shell (instant) ─────────────────────────────────── */
-export default async function TransportPage() {
+export default async function TransportPage({
+  searchParams,
+}: {
+  searchParams: { q?: string; vehicle_type?: string; page?: string };
+}) {
   const profile = await requireProfile();
   await assertPageAccess(profile, 'transport');
   assertTourAccess(profile, 'masters');
   const editable = canEditMasters(profile);
-  const isAdmin = profile.role === 'admin' || profile.role === 'super_admin';
+  const isAdmin = isAdminRole(profile);
+
+  const suspKey = `${searchParams.q ?? ''}-${searchParams.vehicle_type ?? ''}-${searchParams.page ?? '1'}`;
 
   return (
     <div className="space-y-5">
@@ -114,16 +128,12 @@ export default async function TransportPage() {
           Vehicles and transport companies. Quotations charge the amount, then extra kilometres above the free limit at the per-km rate.
         </p>
       </div>
-      <Suspense fallback={
-        <div className="card p-6">
-          <div className="space-y-3">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="h-10 animate-pulse rounded bg-ink-100" />
-            ))}
-          </div>
-        </div>
-      }>
-        <TransportContent canEdit={editable} canDelete={isAdmin} />
+      <Suspense key={suspKey} fallback={<TransportTableSkeleton />}>
+        <TransportContent
+          canEdit={editable}
+          canDelete={isAdmin}
+          searchParams={searchParams}
+        />
       </Suspense>
     </div>
   );

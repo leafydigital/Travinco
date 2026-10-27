@@ -41,7 +41,7 @@ export default async function InvoicePage({ params }: { params: { id: string } }
   return (
     <div className="space-y-5 pb-16 print:space-y-0 print:pb-0">
       <div className="space-y-3 print:hidden">
-        <Link href="/admin/invoices" className="inline-flex items-center gap-1 text-sm text-ink-500 hover:text-brand-700">
+        <Link href="/travinco_dashboard/invoices" prefetch={true} className="inline-flex items-center gap-1 text-sm text-ink-500 hover:text-brand-700">
           <ArrowLeft className="h-4 w-4" /> Invoices
         </Link>
         <div className="flex flex-wrap items-start justify-between gap-4">

@@ -129,6 +129,7 @@ export async function saveQuotation(
   }
 
   revalidatePath('/travinco_dashboard/quotations');
+  revalidatePath(`/travinco_dashboard/quotations/${res.data.id}`);
   revalidatePath(`/admin/quotations/${res.data.id}`);
   return { id: res.data.id };
 }
@@ -150,6 +151,7 @@ export async function setQuotationStatus(id: string, status: Status) {
     await s.supabase.from('enquiries').update({ status: map[status] }).eq('id', q.enquiry_id);
   }
   revalidatePath('/travinco_dashboard/quotations');
+  revalidatePath(`/travinco_dashboard/quotations/${id}`);
   revalidatePath(`/admin/quotations/${id}`);
   return {};
 }
@@ -210,6 +212,7 @@ export async function deleteQuotation(id: string): Promise<{ error?: string }> {
 
   revalidatePath('/travinco_dashboard/quotations');
   revalidatePath('/travinco_dashboard');
+  revalidatePath(`/travinco_dashboard/quotations/${id}`);
   revalidatePath(`/admin/quotations/${id}`);
   return {};
 }
@@ -240,4 +243,151 @@ export async function saveAsTemplate(name: string, raw: Partial<QuoteInputs>) {
   if (error) return { error: error.code === '23505' ? 'A template with this name already exists.' : 'Could not save the template.' };
   revalidatePath('/travinco_dashboard/quotations/new');
   return {};
+}
+
+export interface QuotationTableItem {
+  id: string;
+  quote_number: string;
+  status: string;
+  guest_name: string;
+  guest_phone: string | null;
+  title: string;
+  start_date: string;
+  nights: number;
+  adults: number;
+  total_amount: number;
+  total_amount2: number | null;
+  valid_until: string | null;
+  created_at: string;
+  created_by_name?: string | null;
+}
+
+export interface QuotationsTableQueryResult {
+  quotations: QuotationTableItem[];
+  totalCount: number;
+  totalPages: number;
+  page: number;
+  pageSize: number;
+}
+
+/**
+ * Fast, lean query fetching strictly the 6 display columns for the quotations table:
+ * Quotation (quote_number, title), Guest (guest_name, guest_phone), Trip (start_date, nights, adults),
+ * Total (total_amount, total_amount2), Status (status, valid_until), Created (created_at, profile name).
+ * Completely excludes heavy 'inputs', 'snapshot', 'terms', 'notes', and eliminates loadTourMasters().
+ */
+export async function getQuotationsTableList({
+  page = 1,
+  pageSize = 20,
+  q = '',
+  status = '',
+}: {
+  page?: number;
+  pageSize?: number;
+  q?: string;
+  status?: string;
+} = {}): Promise<QuotationsTableQueryResult> {
+  const profile = await requireProfile();
+  if (!canAccess(profile, 'quotations')) {
+    return { quotations: [], totalCount: 0, totalPages: 1, page: 1, pageSize };
+  }
+
+  const supabase = await createClient();
+  const currentPage = Math.max(1, page);
+  const from = (currentPage - 1) * pageSize;
+  const to = from + pageSize - 1;
+
+  let query = supabase
+    .from('quotations')
+    .select(
+      'id, quote_number, status, guest_name, guest_phone, title, start_date, nights, adults, total_amount, total_amount2, valid_until, created_at, is_deleted, profiles:created_by(full_name)',
+      { count: 'exact' }
+    )
+    .order('created_at', { ascending: false });
+
+  const term = q.replace(/[,()%*]/g, ' ').trim();
+  if (term) {
+    query = query.or(
+      `quote_number.ilike.%${term}%,guest_name.ilike.%${term}%,guest_phone.ilike.%${term}%`
+    );
+  }
+
+  const validStatuses = ['draft', 'sent', 'accepted', 'rejected', 'expired', 'invoiced'];
+  if (status && validStatuses.includes(status)) {
+    query = query.eq('status', status);
+  }
+
+  const [{ data: rows, count, error: queryError }, { data: deletedSettingsData }] = await Promise.all([
+    query.range(from, to),
+    supabase.from('website_settings').select('key').like('key', 'deleted_quotation_%'),
+  ]);
+
+  let quotationRows: any[] | null = rows;
+  if (queryError && queryError.message?.includes('is_deleted')) {
+    let fallbackQuery = supabase
+      .from('quotations')
+      .select(
+        'id, quote_number, status, guest_name, guest_phone, title, start_date, nights, adults, total_amount, total_amount2, valid_until, created_at, profiles:created_by(full_name)',
+        { count: 'exact' }
+      )
+      .order('created_at', { ascending: false });
+
+    if (term) {
+      fallbackQuery = fallbackQuery.or(
+        `quote_number.ilike.%${term}%,guest_name.ilike.%${term}%,guest_phone.ilike.%${term}%`
+      );
+    }
+    if (status && validStatuses.includes(status)) {
+      fallbackQuery = fallbackQuery.eq('status', status);
+    }
+    const fallbackRes = await fallbackQuery.range(from, to);
+    quotationRows = fallbackRes.data;
+  }
+
+  const deletedKeys = new Set(
+    (deletedSettingsData || []).map((s: { key: string }) => s.key.replace('deleted_quotation_', ''))
+  );
+
+  const activeRows = (quotationRows ?? []).filter(
+    (r: any) =>
+      r &&
+      r.is_deleted !== true &&
+      r.is_deleted !== 'true' &&
+      r.is_deleted !== 1 &&
+      !deletedKeys.has(r.id)
+  );
+
+  const items: QuotationTableItem[] = activeRows.map((r: any) => {
+    const by = (Array.isArray(r.profiles) ? r.profiles[0] : r.profiles) as
+      | { full_name: string }
+      | null
+      | undefined;
+    return {
+      id: r.id,
+      quote_number: r.quote_number,
+      status: r.status,
+      guest_name: r.guest_name,
+      guest_phone: r.guest_phone || null,
+      title: r.title,
+      start_date: r.start_date,
+      nights: Number(r.nights) || 0,
+      adults: Number(r.adults) || 1,
+      total_amount: Number(r.total_amount) || 0,
+      total_amount2: r.total_amount2 != null ? Number(r.total_amount2) : null,
+      valid_until: r.valid_until || null,
+      created_at: r.created_at,
+      created_by_name: by?.full_name || null,
+    };
+  });
+
+  const totalCount = count ?? items.length;
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+
+  return {
+    quotations: items,
+    totalCount,
+    totalPages,
+    page: currentPage,
+    pageSize,
+  };
 }

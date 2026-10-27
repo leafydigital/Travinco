@@ -2,17 +2,16 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Suspense } from 'react';
 import { Plus, Search, Settings } from 'lucide-react';
-import { createClient } from '@/lib/supabase/server';
 import { requireProfile, assertPageAccess } from '@/lib/supabase/auth-helpers';
 import { assertTourAccess, isAdminRole } from '@/lib/tour/access';
-import { loadTourMasters } from '@/lib/tour/data';
 import { formatDate } from '@/lib/utils/format';
 import { QuoteStatusBadge } from '@/components/tour/status-badges';
 import { QuoteRowActions } from './quote-row-actions';
+import { getQuotationsTableList } from './actions';
 
 export const metadata: Metadata = { title: 'Quotations — Admin Portal' };
 
-const PAGE_SIZE = 25;
+const PAGE_SIZE = 20;
 const STATUSES = ['draft', 'sent', 'accepted', 'rejected', 'expired', 'invoiced'];
 
 function QuotationsTableSkeleton() {
@@ -74,68 +73,19 @@ async function QuotationsTableContent({
   searchParams: { q?: string; status?: string; page?: string };
   isAdmin: boolean;
 }) {
-  const supabase = await createClient();
   const page = Math.max(1, Number(searchParams.page ?? 1));
 
-  let query = supabase
-    .from('quotations')
-    .select(
-      'id, quote_number, status, guest_name, guest_phone, title, start_date, nights, adults, total_amount, total_amount2, valid_until, created_at, is_deleted, profiles:created_by(full_name)',
-      { count: 'exact' }
-    )
-    .order('created_at', { ascending: false })
-    .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
+  const {
+    quotations: visibleRows,
+    totalCount,
+    totalPages,
+  } = await getQuotationsTableList({
+    page,
+    pageSize: PAGE_SIZE,
+    q: searchParams.q,
+    status: searchParams.status,
+  });
 
-  const term = (searchParams.q ?? '').replace(/[,()%*]/g, ' ').trim();
-  if (term) {
-    query = query.or(
-      `quote_number.ilike.%${term}%,guest_name.ilike.%${term}%,guest_phone.ilike.%${term}%`
-    );
-  }
-  if (searchParams.status && STATUSES.includes(searchParams.status)) {
-    query = query.eq('status', searchParams.status);
-  }
-
-  const [{ data: rows, count, error: queryError }, { data: deletedSettingsData }] = await Promise.all([
-    query,
-    supabase.from('website_settings').select('key').like('key', 'deleted_quotation_%'),
-    loadTourMasters().catch(() => null), // Pre-warm tour masters into memory
-  ]);
-
-  let quotationRows: any[] | null = rows;
-  if (queryError && queryError.message?.includes('is_deleted')) {
-    let fallbackQuery = supabase
-      .from('quotations')
-      .select(
-        'id, quote_number, status, guest_name, guest_phone, title, start_date, nights, adults, total_amount, total_amount2, valid_until, created_at, profiles:created_by(full_name)',
-        { count: 'exact' }
-      )
-      .order('created_at', { ascending: false })
-      .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
-    if (term) {
-      fallbackQuery = fallbackQuery.or(
-        `quote_number.ilike.%${term}%,guest_name.ilike.%${term}%,guest_phone.ilike.%${term}%`
-      );
-    }
-    if (searchParams.status && STATUSES.includes(searchParams.status)) {
-      fallbackQuery = fallbackQuery.eq('status', searchParams.status);
-    }
-    const fallbackRes = await fallbackQuery;
-    quotationRows = fallbackRes.data;
-  }
-
-  const deletedKeys = new Set(
-    (deletedSettingsData || []).map((s: { key: string }) => s.key.replace('deleted_quotation_', ''))
-  );
-  const visibleRows = (quotationRows ?? []).filter(
-    (r: any) =>
-      r &&
-      r.is_deleted !== true &&
-      r.is_deleted !== 'true' &&
-      r.is_deleted !== 1 &&
-      !deletedKeys.has(r.id)
-  );
-  const totalPages = Math.max(1, Math.ceil((count ?? 0) / PAGE_SIZE));
   const today = new Date().toISOString().slice(0, 10);
 
   const href = (o: Record<string, string | undefined>) => {
@@ -165,7 +115,7 @@ async function QuotationsTableContent({
                 <td colSpan={7} className="px-5 py-10 text-center text-ink-400">
                   No quotations yet.{' '}
                   <Link
-                    href="/admin/quotations/new"
+                    href="/travinco_dashboard/quotations/new"
                     prefetch={true}
                     className="text-brand-700 hover:underline"
                   >
@@ -176,10 +126,6 @@ async function QuotationsTableContent({
               </tr>
             )}
             {visibleRows.map((r) => {
-              const by = (Array.isArray(r.profiles) ? r.profiles[0] : r.profiles) as
-                | { full_name: string }
-                | null
-                | undefined;
               const expired = r.status === 'sent' && r.valid_until && r.valid_until < today;
               const isLocked = r.status === 'invoiced';
               return (
@@ -189,7 +135,8 @@ async function QuotationsTableContent({
                 >
                   <td className="px-5 py-3">
                     <Link
-                      href={`/admin/quotations/${r.id}`}
+                      href={`/travinco_dashboard/quotations/${r.id}`}
+                      prefetch={true}
                       className="font-medium text-ink-800 hover:text-brand-700"
                     >
                       {r.quote_number}
@@ -222,7 +169,7 @@ async function QuotationsTableContent({
                   </td>
                   <td className="px-5 py-3 text-ink-500">
                     {formatDate(r.created_at)}
-                    {by?.full_name && <p className="text-xs text-ink-400">{by.full_name}</p>}
+                    {r.created_by_name && <p className="text-xs text-ink-400">{r.created_by_name}</p>}
                   </td>
                   <td className="px-5 py-3 text-right">
                     <QuoteRowActions
@@ -241,7 +188,7 @@ async function QuotationsTableContent({
       {totalPages > 1 && (
         <div className="flex items-center justify-between border-t border-ink-100 px-5 py-3 text-sm text-ink-500">
           <span>
-            Page {page} of {totalPages} ({count ?? 0} total)
+            Page {page} of {totalPages} ({totalCount} total)
           </span>
           <div className="flex gap-2">
             {page > 1 && (
@@ -305,7 +252,7 @@ export default async function QuotationsPage({
             </Link>
           )}
           <Link
-            href="/admin/quotations/new"
+            href="/travinco_dashboard/quotations/new"
             prefetch={true}
             className="btn-primary"
           >

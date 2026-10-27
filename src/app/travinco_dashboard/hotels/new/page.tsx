@@ -20,7 +20,7 @@ export default async function NewHotelPage() {
   return (
     <div className="space-y-5 pb-16">
       <div>
-        <Link href="/admin/hotels" className="inline-flex items-center gap-1 text-sm text-ink-500 hover:text-brand-700">
+        <Link href="/travinco_dashboard/hotels" prefetch={true} className="inline-flex items-center gap-1 text-sm text-ink-500 hover:text-brand-700">
           <ArrowLeft className="h-4 w-4" /> Hotels
         </Link>
         <h1 className="mt-1 text-xl font-semibold text-ink-900">New hotel</h1>

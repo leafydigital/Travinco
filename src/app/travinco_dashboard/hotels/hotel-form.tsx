@@ -66,7 +66,7 @@ export function HotelForm({
       const res = await saveHotel(hotel ? Number(hotel.id) : null, data);
       if (res.error) return void toast.error(res.error);
       toast.success('Hotel saved');
-      if (!hotel && res.id) router.push(`/admin/hotels/${res.id}`);
+      if (!hotel && res.id) router.push(`/travinco_dashboard/hotels/${res.id}`);
       else router.refresh();
     });
   };

@@ -2,17 +2,17 @@ import type { Metadata } from 'next';
 import { Suspense } from 'react';
 import Link from 'next/link';
 import { Search } from 'lucide-react';
-import { createClient } from '@/lib/supabase/server';
 import { requireProfile, assertPageAccess } from '@/lib/supabase/auth-helpers';
 import { assertTourAccess, isAdminRole } from '@/lib/tour/access';
 import { formatDate } from '@/lib/utils/format';
 import { InvoiceStatusBadge } from '@/components/tour/status-badges';
 import { InvoiceRowActions } from './invoice-row-actions';
+import { getInvoicesTableList } from './actions';
 
 export const metadata: Metadata = { title: 'Invoices — Admin Portal' };
 
-const PAGE_SIZE = 25;
-const STATUSES = ['issued', 'partially_paid', 'paid', 'cancelled'];
+const PAGE_SIZE = 20;
+const STATUSES = ['Issued', 'Partially Paid', 'Paid', 'Cancelled'];
 const rs = (n: unknown) => `₹${Math.round(Number(n)).toLocaleString('en-IN')}`;
 
 function InvoicesTableSkeleton() {
@@ -57,75 +57,24 @@ function InvoicesTableSkeleton() {
 
 async function InvoicesTableContent({
   searchParams,
+  isAdmin,
 }: {
   searchParams: { q?: string; status?: string; page?: string };
+  isAdmin: boolean;
 }) {
-  const profile = await requireProfile();
-  await assertPageAccess(profile, 'invoices');
-  assertTourAccess(profile, 'invoices');
-  const isAdmin = isAdminRole(profile);
-  const supabase = await createClient();
   const page = Math.max(1, Number(searchParams.page ?? 1));
 
-  let query = supabase
-    .from('invoices')
-    .select(
-      'id, invoice_number, status, bill_to_name, bill_to_phone, invoice_date, due_date, travel_start, total_amount, amount_paid, balance_amount, is_deleted, quotations(quote_number)',
-      { count: 'exact' }
-    )
-    .order('invoice_date', { ascending: false })
-    .order('created_at', { ascending: false })
-    .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
+  const {
+    invoices: visibleRows,
+    totalCount,
+    totalPages,
+  } = await getInvoicesTableList({
+    page,
+    pageSize: PAGE_SIZE,
+    q: searchParams.q,
+    status: searchParams.status,
+  });
 
-  const term = (searchParams.q ?? '').replace(/[,()%*]/g, ' ').trim();
-  if (term) {
-    query = query.or(`invoice_number.ilike.%${term}%,bill_to_name.ilike.%${term}%,bill_to_phone.ilike.%${term}%`);
-  }
-  if (searchParams.status && STATUSES.includes(searchParams.status)) {
-    query = query.eq('status', searchParams.status);
-  }
-
-  const [{ data: rows, count, error: queryError }, { data: deletedSettingsData }] = await Promise.all([
-    query,
-    supabase.from('website_settings').select('key').like('key', 'deleted_invoice_%'),
-  ]);
-
-  let invoiceRows: any[] | null = rows;
-  if (queryError && queryError.message?.includes('is_deleted')) {
-    let fallbackQuery = supabase
-      .from('invoices')
-      .select(
-        'id, invoice_number, status, bill_to_name, bill_to_phone, invoice_date, due_date, travel_start, total_amount, amount_paid, balance_amount, quotations(quote_number)',
-        { count: 'exact' }
-      )
-      .order('invoice_date', { ascending: false })
-      .order('created_at', { ascending: false })
-      .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
-
-    if (term) {
-      fallbackQuery = fallbackQuery.or(
-        `invoice_number.ilike.%${term}%,bill_to_name.ilike.%${term}%,bill_to_phone.ilike.%${term}%`
-      );
-    }
-    if (searchParams.status && STATUSES.includes(searchParams.status)) {
-      fallbackQuery = fallbackQuery.eq('status', searchParams.status);
-    }
-    const fallbackRes = await fallbackQuery;
-    invoiceRows = fallbackRes.data;
-  }
-
-  const deletedKeys = new Set(
-    (deletedSettingsData || []).map((s: { key: string }) => s.key.replace('deleted_invoice_', ''))
-  );
-  const visibleRows = (invoiceRows ?? []).filter(
-    (r: any) =>
-      r &&
-      r.is_deleted !== true &&
-      r.is_deleted !== 'true' &&
-      r.is_deleted !== 1 &&
-      !deletedKeys.has(r.id)
-  );
-  const totalPages = Math.max(1, Math.ceil((count ?? 0) / PAGE_SIZE));
   const today = new Date().toISOString().slice(0, 10);
 
   const href = (o: Record<string, string | undefined>) => {
@@ -160,16 +109,19 @@ async function InvoicesTableContent({
               </tr>
             )}
             {visibleRows.map((r) => {
-              const q = (Array.isArray(r.quotations) ? r.quotations[0] : r.quotations) as { quote_number: string } | null;
               const overdue = r.status === 'issued' && r.due_date && r.due_date < today;
               return (
                 <tr key={r.id} className="border-b border-ink-50 last:border-0 hover:bg-ink-50/50">
                   <td className="px-5 py-3">
-                    <Link href={`/admin/invoices/${r.id}`} className="font-medium text-ink-800 hover:text-brand-700">
+                    <Link
+                      href={`/travinco_dashboard/invoices/${r.id}`}
+                      prefetch={true}
+                      className="font-medium text-ink-800 hover:text-brand-700"
+                    >
                       {r.invoice_number}
                     </Link>
                   </td>
-                  <td className="px-5 py-3 text-ink-500">{q?.quote_number || '—'}</td>
+                  <td className="px-5 py-3 text-ink-500">{r.quote_number || '—'}</td>
                   <td className="px-5 py-3">
                     <p className="text-ink-700">{r.bill_to_name}</p>
                     {r.bill_to_phone && <p className="text-xs text-ink-400">{r.bill_to_phone}</p>}
@@ -200,7 +152,7 @@ async function InvoicesTableContent({
 
       {totalPages > 1 && (
         <div className="flex items-center justify-between border-t border-ink-100 px-5 py-3 text-sm text-ink-500">
-          <span>Page {page} of {totalPages} ({count ?? 0} total)</span>
+          <span>Page {page} of {totalPages} ({totalCount} total)</span>
           <div className="flex gap-2">
             {page > 1 && (
               <Link href={href({ page: String(page - 1) })} className="btn-outline px-3 py-1.5">
@@ -278,7 +230,7 @@ export default async function InvoicesPage({
       {/* 4. Table Card (Header loads immediately, rows show skeleton only while fetching) */}
       <div className="card overflow-hidden">
         <Suspense key={suspKey} fallback={<InvoicesTableSkeleton />}>
-          <InvoicesTableContent searchParams={searchParams} />
+          <InvoicesTableContent searchParams={searchParams} isAdmin={isAdminRole(profile)} />
         </Suspense>
       </div>
     </div>

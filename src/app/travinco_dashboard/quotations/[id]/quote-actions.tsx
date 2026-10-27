@@ -66,7 +66,7 @@ export function QuoteActions({
         </button>
       )}
       {!locked && (
-        <Link href={`/admin/quotations/${id}/edit`} className="btn-outline">
+        <Link href={`/travinco_dashboard/quotations/${id}/edit`} prefetch={true} className="btn-outline">
           <Pencil className="h-4 w-4" /> Edit
         </Link>
       )}
@@ -107,7 +107,7 @@ export function QuoteActions({
           <X className="h-4 w-4" /> Rejected
         </button>
       )}
-      <button type="button" className="btn-ghost" disabled={pending} onClick={() => run(() => duplicateQuotation(id), 'Copy created', (r) => r.id && router.push(`/admin/quotations/${r.id}/edit`))}>
+      <button type="button" className="btn-ghost" disabled={pending} onClick={() => run(() => duplicateQuotation(id), 'Copy created', (r) => r.id && router.push(`/travinco_dashboard/quotations/${r.id}/edit`))}>
         <CopyPlus className="h-4 w-4" /> Duplicate
       </button>
       {isAdmin && !locked && (
