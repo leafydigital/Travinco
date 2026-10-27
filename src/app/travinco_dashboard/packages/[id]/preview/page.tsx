@@ -3,12 +3,12 @@ import { requireProfile } from '@/lib/supabase/auth-helpers';
 import { notFound } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
-import { Clock, MapPin, Users, Check, X, Pencil, ArrowLeft } from 'lucide-react';
-import { formatCurrency, getVideoEmbedUrl } from '@/lib/utils/format';
+import { MapPin, Pencil, ArrowLeft } from 'lucide-react';
+import { getVideoEmbedUrl } from '@/lib/utils/format';
 import { getTermsSettings } from '@/lib/settings';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { PublishFromPreviewButton } from '../publish-from-preview-button';
-import { ExpandableText } from '@/components/public/expandable-text';
+import { PackageDetailView } from '@/components/public/package-detail-view';
 import type { Tables } from '@/types/database';
 
 type PackageWithDestination = Tables<'travel_packages'> & {
@@ -60,9 +60,6 @@ export default async function PackagePreviewPage({ params }: { params: { id: str
     ...videos.map((v) => getVideoEmbedUrl(v.video_url)),
   ].filter((url): url is string => Boolean(url));
 
-  const coverImages = images.filter((img) => img.is_cover);
-  const otherImages = images.filter((img) => !img.is_cover);
-
   return (
     <div>
       {/* Admin-only preview banner — never shown to a real customer. Makes
@@ -87,242 +84,50 @@ export default async function PackagePreviewPage({ params }: { params: { id: str
         </div>
       </div>
 
-      {/* The package's real, permanent public URL — shown here so the
-          slug is visible and confirmable before publishing, without
-          routing the preview page itself by slug (which would break if
-          the slug is edited later; the ID-based route never does). */}
+      {/* The package's real, permanent public URL */}
       <div className="border-b border-ink-100 bg-ink-50 px-4 py-2 text-center text-xs text-ink-500">
         Public URL once published:{' '}
         <span className="font-mono font-medium text-ink-700">/packages/{pkg.slug}</span>
       </div>
 
-      <div className="relative h-[45vh] min-h-[320px] w-full bg-ink-200">
+      {/* Hero section */}
+      <div className="relative h-[45vh] min-h-[340px] max-h-[520px] w-full overflow-hidden bg-ink-900">
         {pkg.cover_image_url && (
           <Image src={pkg.cover_image_url} alt={pkg.title} fill className="object-cover" priority />
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-navy-900/85 via-navy-900/20 to-transparent" />
-        <div className="container-page absolute inset-x-0 bottom-6 text-white">
+        <div className="absolute inset-0 bg-gradient-to-t from-navy-950/90 via-navy-950/45 to-navy-950/20" />
+        <div className="container-page absolute inset-x-0 bottom-8 text-white">
           {destination && (
-            <p className="flex items-center gap-1.5 text-sm font-medium">
+            <p className="flex items-center gap-1.5 text-sm font-medium text-brand-200 mb-2">
               <MapPin className="h-4 w-4" /> {destination.name}
               {destination.country ? `, ${destination.country}` : ''}
             </p>
           )}
-          <h1 className="font-display text-3xl font-semibold sm:text-4xl">{pkg.title}</h1>
-        </div>
-      </div>
-
-      <div className="container-page grid gap-10 py-10 lg:grid-cols-3">
-        <div className="space-y-10 lg:col-span-2">
-          <div className="flex flex-wrap gap-4 text-sm text-ink-600">
-            <span className="flex items-center gap-1.5">
-              <Clock className="h-4 w-4" /> {pkg.duration_days} days / {pkg.duration_nights} nights
-            </span>
-            {pkg.total_seats && (
-              <span className="flex items-center gap-1.5">
-                <Users className="h-4 w-4" /> Limited to {pkg.total_seats} travelers
-              </span>
-            )}
-          </div>
-
-          {pkg.full_description && (
-            <section>
-              <h2 className="font-display text-xl font-semibold text-ink-900">Overview</h2>
-              <div className="mt-3">
-                <ExpandableText text={pkg.full_description} collapsedLines={4} />
-              </div>
-            </section>
-          )}
-
-          {pkg.highlights.length > 0 && (
-            <section>
-              <h2 className="font-display text-xl font-semibold text-ink-900">Highlights</h2>
-              <ul className="mt-3 grid gap-2 sm:grid-cols-2">
-                {pkg.highlights.map((h: string, i: number) => (
-                  <li key={i} className="flex items-start gap-2 text-sm text-ink-600">
-                    <Check className="mt-0.5 h-4 w-4 shrink-0 text-brand-600" /> {h}
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-
-          {itinerary.length > 0 && (
-            <section>
-              <h2 className="font-display text-xl font-semibold text-ink-900">Day-by-day itinerary</h2>
-              <div className="mt-4 space-y-4">
-                {itinerary.map((day) => (
-                  <div key={day.id} className="rounded-xl2 border border-ink-100 p-4">
-                    <p className="text-sm font-semibold text-brand-700">Day {day.day_number}</p>
-                    <p className="mt-0.5 font-medium text-ink-800">{day.title}</p>
-                    {day.description && <p className="mt-1.5 text-sm text-ink-500">{day.description}</p>}
-                    <div className="mt-2 flex flex-wrap gap-3 text-xs text-ink-400">
-                      {day.hotel && <span>Stay: {day.hotel}</span>}
-                      {day.meals && <span>Meals: {day.meals}</span>}
-                      {day.transport && <span>Transport: {day.transport}</span>}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {(inclusions.length > 0 || exclusions.length > 0) && (
-            <section className="grid gap-6 sm:grid-cols-2">
-              {inclusions.length > 0 && (
-                <div>
-                  <h2 className="font-display text-lg font-semibold text-ink-900">Inclusions</h2>
-                  <ul className="mt-3 space-y-1.5">
-                    {inclusions.map((i) => (
-                      <li key={i.id} className="flex items-start gap-2 text-sm text-ink-600">
-                        <Check className="mt-0.5 h-4 w-4 shrink-0 text-brand-600" /> {i.item}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              {exclusions.length > 0 && (
-                <div>
-                  <h2 className="font-display text-lg font-semibold text-ink-900">Exclusions</h2>
-                  <ul className="mt-3 space-y-1.5">
-                    {exclusions.map((e) => (
-                      <li key={e.id} className="flex items-start gap-2 text-sm text-ink-600">
-                        <X className="mt-0.5 h-4 w-4 shrink-0 text-coral-500" /> {e.item}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </section>
-          )}
-
-          {images.length > 0 && (
-            <section>
-              <h2 className="font-display text-xl font-semibold text-ink-900">Gallery</h2>
-              {/* Cover photo(s) called out separately in the preview so it's
-                  obvious which image customers will see first — this
-                  distinction doesn't exist on the real public page, it's
-                  preview-only context for the admin. */}
-              {coverImages.length > 0 && (
-                <div className="mt-3">
-                  <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-brand-600">
-                    Cover photo
-                  </p>
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                    {coverImages.map((img) => (
-                      <div key={img.id} className="relative aspect-square overflow-hidden rounded-lg ring-2 ring-brand-500">
-                        <Image src={img.image_url} alt={img.alt_text ?? pkg.title} fill className="object-cover" />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {otherImages.length > 0 && (
-                <div className="mt-4">
-                  {coverImages.length > 0 && (
-                    <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-ink-400">
-                      Other photos
-                    </p>
-                  )}
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                    {otherImages.map((img) => (
-                      <div key={img.id} className="relative aspect-square overflow-hidden rounded-lg">
-                        <Image src={img.image_url} alt={img.alt_text ?? pkg.title} fill className="object-cover" />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </section>
-          )}
-
-          {videoEmbedUrls.length > 0 && (
-            <section>
-              <h2 className="font-display text-xl font-semibold text-ink-900">
-                {videoEmbedUrls.length > 1 ? 'Videos' : 'Video'}
-              </h2>
-              <div className="mt-3 grid gap-4 sm:grid-cols-2">
-                {videoEmbedUrls.map((embedUrl, i) => (
-                  <div key={embedUrl} className="aspect-video overflow-hidden rounded-xl2 bg-ink-100">
-                    <iframe
-                      src={embedUrl}
-                      title={`${pkg.title} — video ${i + 1}`}
-                      className="h-full w-full"
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                      allowFullScreen
-                    />
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {faqs.length > 0 && (
-            <section>
-              <h2 className="font-display text-lg font-semibold text-ink-900">
-                Frequently asked questions
-              </h2>
-              <div className="mt-3 space-y-3">
-                {faqs.map((faq) => (
-                  <div key={faq.id} className="rounded-xl2 border border-ink-100 p-4">
-                    <p className="font-medium text-ink-900">{faq.question}</p>
-                    <p className="mt-1 text-sm text-ink-500">{faq.answer}</p>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {termsSettings.terms_and_conditions && (
-            <section>
-              <h2 className="font-display text-lg font-semibold text-ink-900">Terms & conditions</h2>
-              <div className="mt-2 text-sm text-ink-500">
-                <ExpandableText
-                  text={termsSettings.terms_and_conditions}
-                  collapsedLines={4}
-                  className="text-sm text-ink-500"
-                />
-              </div>
-            </section>
-          )}
-
-          {images.length === 0 && (
-            <p className="rounded-lg border border-dashed border-sand-300 bg-sand-50 px-4 py-3 text-sm text-sand-800">
-              No photos added yet — customers will see a blank cover area until you add at least
-              one image.
+          <h1 className="font-display text-3xl font-bold sm:text-4xl lg:text-5xl text-white drop-shadow-sm">
+            {pkg.title}
+          </h1>
+          {pkg.short_description && (
+            <p className="mt-2.5 line-clamp-2 max-w-2xl text-sm sm:text-base text-white/90 font-normal">
+              {pkg.short_description}
             </p>
           )}
         </div>
-
-        <aside className="lg:col-span-1">
-          <div className="card sticky top-24 p-6 shadow-sm border border-ink-100 bg-white rounded-2xl">
-            <span className="text-xs font-semibold uppercase tracking-wider text-ink-400">
-              Package Price
-            </span>
-            <div className="mt-2">
-              {pkg.discount_price ? (
-                <div>
-                  <span className="text-sm text-ink-400 line-through">
-                    {formatCurrency(pkg.base_price, pkg.currency)}
-                  </span>
-                  <p className="font-display text-3xl font-bold text-brand-700">
-                    {formatCurrency(pkg.discount_price, pkg.currency)}{' '}
-                    <span className="text-sm font-normal text-ink-500">/ person</span>
-                  </p>
-                </div>
-              ) : (
-                <p className="font-display text-3xl font-bold text-brand-700">
-                  {formatCurrency(pkg.base_price, pkg.currency)}{' '}
-                  <span className="text-sm font-normal text-ink-500">/ person</span>
-                </p>
-              )}
-            </div>
-            <p className="mt-3 text-xs text-ink-400">
-              * Starting price per person • Taxes &amp; fees included
-            </p>
-          </div>
-        </aside>
       </div>
+
+      {/* Interactive Tabs, Accordions, Modal, and Sticky Price Card */}
+      <PackageDetailView
+        pkg={pkg}
+        destination={destination}
+        images={images}
+        itinerary={itinerary}
+        inclusions={inclusions}
+        exclusions={exclusions}
+        videoEmbedUrls={videoEmbedUrls}
+        faqs={faqs}
+        termsAndConditions={termsSettings.terms_and_conditions}
+        isDashboardPreview={true}
+      />
     </div>
   );
 }
+

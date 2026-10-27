@@ -2,12 +2,10 @@ import { createClient } from '@/lib/supabase/server';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import Image from 'next/image';
-import Link from 'next/link';
-import { Clock, MapPin, Users, Check, X, ArrowRight } from 'lucide-react';
-import { formatCurrency, getVideoEmbedUrl } from '@/lib/utils/format';
-import { ImageLightbox } from '@/components/public/image-lightbox';
+import { MapPin } from 'lucide-react';
+import { getVideoEmbedUrl } from '@/lib/utils/format';
 import { getTermsSettings } from '@/lib/settings';
-import { ExpandableText } from '@/components/public/expandable-text';
+import { PackageDetailView } from '@/components/public/package-detail-view';
 import type { Tables } from '@/types/database';
 
 export const revalidate = 300;
@@ -117,18 +115,12 @@ export default async function PackageDetailPage({ params }: { params: { slug: st
   if (!result) notFound();
 
   const { pkg, images, itinerary, inclusions, exclusions, videos, faqs, activeOffer } = result;
-  const offerPrice = activeOffer
-    ? activeOffer.discount_percent
-      ? pkg.base_price * (1 - activeOffer.discount_percent / 100)
-      : activeOffer.discount_flat
-      ? pkg.base_price - activeOffer.discount_flat
-      : null
-    : null;
-  const effectivePrice = offerPrice ?? pkg.discount_price;
+
   const videoEmbedUrls = [
     getVideoEmbedUrl(pkg.video_url),
     ...videos.map((v) => getVideoEmbedUrl(v.video_url)),
   ].filter((url): url is string => Boolean(url));
+
   const termsSettings = await getTermsSettings();
   const destinationRaw = pkg.destinations as
     | { name: string; country: string | null }
@@ -157,218 +149,52 @@ export default async function PackageDetailPage({ params }: { params: { slug: st
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
 
-      <div className="relative h-[45vh] min-h-[320px] w-full bg-ink-200 pt-20">
-        {pkg.cover_image_url && (
-          <Image src={pkg.cover_image_url} alt={pkg.title} fill className="object-cover" priority />
-        )}
-        <div className="absolute inset-0 bg-gradient-to-t from-navy-900/85 via-navy-900/20 to-transparent" />
-        <div className="container-page absolute inset-x-0 bottom-6 text-white">
-          {destination && (
-            <p className="flex items-center gap-1.5 text-sm font-medium">
-              <MapPin className="h-4 w-4" /> {destination.name}
-              {destination.country ? `, ${destination.country}` : ''}
-            </p>
+      {/* Hero section placed cleanly under the navbar */}
+      <div className="pt-20 bg-ink-950">
+        <div className="relative h-[45vh] min-h-[340px] max-h-[520px] w-full overflow-hidden bg-ink-900">
+          {pkg.cover_image_url && (
+            <Image
+              src={pkg.cover_image_url}
+              alt={pkg.title}
+              fill
+              className="object-cover"
+              priority
+            />
           )}
-          <h1 className="font-display text-3xl font-semibold sm:text-4xl">{pkg.title}</h1>
-        </div>
-      </div>
-
-      <div className="container-page grid gap-10 py-10 lg:grid-cols-3">
-        <div className="space-y-10 lg:col-span-2">
-          <div className="flex flex-wrap gap-4 text-sm text-ink-600">
-            <span className="flex items-center gap-1.5">
-              <Clock className="h-4 w-4" /> {pkg.duration_days} days / {pkg.duration_nights} nights
-            </span>
-            {pkg.total_seats && (
-              <span className="flex items-center gap-1.5">
-                <Users className="h-4 w-4" /> Limited to {pkg.total_seats} travelers
-              </span>
+          <div className="absolute inset-0 bg-gradient-to-t from-navy-950/90 via-navy-950/45 to-navy-950/20" />
+          <div className="container-page absolute inset-x-0 bottom-8 text-white">
+            {destination && (
+              <p className="flex items-center gap-1.5 text-sm font-medium text-brand-200 mb-2">
+                <MapPin className="h-4 w-4" /> {destination.name}
+                {destination.country ? `, ${destination.country}` : ''}
+              </p>
+            )}
+            <h1 className="font-display text-3xl font-bold sm:text-4xl lg:text-5xl text-white drop-shadow-sm">
+              {pkg.title}
+            </h1>
+            {pkg.short_description && (
+              <p className="mt-2.5 line-clamp-2 max-w-2xl text-sm sm:text-base text-white/90 font-normal">
+                {pkg.short_description}
+              </p>
             )}
           </div>
-
-          {pkg.full_description && (
-            <section>
-              <h2 className="font-display text-xl font-semibold text-ink-900">Overview</h2>
-              <div className="mt-3">
-                <ExpandableText text={pkg.full_description} collapsedLines={4} />
-              </div>
-            </section>
-          )}
-
-          {pkg.highlights.length > 0 && (
-            <section>
-              <h2 className="font-display text-xl font-semibold text-ink-900">Highlights</h2>
-              <ul className="mt-3 grid gap-2 sm:grid-cols-2">
-                {pkg.highlights.map((h: string, i: number) => (
-                  <li key={i} className="flex items-start gap-2 text-sm text-ink-600">
-                    <Check className="mt-0.5 h-4 w-4 shrink-0 text-brand-600" /> {h}
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-
-          {itinerary.length > 0 && (
-            <section>
-              <h2 className="font-display text-xl font-semibold text-ink-900">Day-by-day itinerary</h2>
-              <div className="mt-4 space-y-4">
-                {itinerary.map((day) => (
-                  <div key={day.id} className="rounded-xl2 border border-ink-100 p-4">
-                    <p className="text-sm font-semibold text-brand-700">Day {day.day_number}</p>
-                    <p className="mt-0.5 font-medium text-ink-800">{day.title}</p>
-                    {day.description && (
-                      <p className="mt-1.5 text-sm text-ink-500">{day.description}</p>
-                    )}
-                    <div className="mt-2 flex flex-wrap gap-3 text-xs text-ink-400">
-                      {day.hotel && <span>Stay: {day.hotel}</span>}
-                      {day.meals && <span>Meals: {day.meals}</span>}
-                      {day.transport && <span>Transport: {day.transport}</span>}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {(inclusions.length > 0 || exclusions.length > 0) && (
-            <section className="grid gap-6 sm:grid-cols-2">
-              {inclusions.length > 0 && (
-                <div>
-                  <h2 className="font-display text-lg font-semibold text-ink-900">Inclusions</h2>
-                  <ul className="mt-3 space-y-1.5">
-                    {inclusions.map((i) => (
-                      <li key={i.id} className="flex items-start gap-2 text-sm text-ink-600">
-                        <Check className="mt-0.5 h-4 w-4 shrink-0 text-brand-600" /> {i.item}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              {exclusions.length > 0 && (
-                <div>
-                  <h2 className="font-display text-lg font-semibold text-ink-900">Exclusions</h2>
-                  <ul className="mt-3 space-y-1.5">
-                    {exclusions.map((e) => (
-                      <li key={e.id} className="flex items-start gap-2 text-sm text-ink-600">
-                        <X className="mt-0.5 h-4 w-4 shrink-0 text-coral-500" /> {e.item}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </section>
-          )}
-
-          {images.length > 0 && (
-            <section>
-              <h2 className="font-display text-xl font-semibold text-ink-900">Gallery</h2>
-              <ImageLightbox
-                images={images.map((img) => ({ url: img.image_url, alt: img.alt_text ?? pkg.title }))}
-              />
-            </section>
-          )}
-
-          {videoEmbedUrls.length > 0 && (
-            <section>
-              <h2 className="font-display text-xl font-semibold text-ink-900">
-                {videoEmbedUrls.length > 1 ? 'Videos' : 'Video'}
-              </h2>
-              {/* Full-width, one per row — genuinely larger than the old
-                  2-column grid, which shrank each video on anything but
-                  a wide screen. */}
-              <div className="mt-3 space-y-4">
-                {videoEmbedUrls.map((embedUrl, i) => (
-                  <div key={embedUrl} className="aspect-video overflow-hidden rounded-xl2 bg-ink-100">
-                    <iframe
-                      src={embedUrl}
-                      title={`${pkg.title} — video ${i + 1}`}
-                      className="h-full w-full"
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                      allowFullScreen
-                    />
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {faqs.length > 0 && (
-            <section>
-              <h2 className="font-display text-xl font-semibold text-ink-900">
-                Frequently asked questions
-              </h2>
-              <div className="mt-3 space-y-3">
-                {faqs.map((faq) => (
-                  <div key={faq.id} className="rounded-xl2 border border-ink-100 p-4">
-                    <p className="font-medium text-ink-900">{faq.question}</p>
-                    <p className="mt-1 text-sm text-ink-500">{faq.answer}</p>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {termsSettings.terms_and_conditions && (
-            <section>
-              <h2 className="font-display text-lg font-semibold text-ink-900">Terms & conditions</h2>
-              <div className="mt-2 text-sm text-ink-500">
-                <ExpandableText
-                  text={termsSettings.terms_and_conditions}
-                  collapsedLines={4}
-                  className="text-sm text-ink-500"
-                />
-              </div>
-            </section>
-          )}
         </div>
-
-        <aside className="lg:col-span-1">
-          <div className="card sticky top-24 p-6 shadow-sm border border-ink-100 bg-white rounded-2xl">
-            <span className="text-xs font-semibold uppercase tracking-wider text-ink-400">
-              Package Price
-            </span>
-            <div className="mt-2">
-              {activeOffer && (
-                <span className="badge-discount mb-2 inline-flex font-semibold">
-                  Special offer
-                </span>
-              )}
-              {effectivePrice ? (
-                <div>
-                  <span className="text-sm text-ink-400 line-through">
-                    {formatCurrency(pkg.base_price, pkg.currency)}
-                  </span>
-                  <p className="font-display text-3xl font-bold text-brand-700">
-                    {formatCurrency(effectivePrice, pkg.currency)}{' '}
-                    <span className="text-sm font-normal text-ink-500">/ person</span>
-                  </p>
-                </div>
-              ) : (
-                <p className="font-display text-3xl font-bold text-brand-700">
-                  {formatCurrency(pkg.base_price, pkg.currency)}{' '}
-                  <span className="text-sm font-normal text-ink-500">/ person</span>
-                </p>
-              )}
-            </div>
-            <p className="mt-3 text-xs text-ink-400">
-              * Starting price per person • Taxes &amp; fees included
-            </p>
-
-            <div className="mt-5 border-t border-ink-100 pt-5">
-              <Link
-                href={`/booking?packageId=${encodeURIComponent(pkg.id)}`}
-                className="btn-primary flex w-full items-center justify-center gap-2 py-3.5 text-center text-sm font-semibold shadow-md transition-all hover:shadow-lg"
-              >
-                <span>Send Enquiry</span>
-                <ArrowRight className="h-4 w-4" />
-              </Link>
-              <p className="mt-2.5 text-center text-[11px] text-ink-400">
-                Tailored itinerary &amp; customized quote
-              </p>
-            </div>
-          </div>
-        </aside>
       </div>
+
+      {/* Interactive Tabs, Accordions, Modal, and Sticky Price Card */}
+      <PackageDetailView
+        pkg={pkg}
+        destination={destination}
+        images={images}
+        itinerary={itinerary}
+        inclusions={inclusions}
+        exclusions={exclusions}
+        videoEmbedUrls={videoEmbedUrls}
+        faqs={faqs}
+        activeOffer={activeOffer}
+        termsAndConditions={termsSettings.terms_and_conditions}
+      />
     </div>
   );
 }
+

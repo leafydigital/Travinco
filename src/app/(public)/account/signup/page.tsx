@@ -60,9 +60,11 @@ function SignupOtpInputBoxes({
   const inputsRef = useRef<(HTMLInputElement | null)[]>([]);
 
   useEffect(() => {
+    // Auto-focus first empty input on initial mount only
     const firstEmpty = value.findIndex((v) => !v);
     const targetIdx = firstEmpty === -1 ? 0 : firstEmpty;
     inputsRef.current[targetIdx]?.focus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function handleDigitChange(idx: number, e: React.ChangeEvent<HTMLInputElement>) {

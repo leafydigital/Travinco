@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { usePathname } from 'next/navigation';
 import { requestEnquiryOtp, verifyEnquiryOtpAndSubmit } from '@/app/(public)/actions';
 import { PhoneInput } from './phone-input';
@@ -45,7 +45,7 @@ function PackageCombobox({
   inputClassName?: string;
   onValidityChange?: (valid: boolean) => void;
 }) {
-  const allOptions = [CUSTOM_TOUR_OPTION, ...packages];
+  const allOptions = useMemo(() => [CUSTOM_TOUR_OPTION, ...packages], [packages]);
   const initialPkg =
     packages.find((p) => p.id === defaultId) ?? (defaultId === '' ? CUSTOM_TOUR_OPTION : null);
 
@@ -145,6 +145,7 @@ function PackageCombobox({
         <input
           ref={inputRef}
           type="text"
+          role="combobox"
           autoComplete="off"
           placeholder="Search or choose a package…"
           value={query}
@@ -161,6 +162,7 @@ function PackageCombobox({
           className={`${inputClassName} pl-8 pr-16 ${showError ? 'border-coral-400 focus:ring-coral-400' : ''}`}
           aria-autocomplete="list"
           aria-expanded={isOpen}
+          aria-controls="package-options-list"
           aria-haspopup="listbox"
           aria-label="Choose tour package"
           aria-required="true"
@@ -197,6 +199,7 @@ function PackageCombobox({
 
       {isOpen && (
         <ul
+          id="package-options-list"
           ref={listRef}
           role="listbox"
           aria-label="Package options"
@@ -261,6 +264,7 @@ function OtpInputBoxes({
     const firstEmpty = value.findIndex((v) => !v);
     const targetIdx = firstEmpty === -1 ? 0 : firstEmpty;
     inputsRef.current[targetIdx]?.focus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function handleDigitChange(idx: number, e: React.ChangeEvent<HTMLInputElement>) {

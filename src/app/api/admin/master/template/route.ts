@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireProfile, assertRole } from '@/lib/supabase/auth-helpers';
 import { generateSampleExcelBuffer } from '@/lib/excel/master-parser';
+export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {

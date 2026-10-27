@@ -99,6 +99,7 @@ export function VehicleModal({
       });
       setIsLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, vehicleId]); // Strictly depend only on modal visibility and target ID
 
   if (!isOpen) return null;

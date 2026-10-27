@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition, useMemo, useEffect } from 'react';
+import { useState, useTransition, useMemo, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import {
   KeyRound,
@@ -42,7 +42,7 @@ export function ResetPasswordModal({
 
   const rules = useMemo(
     () => ({
-      length: newPassword.length >= 7,
+      length: newPassword.length >= 8,
       upper: /[A-Z]/.test(newPassword),
       lower: /[a-z]/.test(newPassword),
       number: /[0-9]/.test(newPassword),
@@ -69,11 +69,11 @@ export function ResetPasswordModal({
     setIsOpen(true);
   };
 
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
     if (isPending) return;
     setIsOpen(false);
     setErrorMessage(null);
-  };
+  }, [isPending]);
 
   // Close modal when Escape key is pressed
   useEffect(() => {
@@ -85,7 +85,7 @@ export function ResetPasswordModal({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, isPending]);
+  }, [isOpen, isPending, handleClose]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
