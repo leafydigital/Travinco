@@ -27,12 +27,15 @@ export async function POST(request: Request) {
 
     // 1. Check if account is locked
     const lockoutStatus = await checkLoginLockout(parsed.data.email, 'customer');
-    if (lockoutStatus.isLocked) {
+    if (lockoutStatus.limitReached || lockoutStatus.isLocked) {
       const mins = lockoutStatus.minutesRemaining || 15;
       return NextResponse.json(
         {
-          error: `Account is temporarily locked due to 5 consecutive failed login attempts. Please try again in ${mins} minute${mins === 1 ? '' : 's'}.`,
-          isLocked: true,
+          error: lockoutStatus.limitReached
+            ? 'You have reached your login limit. Please reset your password.'
+            : `Account is temporarily locked due to 5 consecutive failed login attempts. Please try again in ${mins} minute${mins === 1 ? '' : 's'}.`,
+          isLocked: lockoutStatus.isLocked,
+          limitReached: lockoutStatus.limitReached,
           remainingAttempts: 0,
         },
         { status: 429 }

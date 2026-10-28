@@ -3,6 +3,8 @@
 import { createClient } from '@/lib/supabase/server';
 import { requireProfile, checkModulePermission } from '@/lib/supabase/auth-helpers';
 import { revalidatePath } from 'next/cache';
+import { hasActiveRows, fetchAllActiveRows, softDeleteRows } from '@/lib/archive-to-sheet';
+import { appendRowsToSheet } from '@/lib/google-sheets';
 import { z } from 'zod';
 
 const LEADS_PATH = '/travinco_dashboard/leads';
@@ -352,3 +354,45 @@ export async function getLeadsTableList({
   };
 }
 
+
+// ─── Clear Data: archive all leads to Google Sheets, then soft-delete ─────────
+const LEADS_SHEET_HEADERS = [
+  'ID', 'Contact Name', 'Contact Number', 'Email', 'Package', 'Days', 'Budget',
+  'From Date', 'To Date', 'People', 'Status', 'Source', 'Import Batch',
+  'Created At', 'Cleared At', 'Cleared By',
+];
+
+export async function clearAndArchiveLeads(): Promise<{ error?: string; count?: number }> {
+  const profile = await requireProfile();
+  if (!['admin', 'super_admin'].includes(profile.role)) {
+    return { error: 'Only admins can clear leads data.' };
+  }
+
+  try {
+    // Fast exit: nothing to archive, skip the full fetch and Google entirely
+    if (!(await hasActiveRows('leads'))) return { count: 0 };
+
+
+    const leads = await fetchAllActiveRows<Record<string, any>>('leads');
+    if (leads.length === 0) return { count: 0 };
+
+    const clearedAt = new Date().toISOString();
+    const clearedBy = profile.full_name || profile.email;
+    const rows = leads.map((l) => [
+      l.id, l.contact_name, l.contact_number, l.email, l.package, l.number_of_days, l.budget,
+      l.from_date, l.to_date, l.number_of_people, l.status, l.source, l.import_batch,
+      l.created_at, clearedAt, clearedBy,
+    ]);
+
+    // Only clear the table once the sheet write has succeeded
+    await appendRowsToSheet('Leads', LEADS_SHEET_HEADERS, rows);
+    await softDeleteRows('leads', leads.map((l) => l.id), profile.id);
+
+    revalidatePath(LEADS_PATH);
+    revalidatePath('/travinco_dashboard');
+    return { count: leads.length };
+  } catch (err) {
+    console.error('clearAndArchiveLeads failed:', err);
+    return { error: 'Could not archive leads to Google Sheets. No data was cleared.' };
+  }
+}

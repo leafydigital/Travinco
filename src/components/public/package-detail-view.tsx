@@ -155,11 +155,14 @@ export function PackageDetailView({
   const visibleExclusions = showAllExclusions ? exclusions : exclusions.slice(0, 5);
 
   return (
-    <div className="w-full max-w-full overflow-x-hidden">
+    <div>
       {/* Sticky Tab Navigation Bar */}
-      <div className="sticky top-20 z-30 w-full max-w-full border-b border-ink-100 bg-white/95 backdrop-blur-md shadow-xs">
-        <div className="container-page w-full max-w-full overflow-hidden">
-          <div className="flex w-full max-w-full items-center gap-1.5 sm:gap-2 overflow-x-auto py-2.5 no-scrollbar scroll-smooth overscroll-x-contain">
+      <div className="sticky top-20 z-30 w-full border-b border-ink-100 bg-white shadow-xs">
+        <div className="container-page overflow-hidden">
+          <div
+            className="flex w-full items-center gap-1.5 sm:gap-2 overflow-x-auto py-2.5 no-scrollbar [&::-webkit-scrollbar]:hidden scroll-smooth overscroll-x-contain"
+            style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+          >
             {tabsConfig.map((tab) => {
               const isActive = activeTab === tab.id;
               return (
@@ -167,7 +170,7 @@ export function PackageDetailView({
                   key={tab.id}
                   type="button"
                   onClick={() => setActiveTab(tab.id)}
-                  className={`group relative flex shrink-0 items-center gap-2 rounded-full px-4 py-2 text-xs sm:text-sm font-medium transition-all duration-200 ${
+                  className={`group relative flex shrink-0 items-center gap-2 rounded-full px-3.5 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-medium transition-all duration-200 ${
                     isActive
                       ? 'bg-brand-600 text-white shadow-sm'
                       : 'text-ink-600 hover:bg-ink-100/70 hover:text-ink-900'
@@ -193,7 +196,7 @@ export function PackageDetailView({
             <button
               type="button"
               onClick={() => setTermsModalOpen(true)}
-              className="group flex shrink-0 items-center gap-1.5 rounded-full border border-dashed border-ink-300 px-4 py-2 text-xs sm:text-sm font-medium text-ink-700 transition-all duration-200 hover:border-brand-500 hover:bg-brand-50 hover:text-brand-800"
+              className="group flex shrink-0 items-center gap-1.5 rounded-full border border-dashed border-ink-300 px-3.5 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-medium text-ink-700 transition-all duration-200 hover:border-brand-500 hover:bg-brand-50 hover:text-brand-800"
             >
               <FileText className="h-3.5 w-3.5 text-brand-600" />
               <span>Terms & conditions</span>
@@ -203,32 +206,32 @@ export function PackageDetailView({
       </div>
 
       {/* Main Content Layout with 2 Columns */}
-      <div className="container-page grid gap-10 py-10 lg:grid-cols-3">
+      <div className="container-page grid gap-6 sm:gap-8 lg:gap-10 py-6 sm:py-8 lg:py-10 lg:grid-cols-3">
         {/* Left Column: Active Tab Panels */}
-        <div className="space-y-10 lg:col-span-2">
+        <div className="space-y-6 sm:space-y-8 lg:space-y-10 lg:col-span-2 min-w-0">
           {/* TAB 1: OVERVIEW */}
           {activeTab === 'overview' && (
             <div className="space-y-8 animate-in fade-in duration-200">
               {/* Quick Info Badges */}
-              <div className="flex flex-wrap items-center gap-3 text-sm text-ink-600">
-                <span className="flex items-center gap-1.5 rounded-lg bg-ink-50 px-3 py-1.5 font-medium text-ink-700 border border-ink-100">
-                  <Clock className="h-4 w-4 text-brand-600" /> {pkg.duration_days} days /{' '}
-                  {pkg.duration_nights} nights
+              <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-xs sm:text-sm text-ink-600">
+                <span className="flex items-center gap-1.5 rounded-xl bg-ink-50 px-2.5 py-1.5 sm:px-3 font-medium text-ink-700 border border-ink-100">
+                  <Clock className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-brand-600 shrink-0" />
+                  <span>{pkg.duration_days} days / {pkg.duration_nights} nights</span>
                 </span>
                 {destination && (
-                  <span className="flex items-center gap-1.5 rounded-lg bg-ink-50 px-3 py-1.5 font-medium text-ink-700 border border-ink-100">
-                    <MapPin className="h-4 w-4 text-brand-600" /> {destination.name}
-                    {destination.country ? `, ${destination.country}` : ''}
+                  <span className="flex items-center gap-1.5 rounded-xl bg-ink-50 px-2.5 py-1.5 sm:px-3 font-medium text-ink-700 border border-ink-100">
+                    <MapPin className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-brand-600 shrink-0" />
+                    <span className="break-words">{destination.name}{destination.country ? `, ${destination.country}` : ''}</span>
                   </span>
                 )}
                 {pkg.total_seats && (
-                  <span className="flex items-center gap-1.5 rounded-lg bg-ink-50 px-3 py-1.5 font-medium text-ink-700 border border-ink-100">
-                    <Users className="h-4 w-4 text-brand-600" /> Limited to {pkg.total_seats}{' '}
-                    travelers
+                  <span className="flex items-center gap-1.5 rounded-xl bg-ink-50 px-2.5 py-1.5 sm:px-3 font-medium text-ink-700 border border-ink-100">
+                    <Users className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-brand-600 shrink-0" />
+                    <span>Limited to {pkg.total_seats} travelers</span>
                   </span>
                 )}
                 {pkg.category && (
-                  <span className="rounded-lg bg-brand-50 px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-brand-800 border border-brand-100">
+                  <span className="rounded-xl bg-brand-50 px-2.5 py-1.5 sm:px-3 text-xs font-semibold uppercase tracking-wider text-brand-800 border border-brand-100">
                     {pkg.category}
                   </span>
                 )}
@@ -236,8 +239,8 @@ export function PackageDetailView({
 
               {/* Description Section */}
               {pkg.full_description ? (
-                <section className="rounded-2xl border border-ink-100 bg-white p-6 sm:p-8 shadow-xs">
-                  <h2 className="font-display text-2xl font-bold text-ink-900 mb-4 flex items-center gap-2">
+                <section className="rounded-2xl border border-ink-100 bg-white p-4 sm:p-6 lg:p-8 shadow-xs">
+                  <h2 className="font-display text-xl sm:text-2xl font-bold text-ink-900 mb-3 sm:mb-4 flex items-center gap-2">
                     <Info className="h-5 w-5 text-brand-600" />
                     Overview
                   </h2>
@@ -246,20 +249,20 @@ export function PackageDetailView({
                   </div>
                 </section>
               ) : pkg.short_description ? (
-                <section className="rounded-2xl border border-ink-100 bg-white p-6 sm:p-8 shadow-xs">
-                  <h2 className="font-display text-2xl font-bold text-ink-900 mb-4 flex items-center gap-2">
+                <section className="rounded-2xl border border-ink-100 bg-white p-4 sm:p-6 lg:p-8 shadow-xs">
+                  <h2 className="font-display text-xl sm:text-2xl font-bold text-ink-900 mb-3 sm:mb-4 flex items-center gap-2">
                     <Info className="h-5 w-5 text-brand-600" />
                     Overview
                   </h2>
-                  <p className="text-ink-600 leading-relaxed">{pkg.short_description}</p>
+                  <p className="text-ink-600 leading-relaxed text-sm sm:text-base">{pkg.short_description}</p>
                 </section>
               ) : null}
 
               {/* Quick Highlights Preview inside Overview */}
               {pkg.highlights.length > 0 && (
-                <section className="rounded-2xl border border-ink-100 bg-white p-6 sm:p-8 shadow-xs">
+                <section className="rounded-2xl border border-ink-100 bg-white p-4 sm:p-6 lg:p-8 shadow-xs">
                   <div className="flex items-center justify-between mb-4">
-                    <h2 className="font-display text-xl font-bold text-ink-900 flex items-center gap-2">
+                    <h2 className="font-display text-lg sm:text-xl font-bold text-ink-900 flex items-center gap-2">
                       <Check className="h-5 w-5 text-brand-600" />
                       Key Highlights
                     </h2>
@@ -275,10 +278,10 @@ export function PackageDetailView({
                     {pkg.highlights.slice(0, 4).map((h, i) => (
                       <li
                         key={i}
-                        className="flex items-start gap-2.5 rounded-xl bg-ink-50/70 p-3 text-sm text-ink-700 border border-ink-100/60"
+                        className="flex items-start gap-2.5 rounded-xl bg-ink-50/70 p-3 text-xs sm:text-sm text-ink-700 border border-ink-100/60"
                       >
                         <Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
-                        <span>{h}</span>
+                        <span className="break-words">{h}</span>
                       </li>
                     ))}
                   </ul>
@@ -328,28 +331,28 @@ export function PackageDetailView({
           {/* TAB 2: HIGHLIGHTS */}
           {activeTab === 'highlights' && (
             <div className="space-y-6 animate-in fade-in duration-200">
-              <div className="rounded-2xl border border-ink-100 bg-white p-6 sm:p-8 shadow-xs">
-                <div className="mb-6">
-                  <h2 className="font-display text-2xl font-bold text-ink-900 flex items-center gap-2">
-                    <Check className="h-6 w-6 text-brand-600" />
+              <div className="rounded-2xl border border-ink-100 bg-white p-4 sm:p-6 lg:p-8 shadow-xs">
+                <div className="mb-5 sm:mb-6">
+                  <h2 className="font-display text-xl sm:text-2xl font-bold text-ink-900 flex items-center gap-2">
+                    <Check className="h-5 w-5 sm:h-6 sm:w-6 text-brand-600" />
                     Package Highlights
                   </h2>
-                  <p className="mt-1 text-sm text-ink-500">
+                  <p className="mt-1 text-xs sm:text-sm text-ink-500">
                     Discover the memorable sights and curated experiences included in this journey.
                   </p>
                 </div>
 
                 {pkg.highlights.length > 0 ? (
-                  <ul className="grid gap-3.5 sm:grid-cols-2">
+                  <ul className="grid gap-3 sm:grid-cols-2">
                     {pkg.highlights.map((h, i) => (
                       <li
                         key={i}
-                        className="flex items-start gap-3 rounded-xl border border-brand-100/70 bg-brand-50/40 p-4 transition-all duration-200 hover:border-brand-300 hover:bg-brand-50"
+                        className="flex items-start gap-3 rounded-xl border border-brand-100/70 bg-brand-50/40 p-3.5 sm:p-4 transition-all duration-200 hover:border-brand-300 hover:bg-brand-50"
                       >
-                        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
+                        <div className="flex h-5 w-5 sm:h-6 sm:w-6 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 mt-0.5">
                           <Check className="h-3.5 w-3.5" />
                         </div>
-                        <span className="text-sm font-medium text-ink-800 leading-relaxed">{h}</span>
+                        <span className="text-xs sm:text-sm font-medium text-ink-800 leading-relaxed break-words">{h}</span>
                       </li>
                     ))}
                   </ul>
@@ -467,16 +470,16 @@ export function PackageDetailView({
           {/* TAB 4: INCLUSIONS / EXCLUSIONS */}
           {activeTab === 'inclusions_exclusions' && (
             <div className="space-y-6 animate-in fade-in duration-200">
-              <div className="grid gap-6 md:grid-cols-2">
+              <div className="grid gap-4 sm:gap-6 md:grid-cols-2">
                 {/* INCLUSIONS CARD */}
-                <div className="rounded-2xl border border-emerald-100 bg-white p-6 shadow-xs flex flex-col justify-between">
+                <div className="rounded-2xl border border-emerald-100 bg-white p-4 sm:p-6 shadow-xs flex flex-col justify-between">
                   <div>
-                    <div className="flex items-center justify-between pb-4 border-b border-emerald-50 mb-4">
+                    <div className="flex items-center justify-between pb-3 sm:pb-4 border-b border-emerald-50 mb-3 sm:mb-4">
                       <div className="flex items-center gap-2">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
-                          <ShieldCheck className="h-5 w-5" />
+                        <div className="flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
+                          <ShieldCheck className="h-4 w-4 sm:h-5 sm:w-5" />
                         </div>
-                        <h2 className="font-display text-lg font-bold text-ink-900">Inclusions</h2>
+                        <h2 className="font-display text-base sm:text-lg font-bold text-ink-900">Inclusions</h2>
                       </div>
                       <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 border border-emerald-200/50">
                         {inclusions.length} items
@@ -484,11 +487,11 @@ export function PackageDetailView({
                     </div>
 
                     {inclusions.length > 0 ? (
-                      <ul className="space-y-2.5">
+                      <ul className="space-y-2 sm:space-y-2.5">
                         {visibleInclusions.map((i) => (
-                          <li key={i.id} className="flex items-start gap-2.5 text-sm text-ink-700">
-                            <Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
-                            <span>{i.item}</span>
+                          <li key={i.id} className="flex items-start gap-2 text-xs sm:text-sm text-ink-700">
+                            <Check className="mt-0.5 h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0 text-emerald-600" />
+                            <span className="break-words">{i.item}</span>
                           </li>
                         ))}
                       </ul>
@@ -498,7 +501,7 @@ export function PackageDetailView({
                   </div>
 
                   {inclusions.length > 5 && (
-                    <div className="mt-5 pt-3 border-t border-ink-100">
+                    <div className="mt-4 pt-3 border-t border-ink-100">
                       <button
                         type="button"
                         onClick={() => setShowAllInclusions((prev) => !prev)}
@@ -520,14 +523,14 @@ export function PackageDetailView({
                 </div>
 
                 {/* EXCLUSIONS CARD */}
-                <div className="rounded-2xl border border-rose-100 bg-white p-6 shadow-xs flex flex-col justify-between">
+                <div className="rounded-2xl border border-rose-100 bg-white p-4 sm:p-6 shadow-xs flex flex-col justify-between">
                   <div>
-                    <div className="flex items-center justify-between pb-4 border-b border-rose-50 mb-4">
+                    <div className="flex items-center justify-between pb-3 sm:pb-4 border-b border-rose-50 mb-3 sm:mb-4">
                       <div className="flex items-center gap-2">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-rose-50 text-rose-700">
-                          <ShieldAlert className="h-5 w-5" />
+                        <div className="flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-xl bg-rose-50 text-rose-700">
+                          <ShieldAlert className="h-4 w-4 sm:h-5 sm:w-5" />
                         </div>
-                        <h2 className="font-display text-lg font-bold text-ink-900">Exclusions</h2>
+                        <h2 className="font-display text-base sm:text-lg font-bold text-ink-900">Exclusions</h2>
                       </div>
                       <span className="rounded-full bg-rose-50 px-2.5 py-0.5 text-xs font-semibold text-rose-700 border border-rose-200/50">
                         {exclusions.length} items
@@ -535,11 +538,11 @@ export function PackageDetailView({
                     </div>
 
                     {exclusions.length > 0 ? (
-                      <ul className="space-y-2.5">
+                      <ul className="space-y-2 sm:space-y-2.5">
                         {visibleExclusions.map((e) => (
-                          <li key={e.id} className="flex items-start gap-2.5 text-sm text-ink-700">
-                            <X className="mt-0.5 h-4 w-4 shrink-0 text-rose-500" />
-                            <span>{e.item}</span>
+                          <li key={e.id} className="flex items-start gap-2 text-xs sm:text-sm text-ink-700">
+                            <X className="mt-0.5 h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0 text-rose-500" />
+                            <span className="break-words">{e.item}</span>
                           </li>
                         ))}
                       </ul>
@@ -549,7 +552,7 @@ export function PackageDetailView({
                   </div>
 
                   {exclusions.length > 5 && (
-                    <div className="mt-5 pt-3 border-t border-ink-100">
+                    <div className="mt-4 pt-3 border-t border-ink-100">
                       <button
                         type="button"
                         onClick={() => setShowAllExclusions((prev) => !prev)}
@@ -576,13 +579,13 @@ export function PackageDetailView({
           {/* TAB 5: FREQUENTLY ASKED QUESTIONS */}
           {activeTab === 'faqs' && (
             <div className="space-y-6 animate-in fade-in duration-200">
-              <div className="rounded-2xl border border-ink-100 bg-white p-6 sm:p-8 shadow-xs">
-                <div className="mb-6">
-                  <h2 className="font-display text-2xl font-bold text-ink-900 flex items-center gap-2">
-                    <HelpCircle className="h-6 w-6 text-brand-600" />
+              <div className="rounded-2xl border border-ink-100 bg-white p-4 sm:p-6 lg:p-8 shadow-xs">
+                <div className="mb-5 sm:mb-6">
+                  <h2 className="font-display text-xl sm:text-2xl font-bold text-ink-900 flex items-center gap-2">
+                    <HelpCircle className="h-5 w-5 sm:h-6 sm:w-6 text-brand-600" />
                     Frequently Asked Questions
                   </h2>
-                  <p className="mt-1 text-sm text-ink-500">
+                  <p className="mt-1 text-xs sm:text-sm text-ink-500">
                     Helpful answers about visas, bookings, logistics, and what to expect.
                   </p>
                 </div>
@@ -603,14 +606,14 @@ export function PackageDetailView({
                           <button
                             type="button"
                             onClick={() => toggleFaq(faq.id)}
-                            className="flex w-full items-center justify-between gap-4 p-4 sm:p-5 text-left cursor-pointer transition-colors"
+                            className="flex w-full items-start sm:items-center justify-between gap-3 p-3.5 sm:p-5 text-left cursor-pointer transition-colors"
                             aria-expanded={isOpen}
                           >
-                            <span className="font-display text-sm sm:text-base font-semibold text-ink-900 leading-snug">
+                            <span className="font-display text-sm sm:text-base font-semibold text-ink-900 leading-snug break-words flex-1 min-w-0">
                               {faq.question}
                             </span>
                             <div
-                              className={`flex h-7 w-7 items-center justify-center rounded-full shrink-0 transition-transform duration-200 ${
+                              className={`flex h-7 w-7 items-center justify-center rounded-full shrink-0 transition-transform duration-200 mt-0.5 sm:mt-0 ${
                                 isOpen ? 'bg-brand-50 text-brand-600 rotate-180' : 'bg-ink-50 text-ink-400'
                               }`}
                             >
@@ -619,8 +622,8 @@ export function PackageDetailView({
                           </button>
 
                           {isOpen && (
-                            <div className="border-t border-ink-100/70 p-4 sm:p-5 pt-3 animate-in fade-in-50 duration-200">
-                              <p className="text-sm text-ink-600 leading-relaxed whitespace-pre-line">
+                            <div className="border-t border-ink-100/70 p-3.5 sm:p-5 pt-3 animate-in fade-in-50 duration-200">
+                              <p className="text-xs sm:text-sm text-ink-600 leading-relaxed whitespace-pre-line break-words">
                                 {faq.answer}
                               </p>
                             </div>
@@ -638,8 +641,8 @@ export function PackageDetailView({
         </div>
 
         {/* Right Column: Sticky Price Card */}
-        <aside className="lg:col-span-1">
-          <div className="card sticky top-36 p-6 shadow-md border border-ink-100 bg-white rounded-2xl">
+        <aside className="lg:col-span-1 min-w-0">
+          <div className="card sticky top-24 lg:top-36 p-4 sm:p-6 shadow-md border border-ink-100 bg-white rounded-2xl">
             {/* Package Duration Badge in Price Card */}
             <div className="flex items-center gap-3 rounded-xl bg-brand-50/90 px-3.5 py-3 text-brand-950 border border-brand-100 mb-5">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-600 text-white shadow-xs shrink-0">

@@ -33,7 +33,10 @@ const loginOtpMemoryMap = new Map<string, LoginOtpMemoryRecord>();
 export type InitiateLoginResult = {
   error?: string;
   isLocked?: boolean;
+  limitReached?: boolean;
   remainingAttempts?: number;
+  userType?: 'staff' | 'customer';
+  redirectUrl?: string;
   step?: 'otp_required';
   loginTicket?: string;
   maskedEmail?: string;
@@ -46,26 +49,74 @@ export type VerifyLoginOtpResult = {
 
 /**
  * Step 1: Validates credentials using an isolated transient client
- * (NO cookies written to browser). If valid, sends a 6-digit OTP to the registered email.
+ * (NO cookies written to browser). Supports login via Email OR Username.
+ * If valid, sends a 6-digit OTP to the registered email.
  */
 export async function initiateCustomerLoginFlow(
-  emailInput: string,
+  identifierInput: string,
   passwordInput: string
 ): Promise<InitiateLoginResult> {
-  const trimmedEmail = emailInput.trim().toLowerCase();
-  const password = passwordInput.trim();
+  const trimmedInput = (identifierInput || '').trim();
+  const password = (passwordInput || '').trim();
 
-  if (!trimmedEmail || !trimmedEmail.includes('@') || !password) {
-    return { error: 'Please enter both your email address and password.' };
+  if (!trimmedInput || !password) {
+    return { error: 'Please enter both your email or username and password.' };
   }
 
-  // 1. Check account lockout status
-  const lockoutStatus = await checkLoginLockout(trimmedEmail, 'customer');
-  if (lockoutStatus.isLocked) {
-    const mins = lockoutStatus.minutesRemaining || 15;
+  const serviceSupabase = createServiceClient();
+  let resolvedEmail: string | null = null;
+  let userFullName: string | undefined;
+
+  // 1. Resolve identifier: Is it an email or a username?
+  if (trimmedInput.includes('@')) {
+    resolvedEmail = trimmedInput.toLowerCase();
+  } else {
+    // Look up by username in customer_accounts table
+    try {
+      const { data: accountRow } = await serviceSupabase
+        .from('customer_accounts')
+        .select('email, full_name, username')
+        .ilike('username', trimmedInput)
+        .maybeSingle();
+
+      if (accountRow?.email) {
+        resolvedEmail = accountRow.email.toLowerCase();
+        userFullName = accountRow.full_name || undefined;
+      }
+    } catch (lookupErr) {
+      console.warn('customer_accounts username lookup notice:', lookupErr);
+    }
+
+    // Fallback: check Supabase auth users list metadata
+    if (!resolvedEmail) {
+      try {
+        const { data: usersData } = await serviceSupabase.auth.admin.listUsers();
+        const match = usersData?.users?.find(
+          (u) =>
+            (u.user_metadata?.username as string)?.toLowerCase() === trimmedInput.toLowerCase()
+        );
+        if (match?.email) {
+          resolvedEmail = match.email.toLowerCase();
+          userFullName = (match.user_metadata?.full_name as string) || undefined;
+        }
+      } catch (authListErr) {
+        console.warn('Fallback username lookup notice:', authListErr);
+      }
+    }
+
+    if (!resolvedEmail) {
+      return {
+        error: 'The email/username or password you entered is incorrect.',
+      };
+    }
+  }
+
+  // 2. Check login limit status (Max 3 attempts, no lockout timer)
+  const lockoutStatus = await checkLoginLockout(resolvedEmail, 'customer');
+  if (lockoutStatus.limitReached) {
     return {
-      error: `For your security, sign in is temporarily locked after several attempts. Please try again in ${mins} minute${mins === 1 ? '' : 's'} or use "Forgot password?".`,
-      isLocked: true,
+      error: 'You have reached your login limit. Please reset your password.',
+      limitReached: true,
       remainingAttempts: 0,
     };
   }
@@ -90,7 +141,7 @@ export async function initiateCustomerLoginFlow(
   });
 
   const { data: authData, error: authError } = await transientSupabase.auth.signInWithPassword({
-    email: trimmedEmail,
+    email: resolvedEmail,
     password,
   });
 
@@ -101,18 +152,18 @@ export async function initiateCustomerLoginFlow(
       };
     }
 
-    const attemptStatus = await recordFailedLoginAttempt(trimmedEmail, 'customer');
-    if (attemptStatus.isLocked) {
+    const attemptStatus = await recordFailedLoginAttempt(resolvedEmail, 'customer', userFullName);
+    if (attemptStatus.limitReached) {
       return {
-        error: `For your security, sign in is temporarily locked for 15 minutes after several incorrect attempts. Please try again later or use "Forgot password?".`,
-        isLocked: true,
+        error: 'You have reached your login limit. Please reset your password.',
+        limitReached: true,
         remainingAttempts: 0,
       };
     }
 
     const remaining = attemptStatus.remainingAttempts;
     return {
-      error: `The email or password you entered is incorrect. You have ${remaining} attempt${remaining === 1 ? '' : 's'} left.`,
+      error: `The email/username or password you entered is incorrect. You have ${remaining} attempt${remaining === 1 ? '' : 's'} left.`,
       remainingAttempts: remaining,
     };
   }
@@ -124,7 +175,7 @@ export async function initiateCustomerLoginFlow(
       customerClient
         .from('customers')
         .select('id, is_active')
-        .eq('email', trimmedEmail)
+        .eq('email', resolvedEmail)
         .maybeSingle(),
       customerClient
         .from('profiles')
@@ -135,17 +186,6 @@ export async function initiateCustomerLoginFlow(
 
     if (custRecordRes.data?.is_active === false) {
       return { error: 'Your account is currently inactive. Please contact our support team.' };
-    }
-
-    const isCustomerRole =
-      authData.user.user_metadata?.role === 'customer' ||
-      authData.user.user_metadata?.is_customer_signup === 'true';
-
-    if (!isCustomerRole && profileRes.data?.role) {
-      return {
-        error:
-          'This sign in is for travellers. Staff members can sign in at the staff portal.',
-      };
     }
   } catch (checkErr) {
     console.warn('Customer status check warning:', checkErr);
@@ -158,7 +198,7 @@ export async function initiateCustomerLoginFlow(
   }
 
   // Rate limiting on OTP requests
-  const existingMem = loginOtpMemoryMap.get(trimmedEmail);
+  const existingMem = loginOtpMemoryMap.get(resolvedEmail);
   if (existingMem && Date.now() - existingMem.createdAt < 45 * 1000) {
     return {
       error: 'Please wait a moment before requesting another verification code.',
@@ -172,7 +212,7 @@ export async function initiateCustomerLoginFlow(
   const hashedCode = hashToken(otpCode);
 
   // Store in memory map
-  loginOtpMemoryMap.set(trimmedEmail, {
+  loginOtpMemoryMap.set(resolvedEmail, {
     codeHash: hashedCode,
     expiresAt: expiresAtMs,
     attempts: 0,
@@ -183,7 +223,7 @@ export async function initiateCustomerLoginFlow(
   try {
     const serviceSupabase = createServiceClient();
     await serviceSupabase.from('enquiry_email_otps').insert({
-      email: `login:${trimmedEmail}`,
+      email: `login:${resolvedEmail}`,
       code_hash: hashedCode,
       expires_at: expiresAtIso,
       attempts: 0,
@@ -194,7 +234,7 @@ export async function initiateCustomerLoginFlow(
 
   // Encrypt the login ticket with credentials, tokens, expiry, and codeHash for seamless verification
   const loginTicket = encryptTicket({
-    email: trimmedEmail,
+    email: resolvedEmail,
     password,
     userId: authData.user.id,
     accessToken: authData.session.access_token,
@@ -205,7 +245,7 @@ export async function initiateCustomerLoginFlow(
 
   const fullName =
     (authData.user.user_metadata?.full_name as string) ||
-    trimmedEmail.split('@')[0];
+    resolvedEmail.split('@')[0];
 
   const html = `
     <!DOCTYPE html>
@@ -244,7 +284,7 @@ export async function initiateCustomerLoginFlow(
   `;
 
   const emailResult = await sendGmail({
-    to: trimmedEmail,
+    to: resolvedEmail,
     subject: `${otpCode} is your Travinco login verification code`,
     html,
   });
@@ -257,7 +297,7 @@ export async function initiateCustomerLoginFlow(
   return {
     step: 'otp_required',
     loginTicket,
-    maskedEmail: maskEmail(trimmedEmail),
+    maskedEmail: maskEmail(resolvedEmail),
   };
 }
 
@@ -513,6 +553,9 @@ export async function verifyCustomerLoginOtpFlow(
   } catch (syncErr) {
     console.warn('Sync customer_accounts warning:', syncErr);
   }
+
+  // Clear failed login attempts counter on successful login
+  await clearLoginAttempts(payload.email, 'customer');
 
   return { success: true };
 }

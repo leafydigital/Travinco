@@ -72,7 +72,7 @@ export function AdminSidebar({
     signOut().catch(() => {});
 
     // 4. Instantly navigate to login page
-    window.location.href = '/travinco_admin_login';
+    window.location.href = '/account/login';
   };
 
   useEffect(() => {
@@ -126,7 +126,6 @@ export function AdminSidebar({
                   <li key={item.href}>
                     <Link
                       href={item.href}
-                      prefetch={true}
                       onClick={() => {
                         if (pathname !== item.href) {
                           setPendingHref(item.href);

@@ -339,12 +339,14 @@ export interface Database {
         Row: {
           id: string;
           full_name: string | null;
+          username: string | null;
           email: string;
           created_at: string;
         };
         Insert: Partial<Database['public']['Tables']['customer_accounts']['Row']> & {
           id: string;
           email: string;
+          username?: string | null;
         };
         Update: Partial<Database['public']['Tables']['customer_accounts']['Row']>;
       };

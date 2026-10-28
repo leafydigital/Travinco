@@ -1,12 +1,14 @@
 'use server';
 
-import { createCustomerClient, CUSTOMER_AUTH_COOKIE } from '@/lib/supabase/server';
+import { createCustomerClient, createAdminClient, CUSTOMER_AUTH_COOKIE } from '@/lib/supabase/server';
+import { createServiceClient } from '@/lib/supabase/service';
 import { requireCustomer } from '@/lib/supabase/customer-auth-helpers';
 import {
   checkLoginLockout,
   recordFailedLoginAttempt,
   clearLoginAttempts,
   MAX_LOGIN_ATTEMPTS,
+  MAX_ADMIN_LOGIN_ATTEMPTS,
 } from '@/lib/auth/login-limiter';
 import { cookies } from 'next/headers';
 import { z } from 'zod';
@@ -25,8 +27,16 @@ import {
   type VerifySignupResult,
 } from '@/lib/auth/signup-otp';
 
+const usernameRule = z
+  .string()
+  .trim()
+  .min(3, 'Username must be at least 3 characters.')
+  .max(30, 'Username must be at most 30 characters.')
+  .regex(/^[a-zA-Z0-9_.-]+$/, 'Username can only contain letters, numbers, dots, and underscores.');
+
 const signupSchema = z.object({
   full_name: z.string().min(1, 'Name is required'),
+  username: usernameRule,
   email: z
     .string()
     .email('Enter a valid email')
@@ -48,6 +58,7 @@ const signupSchema = z.object({
 const initiateSignupSchema = z
   .object({
     full_name: z.string().min(1, 'Please enter your full name.'),
+    username: usernameRule,
     email: z
       .string()
       .email('Please enter a valid email address.')
@@ -72,13 +83,13 @@ const initiateSignupSchema = z
   });
 
 const loginSchema = z.object({
-  email: z.string().email('Enter a valid email'),
+  email: z.string().trim().min(1, 'Please enter your email or username'),
   password: z.string().min(1, 'Password is required'),
 });
 
 /**
- * Step 1 of OTP Signup: Validates name, email, password, confirm password,
- * checks for duplicate email, and sends a 6-digit OTP to the user's Gmail.
+ * Step 1 of OTP Signup: Validates name, username, email, password, confirm password,
+ * checks for duplicate email and username, and sends a 6-digit OTP to the user's Gmail.
  */
 export async function initiateCustomerSignup(raw: unknown): Promise<InitiateSignupResult> {
   const parsed = initiateSignupSchema.safeParse(raw);
@@ -87,6 +98,7 @@ export async function initiateCustomerSignup(raw: unknown): Promise<InitiateSign
   }
   return initiateCustomerSignupFlow({
     fullName: parsed.data.full_name,
+    username: parsed.data.username,
     email: parsed.data.email,
     password: parsed.data.password,
     confirmPassword: parsed.data.confirm_password,
@@ -127,10 +139,9 @@ export async function signUpCustomer(raw: unknown) {
     email: parsed.data.email,
     password: parsed.data.password,
     options: {
-      // This metadata flag triggers migration 021/039 logic:
-      // creates customer_accounts row and skips creating staff profiles row.
       data: {
         full_name: parsed.data.full_name,
+        username: parsed.data.username,
         is_customer_signup: 'true',
         role: 'customer',
       },
@@ -155,6 +166,7 @@ export async function signUpCustomer(raw: unknown) {
       await supabase.from('customer_accounts').upsert({
         id: authData.user.id,
         full_name: parsed.data.full_name,
+        username: parsed.data.username,
         email: parsed.data.email,
       }, { onConflict: 'id' });
 
@@ -184,14 +196,164 @@ export async function signUpCustomer(raw: unknown) {
 }
 
 /**
- * Step 1 of OTP Login: Validates email and password, sends a 6-digit OTP to the registered email.
+ * Unified Login Step 1: Checks both profiles (Staff) and customer_accounts (Customer).
+ * - If Staff: authenticates directly via createAdminClient(), sets admin auth cookie, and returns { userType: 'staff', redirectUrl }.
+ * - If Customer: initiates customer OTP flow, sends 6-digit OTP, and returns { userType: 'customer', step: 'otp_required', loginTicket, maskedEmail }.
  */
 export async function initiateCustomerLogin(raw: unknown): Promise<InitiateLoginResult> {
   const parsed = loginSchema.safeParse(raw);
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? 'Please check the form.' };
   }
-  return initiateCustomerLoginFlow(parsed.data.email, parsed.data.password);
+
+  const trimmedInput = (parsed.data.email || '').trim();
+  const password = (parsed.data.password || '').trim();
+
+  const serviceSupabase = createServiceClient();
+  let resolvedEmail: string | null = null;
+  let userFullName: string | undefined;
+
+  // 1. Resolve identifier: Is it an email or a username?
+  if (trimmedInput.includes('@')) {
+    resolvedEmail = trimmedInput.toLowerCase();
+  } else {
+    // Check customer_accounts by username
+    try {
+      const { data: accountRow } = await serviceSupabase
+        .from('customer_accounts')
+        .select('email, full_name, username')
+        .ilike('username', trimmedInput)
+        .maybeSingle();
+
+      if (accountRow?.email) {
+        resolvedEmail = accountRow.email.toLowerCase();
+        userFullName = accountRow.full_name || undefined;
+      }
+    } catch (lookupErr) {
+      console.warn('customer_accounts username lookup notice:', lookupErr);
+    }
+
+    // Check auth.users metadata for username
+    if (!resolvedEmail) {
+      try {
+        const { data: usersData } = await serviceSupabase.auth.admin.listUsers();
+        const match = usersData?.users?.find(
+          (u) =>
+            (u.user_metadata?.username as string)?.toLowerCase() === trimmedInput.toLowerCase()
+        );
+        if (match?.email) {
+          resolvedEmail = match.email.toLowerCase();
+          userFullName = (match.user_metadata?.full_name as string) || undefined;
+        }
+      } catch (authListErr) {
+        console.warn('Fallback username lookup notice:', authListErr);
+      }
+    }
+
+    if (!resolvedEmail) {
+      return {
+        error: 'The email/username or password you entered is incorrect.',
+      };
+    }
+  }
+
+  // 2. Query both tables: public.profiles (Staff) and public.customer_accounts (Customer)
+  const [profileRes, customerRes] = await Promise.all([
+    serviceSupabase
+      .from('profiles')
+      .select('id, email, full_name, role, is_active')
+      .ilike('email', resolvedEmail)
+      .maybeSingle(),
+    serviceSupabase
+      .from('customer_accounts')
+      .select('id, email, full_name, username')
+      .ilike('email', resolvedEmail)
+      .maybeSingle(),
+  ]);
+
+  const profile = profileRes.data;
+  const isStaffRole =
+    profile &&
+    profile.role &&
+    ['super_admin', 'admin', 'sales_staff', 'accounts_staff'].includes(profile.role);
+
+  // ── BRANCH A: STAFF / ADMIN AUTHENTICATION (DIRECT SIGN IN - OPTION A) ─────
+  if (isStaffRole) {
+    if (profile.is_active === false) {
+      return { error: 'This staff account has been deactivated. Contact your administrator.' };
+    }
+
+    // Check staff lockout (5 attempts, 15-minute timer)
+    const lockoutStatus = await checkLoginLockout(resolvedEmail, 'admin');
+    if (lockoutStatus.isLocked) {
+      const mins = lockoutStatus.minutesRemaining || 15;
+      return {
+        error: `Account is temporarily locked due to 5 consecutive failed login attempts. Please try again in ${mins} minute${mins === 1 ? '' : 's'}.`,
+        isLocked: true,
+        remainingAttempts: 0,
+      };
+    }
+
+    const adminClient = await createAdminClient();
+    let { data: authData, error: authError } = await adminClient.auth.signInWithPassword({
+      email: resolvedEmail,
+      password,
+    });
+
+    if (authError && authError.message?.toLowerCase().includes('email not confirmed')) {
+      try {
+        const { data: confirmed } = await serviceSupabase.rpc('confirm_staff_email', {
+          p_email: resolvedEmail,
+        });
+        if (confirmed) {
+          const retry = await adminClient.auth.signInWithPassword({
+            email: resolvedEmail,
+            password,
+          });
+          if (!retry.error && retry.data.user) {
+            authData = retry.data;
+            authError = null;
+          }
+        }
+      } catch (rpcErr) {
+        console.error('Error auto-confirming staff user:', rpcErr);
+      }
+    }
+
+    if (authError || !authData?.user) {
+      const attemptStatus = await recordFailedLoginAttempt(resolvedEmail, 'admin');
+      if (attemptStatus.isLocked) {
+        return {
+          error: `Too many failed login attempts (${MAX_ADMIN_LOGIN_ATTEMPTS}/${MAX_ADMIN_LOGIN_ATTEMPTS}). Your account is locked for 15 minutes.`,
+          isLocked: true,
+          remainingAttempts: 0,
+        };
+      }
+      const remaining = attemptStatus.remainingAttempts;
+      return {
+        error: `The email or password you entered is incorrect. You have ${remaining} attempt${remaining === 1 ? '' : 's'} remaining before account lockout.`,
+        remainingAttempts: remaining,
+      };
+    }
+
+    // Successful staff login: clear attempts
+    await clearLoginAttempts(resolvedEmail, 'admin');
+
+    // Always land on /travinco_dashboard: its page already forwards staff without
+    // dashboard access to their first allowed section, so resolving it here only
+    // added extra round trips before the redirect.
+    return {
+      userType: 'staff',
+      redirectUrl: '/travinco_dashboard',
+    };
+  }
+
+  // ── BRANCH B: CUSTOMER AUTHENTICATION (WITH 2FA OTP) ──────────────────────
+  const result = await initiateCustomerLoginFlow(resolvedEmail, password);
+  return {
+    ...result,
+    userType: 'customer',
+  };
 }
 
 /**
@@ -224,11 +386,14 @@ export async function logInCustomer(raw: unknown) {
 
   // 1. Check if customer account is temporarily locked out
   const lockoutStatus = await checkLoginLockout(parsed.data.email, 'customer');
-  if (lockoutStatus.isLocked) {
+  if (lockoutStatus.limitReached || lockoutStatus.isLocked) {
     const mins = lockoutStatus.minutesRemaining || 15;
     return {
-      error: `Account is temporarily locked due to 5 consecutive failed login attempts. Please try again in ${mins} minute${mins === 1 ? '' : 's'} or use "Forgot password?".`,
-      isLocked: true,
+      error: lockoutStatus.limitReached
+        ? 'You have reached your login limit. Please reset your password.'
+        : `Account is temporarily locked due to 5 consecutive failed login attempts. Please try again in ${mins} minute${mins === 1 ? '' : 's'} or use "Forgot password?".`,
+      isLocked: lockoutStatus.isLocked,
+      limitReached: lockoutStatus.limitReached,
       remainingAttempts: 0,
     };
   }
@@ -310,11 +475,7 @@ export async function logInCustomer(raw: unknown) {
       .maybeSingle();
 
     if (profile?.role) {
-      await supabase.auth.signOut();
-      return {
-        error:
-          'This login is for customer accounts only. If you are a staff member, please use the staff portal at /travinco_admin_login.',
-      };
+      return { success: true, isStaff: true };
     }
   }
 
@@ -431,15 +592,57 @@ export async function changeCustomerPassword(raw: unknown) {
   return { success: true };
 }
 
-export async function requestPasswordReset(email: string) {
-  const supabase = await createCustomerClient();
-  const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-    redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL ?? ''}/account/reset-password`,
-  });
-
-  // Never reveal whether the email exists — same response either way
-  if (error) {
-    console.error('requestPasswordReset failed:', error.message);
-  }
-  return {};
+/**
+ * Step 1: Checks if customer email exists in the database.
+ */
+export async function checkCustomerEmailExistsAction(email: string) {
+  const { checkCustomerEmailExists } = await import('@/lib/auth/password-reset-otp');
+  return checkCustomerEmailExists(email);
 }
+
+/**
+ * Step 2: User sets new password and confirm password. Validates password rules and sends OTP code to email.
+ */
+export async function sendResetPasswordOtpWithNewPasswordAction(data: {
+  email: string;
+  password: string;
+  confirmPassword: string;
+}) {
+  const { sendResetPasswordOtpWithNewPassword } = await import('@/lib/auth/password-reset-otp');
+  return sendResetPasswordOtpWithNewPassword(data);
+}
+
+/**
+ * Resends a fresh 6-digit OTP code for password reset.
+ */
+export async function resendCustomerResetOtpAction(resetTicket: string) {
+  const { resendCustomerResetPasswordOtpFlow } = await import('@/lib/auth/password-reset-otp');
+  return resendCustomerResetPasswordOtpFlow(resetTicket);
+}
+
+/**
+ * Step 3: Verifies the 6-digit OTP code and updates password directly in the database.
+ */
+export async function verifyResetOtpAndSavePasswordAction(data: {
+  resetTicket: string;
+  otpCode: string;
+}) {
+  const { verifyOtpAndSavePasswordFlow } = await import('@/lib/auth/password-reset-otp');
+  return verifyOtpAndSavePasswordFlow(data);
+}
+
+export async function requestPasswordReset(email: string) {
+  // Retained for backward-compatibility
+  return checkCustomerEmailExistsAction(email);
+}
+
+/**
+ * Manually unlocks a customer account by clearing failed login attempts.
+ */
+export async function unlockCustomerAccountAction(identifier: string) {
+  if (!identifier) return { error: 'Please enter an email or username.' };
+  await clearLoginAttempts(identifier, 'customer');
+  return { success: true };
+}
+
+

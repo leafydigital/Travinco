@@ -21,41 +21,58 @@ import {
   RefreshCw,
 } from 'lucide-react';
 
-/** Returns today's date in YYYY-MM-DD format (local time). */
-function getTodayString(): string {
+/** Returns earliest travel date (today + 2 days) in YYYY-MM-DD format (local time) and display string (DD/MM/YYYY). */
+function getMinTravelDate(): { iso: string; display: string } {
   const d = new Date();
+  d.setDate(d.getDate() + 2); // strictly at least 2 days in advance
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
+  return {
+    iso: `${yyyy}-${mm}-${dd}`,
+    display: `${dd}/${mm}/${yyyy}`,
+  };
 }
 
-// ─── Searchable Package Combobox ──────────────────────────────────────────────
+function formatDisplayDate(isoDate: string): string {
+  if (!isoDate || !/^\d{4}-\d{2}-\d{2}$/.test(isoDate)) return '';
+  const [yyyy, mm, dd] = isoDate.split('-');
+  return `${dd}/${mm}/${yyyy}`;
+}
+
+// ─── Searchable Package Combobox (Select or Enter Custom Package) ─────────────
 
 const CUSTOM_TOUR_OPTION = { id: '', title: 'Custom Tour / Tailored Trip (No specific package)' };
 
 function PackageCombobox({
   packages,
   defaultId = '',
+  defaultCustomTitle = '',
   inputClassName = '',
   onValidityChange,
+  onChange,
 }: {
   packages: { id: string; title: string }[];
   defaultId?: string;
+  defaultCustomTitle?: string;
   inputClassName?: string;
   onValidityChange?: (valid: boolean) => void;
+  onChange?: (val: { package_id: string; custom_package_name: string }) => void;
 }) {
   const allOptions = useMemo(() => [CUSTOM_TOUR_OPTION, ...packages], [packages]);
   const initialPkg =
-    packages.find((p) => p.id === defaultId) ?? (defaultId === '' ? CUSTOM_TOUR_OPTION : null);
+    packages.find((p) => p.id === defaultId) ??
+    (defaultId === '' && !defaultCustomTitle ? CUSTOM_TOUR_OPTION : null);
 
-  const [query, setQuery] = useState(initialPkg?.id ? initialPkg.title : '');
+  const [query, setQuery] = useState(
+    defaultCustomTitle || (initialPkg?.id ? initialPkg.title : '')
+  );
   const [selectedId, setSelectedId] = useState(defaultId);
   const [isOpen, setIsOpen] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(0);
   const [touched, setTouched] = useState(false);
 
-  // Sync with defaultId prop if it changes externally
+  // Sync with defaultId or defaultCustomTitle if they change externally
   useEffect(() => {
     if (defaultId) {
       const match = packages.find((p) => p.id === defaultId);
@@ -64,10 +81,14 @@ function PackageCombobox({
         setQuery(match.title);
         onValidityChange?.(true);
       }
+    } else if (defaultCustomTitle) {
+      setSelectedId('');
+      setQuery(defaultCustomTitle);
+      onValidityChange?.(true);
     }
-  }, [defaultId, packages, onValidityChange]);
+  }, [defaultId, defaultCustomTitle, packages, onValidityChange]);
 
-  const isValid = !!selectedId;
+  const isValid = Boolean(selectedId || query.trim());
   const showError = touched && !isValid;
 
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -78,19 +99,22 @@ function PackageCombobox({
     ? allOptions.filter((o) => o.title.toLowerCase().includes(query.trim().toLowerCase()))
     : allOptions;
 
+  const hasExactMatch = packages.some(
+    (p) => p.title.toLowerCase() === query.trim().toLowerCase()
+  );
+  const showCustomOption = query.trim().length > 0 && !hasExactMatch;
+
   // Close when clicking outside.
   useEffect(() => {
     function onClickOutside(e: MouseEvent) {
       if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
         setIsOpen(false);
         setTouched(true);
-        const confirmed = allOptions.find((o) => o.id === selectedId);
-        setQuery(confirmed?.id ? confirmed.title : '');
       }
     }
     document.addEventListener('mousedown', onClickOutside);
     return () => document.removeEventListener('mousedown', onClickOutside);
-  }, [selectedId, allOptions]);
+  }, []);
 
   // Scroll highlighted item into view.
   useEffect(() => {
@@ -105,7 +129,19 @@ function PackageCombobox({
     setIsOpen(false);
     setHighlightedIndex(0);
     setTouched(true);
-    onValidityChange?.(!!option.id);
+    onValidityChange?.(Boolean(option.id || option.title));
+    onChange?.({ package_id: option.id, custom_package_name: option.id ? '' : option.title });
+  }
+
+  function handleInputChange(val: string) {
+    setQuery(val);
+    setIsOpen(true);
+    setHighlightedIndex(0);
+    const match = packages.find((p) => p.title.toLowerCase() === val.trim().toLowerCase());
+    const nextId = match ? match.id : '';
+    setSelectedId(nextId);
+    onValidityChange?.(Boolean(nextId || val.trim()));
+    onChange?.({ package_id: nextId, custom_package_name: nextId ? '' : val.trim() });
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -124,19 +160,25 @@ function PackageCombobox({
       setHighlightedIndex((i) => Math.max(i - 1, 0));
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      if (filtered[highlightedIndex]) selectOption(filtered[highlightedIndex]);
+      if (filtered[highlightedIndex]) {
+        selectOption(filtered[highlightedIndex]);
+      } else if (query.trim()) {
+        setSelectedId('');
+        setIsOpen(false);
+        onValidityChange?.(true);
+        onChange?.({ package_id: '', custom_package_name: query.trim() });
+      }
     } else if (e.key === 'Escape') {
       setIsOpen(false);
-      const confirmed = allOptions.find((o) => o.id === selectedId);
-      setQuery(confirmed?.id ? confirmed.title : '');
     }
   }
 
-  const showClearButton = !!selectedId;
+  const showClearButton = Boolean(selectedId || query.trim());
 
   return (
     <div ref={wrapperRef} className="relative">
       <input type="hidden" name="package_id" value={selectedId} />
+      <input type="hidden" name="custom_package_name" value={selectedId ? '' : query.trim()} />
 
       <div className="relative">
         <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center">
@@ -147,24 +189,20 @@ function PackageCombobox({
           type="text"
           role="combobox"
           autoComplete="off"
-          placeholder="Search or choose a package…"
+          placeholder="Search package or enter custom package name…"
           value={query}
           onFocus={() => {
             setIsOpen(true);
             setHighlightedIndex(0);
           }}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setIsOpen(true);
-            setHighlightedIndex(0);
-          }}
+          onChange={(e) => handleInputChange(e.target.value)}
           onKeyDown={handleKeyDown}
-          className={`${inputClassName} pl-8 pr-16 ${showError ? 'border-coral-400 focus:ring-coral-400' : ''}`}
+          className={`${inputClassName} pl-8 pr-16 ${showError ? 'border-coral-400 focus:ring-coral-400 bg-coral-50/20' : ''}`}
           aria-autocomplete="list"
           aria-expanded={isOpen}
           aria-controls="package-options-list"
           aria-haspopup="listbox"
-          aria-label="Choose tour package"
+          aria-label="Choose or enter tour package"
           aria-required="true"
         />
         <span className="absolute inset-y-0 right-0 flex items-center gap-0.5 pr-2">
@@ -173,7 +211,11 @@ function PackageCombobox({
               type="button"
               tabIndex={-1}
               onClick={() => {
-                selectOption(CUSTOM_TOUR_OPTION);
+                setSelectedId('');
+                setQuery('');
+                setIsOpen(false);
+                onValidityChange?.(false);
+                onChange?.({ package_id: '', custom_package_name: '' });
                 inputRef.current?.focus();
               }}
               className="flex h-5 w-5 items-center justify-center rounded-full text-ink-400 hover:text-ink-600 transition-colors"
@@ -205,7 +247,23 @@ function PackageCombobox({
           aria-label="Package options"
           className="absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-xl border border-ink-200 bg-white py-1 shadow-lg"
         >
-          {filtered.length === 0 ? (
+          {showCustomOption && (
+            <li
+              role="option"
+              aria-selected={!selectedId && !!query.trim()}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                setSelectedId('');
+                setIsOpen(false);
+                onValidityChange?.(true);
+                onChange?.({ package_id: '', custom_package_name: query.trim() });
+              }}
+              className="flex cursor-pointer items-center gap-2 px-3 py-2.5 text-sm bg-brand-50/80 text-brand-800 font-medium hover:bg-brand-100 border-b border-brand-100"
+            >
+              <span>✨ Use custom package: &ldquo;{query.trim()}&rdquo;</span>
+            </li>
+          )}
+          {filtered.length === 0 && !showCustomOption ? (
             <li className="px-3 py-2.5 text-sm text-ink-400">No packages match your search.</li>
           ) : (
             filtered.map((option, idx) => {
@@ -219,9 +277,8 @@ function PackageCombobox({
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => selectOption(option)}
                   onMouseEnter={() => setHighlightedIndex(idx)}
-                  className={`flex cursor-pointer items-center gap-2 px-3 py-2.5 text-sm transition-colors ${
-                    isHighlighted ? 'bg-brand-50 text-brand-800' : 'text-ink-700 hover:bg-ink-50'
-                  } ${isSelected ? 'font-semibold' : ''}`}
+                  className={`flex cursor-pointer items-center gap-2 px-3 py-2.5 text-sm transition-colors ${isHighlighted ? 'bg-brand-50 text-brand-800' : 'text-ink-700 hover:bg-ink-50'
+                    } ${isSelected ? 'font-semibold' : ''}`}
                 >
                   {option.id === '' ? (
                     <span className="text-ink-400 text-xs italic">{option.title}</span>
@@ -238,7 +295,7 @@ function PackageCombobox({
         </ul>
       )}
       {showError && (
-        <p className="mt-1 text-xs text-coral-600">Please select a tour package to continue.</p>
+        <p className="mt-1 text-xs text-coral-600 font-medium">Please select or enter a tour package to continue.</p>
       )}
     </div>
   );
@@ -366,14 +423,46 @@ export function EnquiryForm({
   const [targetEmail, setTargetEmail] = useState('');
   const [enquiryNumber, setEnquiryNumber] = useState('');
 
-  // Field validation states
+  // Controlled form values so data is 100% preserved when returning from OTP screen
+  const [formValues, setFormValues] = useState({
+    customer_name: defaultName,
+    email: defaultEmail,
+    package_id: packageId || '',
+    custom_package_name: '',
+    travel_date: '',
+    number_of_adults: 2,
+    number_of_children: 0,
+    number_of_infants: 0,
+    budget: '',
+    message: '',
+  });
+
+  // Sync external defaults if props change
+  useEffect(() => {
+    if (defaultName) setFormValues((v) => ({ ...v, customer_name: v.customer_name || defaultName }));
+  }, [defaultName]);
+  useEffect(() => {
+    if (defaultEmail) setFormValues((v) => ({ ...v, email: v.email || defaultEmail }));
+  }, [defaultEmail]);
+  useEffect(() => {
+    if (packageId) setFormValues((v) => ({ ...v, package_id: v.package_id || packageId }));
+  }, [packageId]);
+
+  // Field validation error states
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [nameTouched, setNameTouched] = useState(false);
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [emailTouched, setEmailTouched] = useState(false);
+  const [dateError, setDateError] = useState<string | null>(null);
+  const [dateTouched, setDateTouched] = useState(false);
+
+  // Phone state
   const [phoneValid, setPhoneValid] = useState(false);
   const [phoneValue, setPhoneValue] = useState({ dialCode: '+91', number: '' });
   const [whatsappSameAsPhone, setWhatsappSameAsPhone] = useState(true);
   const [whatsappValue, setWhatsappValue] = useState({ dialCode: '+91', number: '' });
-  const [dateError, setDateError] = useState<string | null>(null);
 
-  // Package validation: true if packageId is set initially or when user selects a real package
+  // Package validation: true if packageId is set initially or when user selects/types a package
   const hasPackageSelector = !!(availablePackages && availablePackages.length > 0);
   const [packageValid, setPackageValid] = useState(Boolean(packageId) || !hasPackageSelector);
 
@@ -381,13 +470,88 @@ export function EnquiryForm({
   const [formError, setFormError] = useState<string | null>(null);
   const [isSendingOtp, setIsSendingOtp] = useState(false);
 
-  // OTP step states
+  // OTP step states & double-submit ref lock
   const [otpDigits, setOtpDigits] = useState<string[]>(['', '', '', '', '', '']);
   const [otpError, setOtpError] = useState<string | null>(null);
   const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
+  const isVerifyingRef = useRef(false);
   const [cooldown, setCooldown] = useState(0);
 
-  const todayStr = getTodayString();
+  const minTravelDate = useMemo(() => getMinTravelDate(), []);
+
+  // Validation functions
+  function validateName(val: string): string | null {
+    const trimmed = val.trim();
+    if (!trimmed) {
+      return 'Full name is required';
+    }
+    if (/\d/.test(val)) {
+      return 'Enter valid full name';
+    }
+    if (!/^[a-zA-Z\s'.\-]+$/.test(trimmed)) {
+      return 'Full name can only contain letters and spaces';
+    }
+    return null;
+  }
+
+  function handleNameChange(val: string) {
+    setFormValues((prev) => ({ ...prev, customer_name: val }));
+    if (/\d/.test(val)) {
+      setNameError('Enter valid full name');
+    } else if (nameTouched) {
+      setNameError(validateName(val));
+    } else {
+      setNameError(null);
+    }
+  }
+
+  function handleNameBlur() {
+    setNameTouched(true);
+    setNameError(validateName(formValues.customer_name));
+  }
+
+  function validateEmail(val: string): string | null {
+    const trimmed = val.trim();
+    if (!trimmed) {
+      return 'Email address is required';
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+      return 'Please enter a valid email address';
+    }
+    return null;
+  }
+
+  function handleEmailChange(val: string) {
+    setFormValues((prev) => ({ ...prev, email: val }));
+    if (emailTouched) {
+      setEmailError(validateEmail(val));
+    } else {
+      setEmailError(null);
+    }
+  }
+
+  function handleEmailBlur() {
+    setEmailTouched(true);
+    setEmailError(validateEmail(formValues.email));
+  }
+
+  function validateDate(val: string): string | null {
+    if (!val) {
+      return 'Travel date is required (DD/MM/YYYY)';
+    }
+    const minDate = getMinTravelDate();
+    if (val < minDate.iso) {
+      return 'Travel date must be at least 2 days in advance (DD/MM/YYYY)';
+    }
+    return null;
+  }
+
+  function handleDateChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const val = e.target.value;
+    setFormValues((prev) => ({ ...prev, travel_date: val }));
+    setDateTouched(true);
+    setDateError(validateDate(val));
+  }
 
   // Reset form when navigating away or when navbar "Book With Us" CTA is clicked
   const handleResetToFreshForm = useCallback(() => {
@@ -425,50 +589,88 @@ export function EnquiryForm({
     return () => clearInterval(interval);
   }, [cooldown]);
 
-  function handleDateChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const val = e.target.value;
-    if (!val) {
-      setDateError('Travel date is required.');
-    } else if (val < todayStr) {
-      setDateError('Travel date cannot be in the past.');
-    } else {
-      setDateError(null);
-    }
-  }
-
   // Step 1: Submit Form -> Validate & Send Email OTP
   async function handleInitialSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setFormError(null);
 
-    const formEl = e.currentTarget;
-    const formData = new FormData(formEl);
+    // Validate name
+    const nameErr = validateName(formValues.customer_name);
+    setNameTouched(true);
+    if (nameErr) {
+      setNameError(nameErr);
+      setFormError(nameErr);
+      return;
+    }
+
+    // Validate email
+    const mailErr = validateEmail(formValues.email);
+    setEmailTouched(true);
+    if (mailErr) {
+      setEmailError(mailErr);
+      setFormError(mailErr);
+      return;
+    }
 
     // Validate phone
     if (!phoneValid) {
-      setFormError('Please enter a valid contact phone number.');
+      setFormError('Entered valid mobile number');
       return;
     }
 
-    // Validate travel date
-    const dateVal = formData.get('travel_date')?.toString();
-    if (!dateVal || dateVal < todayStr) {
-      setDateError('Travel date cannot be in the past.');
-      setFormError('Travel date cannot be in the past.');
+    // Validate package selection / entry
+    if (hasPackageSelector && !packageValid && !formValues.package_id && !formValues.custom_package_name.trim()) {
+      setFormError('Please choose or enter a tour package to continue.');
       return;
     }
 
-    // Validate package selection
-    if (hasPackageSelector && !packageValid) {
-      setFormError('Please select a tour package to continue.');
+    // Validate travel date (min 2 days in advance)
+    const dErr = validateDate(formValues.travel_date);
+    setDateTouched(true);
+    if (dErr) {
+      setDateError(dErr);
+      setFormError(dErr);
       return;
     }
 
-    const emailVal = formData.get('email')?.toString()?.trim() || '';
-    if (!emailVal || !emailVal.includes('@')) {
-      setFormError('Please enter a valid email address.');
-      return;
+    // Prepare complete form data from controlled state
+    const formEl = e.currentTarget;
+    const formData = new FormData(formEl);
+
+    formData.set('customer_name', formValues.customer_name.trim());
+    formData.set('email', formValues.email.trim());
+
+    const phoneFull = phoneValue.number ? `${phoneValue.dialCode}${phoneValue.number}` : '';
+    formData.set('phone', phoneFull);
+
+    const whatsappFull = whatsappSameAsPhone
+      ? phoneFull
+      : (whatsappValue.number ? `${whatsappValue.dialCode}${whatsappValue.number}` : '');
+    formData.set('whatsapp_number', whatsappFull);
+
+    if (formValues.package_id) {
+      formData.set('package_id', formValues.package_id);
+    } else {
+      formData.delete('package_id');
     }
+    formData.set('custom_package_name', formValues.custom_package_name.trim());
+
+    if (destinationName) {
+      formData.set('destination', destinationName);
+    }
+
+    formData.set('travel_date', formValues.travel_date);
+    formData.set('number_of_adults', String(formValues.number_of_adults || 1));
+    formData.set('number_of_children', String(formValues.number_of_children || 0));
+    formData.set('number_of_infants', String(formValues.number_of_infants || 0));
+
+    if (formValues.budget && String(formValues.budget).trim()) {
+      formData.set('budget', String(formValues.budget).trim());
+    } else {
+      formData.delete('budget');
+    }
+
+    formData.set('message', formValues.message.trim());
 
     setIsSendingOtp(true);
     try {
@@ -481,7 +683,7 @@ export function EnquiryForm({
 
       // Success: Save form data and transition to OTP step
       setCachedFormData(formData);
-      setTargetEmail(emailVal);
+      setTargetEmail(formValues.email.trim());
       setOtpDigits(['', '', '', '', '', '']);
       setOtpError(null);
       setCooldown(60);
@@ -521,8 +723,8 @@ export function EnquiryForm({
       return;
     }
 
-    if (!cachedFormData || isVerifyingOtp) return;
-
+    if (!cachedFormData || isVerifyingRef.current) return;
+    isVerifyingRef.current = true;
     setIsVerifyingOtp(true);
     setOtpError(null);
 
@@ -530,7 +732,6 @@ export function EnquiryForm({
       const result = await verifyEnquiryOtpAndSubmit(cachedFormData, code);
       if (result.error) {
         setOtpError(result.error);
-        setIsVerifyingOtp(false);
         return;
       }
 
@@ -539,6 +740,7 @@ export function EnquiryForm({
     } catch (err: any) {
       setOtpError(err?.message || 'Verification failed. Please try again.');
     } finally {
+      isVerifyingRef.current = false;
       setIsVerifyingOtp(false);
     }
   }
@@ -616,7 +818,11 @@ export function EnquiryForm({
             <div className="flex flex-wrap items-center justify-between gap-3 pt-2 text-xs text-ink-500">
               <button
                 type="button"
-                onClick={() => setStep('form')}
+                onClick={() => {
+                  setStep('form');
+                  setOtpError(null);
+                  setFormError(null);
+                }}
                 className="inline-flex items-center gap-1.5 font-medium text-ink-600 hover:text-ink-900 transition-colors"
               >
                 <ArrowLeft className="h-3.5 w-3.5" />
@@ -627,11 +833,10 @@ export function EnquiryForm({
                 type="button"
                 onClick={handleResendOtp}
                 disabled={cooldown > 0 || isSendingOtp}
-                className={`inline-flex items-center gap-1 font-medium transition-colors ${
-                  cooldown > 0
-                    ? 'text-ink-400 cursor-not-allowed'
-                    : 'text-brand-600 hover:text-brand-700 hover:underline'
-                }`}
+                className={`inline-flex items-center gap-1 font-medium transition-colors ${cooldown > 0
+                  ? 'text-ink-400 cursor-not-allowed'
+                  : 'text-brand-600 hover:text-brand-700 hover:underline'
+                  }`}
               >
                 <RefreshCw className={`h-3 w-3 ${isSendingOtp ? 'animate-spin' : ''}`} />
                 <span>
@@ -648,7 +853,7 @@ export function EnquiryForm({
   // ── Split 2-Column Layout (Booking Page) ──────────────────────────────────
   if (layout === 'split') {
     return (
-      <form onSubmit={handleInitialSubmit} className="space-y-6">
+      <form onSubmit={handleInitialSubmit} className="space-y-6" noValidate>
         <div className="hidden" aria-hidden="true">
           <label htmlFor="website">Leave this field empty</label>
           <input id="website" name="website" type="text" tabIndex={-1} autoComplete="off" />
@@ -673,11 +878,18 @@ export function EnquiryForm({
               <label className="mb-1 block text-xs font-medium text-ink-600">Full Name *</label>
               <input
                 name="customer_name"
+                type="text"
                 required
-                defaultValue={defaultName}
+                value={formValues.customer_name}
+                onChange={(e) => handleNameChange(e.target.value)}
+                onBlur={handleNameBlur}
                 placeholder="Enter your full name"
-                className="input bg-white"
+                className={`input bg-white ${nameError ? 'border-coral-400 focus:ring-coral-400 bg-coral-50/20' : ''}`}
+                aria-invalid={Boolean(nameError)}
               />
+              {nameError && (
+                <p className="mt-1 text-xs text-coral-600 font-medium">{nameError}</p>
+              )}
             </div>
 
             <div>
@@ -688,10 +900,16 @@ export function EnquiryForm({
                 name="email"
                 type="email"
                 required
-                defaultValue={defaultEmail}
+                value={formValues.email}
+                onChange={(e) => handleEmailChange(e.target.value)}
+                onBlur={handleEmailBlur}
                 placeholder="name@example.com"
-                className="input bg-white"
+                className={`input bg-white ${emailError ? 'border-coral-400 focus:ring-coral-400 bg-coral-50/20' : ''}`}
+                aria-invalid={Boolean(emailError)}
               />
+              {emailError && (
+                <p className="mt-1 text-xs text-coral-600 font-medium">{emailError}</p>
+              )}
             </div>
 
             <div>
@@ -755,9 +973,17 @@ export function EnquiryForm({
                   </label>
                   <PackageCombobox
                     packages={availablePackages}
-                    defaultId={packageId || ''}
+                    defaultId={formValues.package_id}
+                    defaultCustomTitle={formValues.custom_package_name}
                     inputClassName="input bg-white text-ink-800 font-medium w-full"
                     onValidityChange={setPackageValid}
+                    onChange={({ package_id, custom_package_name }) => {
+                      setFormValues((prev) => ({
+                        ...prev,
+                        package_id,
+                        custom_package_name,
+                      }));
+                    }}
                   />
                 </div>
               )}
@@ -771,12 +997,22 @@ export function EnquiryForm({
                   name="travel_date"
                   type="date"
                   required
-                  min={todayStr}
+                  min={minTravelDate.iso}
+                  value={formValues.travel_date}
                   onChange={handleDateChange}
-                  className={`input bg-white ${dateError ? 'border-coral-400 focus:ring-coral-400' : ''}`}
+                  onBlur={() => {
+                    setDateTouched(true);
+                    setDateError(validateDate(formValues.travel_date));
+                  }}
+                  className={`input bg-white ${dateError ? 'border-coral-400 focus:ring-coral-400 bg-coral-50/20' : ''}`}
+                  aria-invalid={Boolean(dateError)}
                 />
+                <p className="mt-1 text-[11px] text-ink-500">
+                  Format: DD/MM/YYYY (Min. 2 days ahead)
+                  {formValues.travel_date && !dateError ? ` • Selected: ${formatDisplayDate(formValues.travel_date)}` : ''}
+                </p>
                 {dateError && (
-                  <p className="mt-1 text-xs text-coral-600">{dateError}</p>
+                  <p className="mt-1 text-xs text-coral-600 font-medium">{dateError}</p>
                 )}
               </div>
 
@@ -792,7 +1028,8 @@ export function EnquiryForm({
                       name="number_of_adults"
                       type="number"
                       min={1}
-                      defaultValue={2}
+                      value={formValues.number_of_adults}
+                      onChange={(e) => setFormValues((prev) => ({ ...prev, number_of_adults: Number(e.target.value) || 1 }))}
                       className="input bg-white text-center px-1"
                     />
                   </div>
@@ -802,7 +1039,8 @@ export function EnquiryForm({
                       name="number_of_children"
                       type="number"
                       min={0}
-                      defaultValue={0}
+                      value={formValues.number_of_children}
+                      onChange={(e) => setFormValues((prev) => ({ ...prev, number_of_children: Number(e.target.value) || 0 }))}
                       className="input bg-white text-center px-1"
                     />
                   </div>
@@ -812,7 +1050,8 @@ export function EnquiryForm({
                       name="number_of_infants"
                       type="number"
                       min={0}
-                      defaultValue={0}
+                      value={formValues.number_of_infants}
+                      onChange={(e) => setFormValues((prev) => ({ ...prev, number_of_infants: Number(e.target.value) || 0 }))}
                       className="input bg-white text-center px-1"
                     />
                   </div>
@@ -826,8 +1065,11 @@ export function EnquiryForm({
                 <input
                   name="budget"
                   type="number"
+                  step="any"
                   min={0}
-                  placeholder="e.g. 50000"
+                  value={formValues.budget}
+                  onChange={(e) => setFormValues((prev) => ({ ...prev, budget: e.target.value }))}
+                  placeholder="e.g. 50000 or 25000.50"
                   className="input bg-white"
                 />
               </div>
@@ -839,6 +1081,8 @@ export function EnquiryForm({
                 <textarea
                   name="message"
                   rows={2}
+                  value={formValues.message}
+                  onChange={(e) => setFormValues((prev) => ({ ...prev, message: e.target.value }))}
                   placeholder="Destinations, hotel preferences, activities…"
                   className="input bg-white resize-none"
                 />
@@ -882,7 +1126,7 @@ export function EnquiryForm({
 
   // ── Standard Stacked Layout (e.g. Package Detail Sidebar) ──────────────────
   return (
-    <form onSubmit={handleInitialSubmit} className="space-y-3">
+    <form onSubmit={handleInitialSubmit} className="space-y-3" noValidate>
       <div className="hidden" aria-hidden="true">
         <label htmlFor="website">Leave this field empty</label>
         <input id="website" name="website" type="text" tabIndex={-1} autoComplete="off" />
@@ -899,29 +1143,55 @@ export function EnquiryForm({
             <label className="mb-1 block text-xs font-medium text-ink-600">Choose Package *</label>
             <PackageCombobox
               packages={availablePackages}
-              defaultId={packageId || ''}
+              defaultId={formValues.package_id}
+              defaultCustomTitle={formValues.custom_package_name}
               inputClassName="input bg-white w-full"
               onValidityChange={setPackageValid}
+              onChange={({ package_id, custom_package_name }) => {
+                setFormValues((prev) => ({
+                  ...prev,
+                  package_id,
+                  custom_package_name,
+                }));
+              }}
             />
           </div>
         )}
 
         <div className="grid gap-3 sm:grid-cols-2">
-          <input
-            name="customer_name"
-            required
-            defaultValue={defaultName}
-            placeholder="Full name*"
-            className="input"
-          />
-          <input
-            name="email"
-            type="email"
-            required
-            defaultValue={defaultEmail}
-            placeholder="Email (verified via OTP)*"
-            className="input"
-          />
+          <div>
+            <input
+              name="customer_name"
+              type="text"
+              required
+              value={formValues.customer_name}
+              onChange={(e) => handleNameChange(e.target.value)}
+              onBlur={handleNameBlur}
+              placeholder="Full name*"
+              className={`input bg-white ${nameError ? 'border-coral-400 focus:ring-coral-400 bg-coral-50/20' : ''}`}
+              aria-invalid={Boolean(nameError)}
+            />
+            {nameError && (
+              <p className="mt-1 text-xs text-coral-600 font-medium">{nameError}</p>
+            )}
+          </div>
+
+          <div>
+            <input
+              name="email"
+              type="email"
+              required
+              value={formValues.email}
+              onChange={(e) => handleEmailChange(e.target.value)}
+              onBlur={handleEmailBlur}
+              placeholder="Email (verified via OTP)*"
+              className={`input bg-white ${emailError ? 'border-coral-400 focus:ring-coral-400 bg-coral-50/20' : ''}`}
+              aria-invalid={Boolean(emailError)}
+            />
+            {emailError && (
+              <p className="mt-1 text-xs text-coral-600 font-medium">{emailError}</p>
+            )}
+          </div>
         </div>
 
         <div>
@@ -967,12 +1237,22 @@ export function EnquiryForm({
             name="travel_date"
             type="date"
             required
-            min={todayStr}
+            min={minTravelDate.iso}
+            value={formValues.travel_date}
             onChange={handleDateChange}
-            className={`input ${dateError ? 'border-coral-400 focus:ring-coral-400' : ''}`}
+            onBlur={() => {
+              setDateTouched(true);
+              setDateError(validateDate(formValues.travel_date));
+            }}
+            className={`input bg-white ${dateError ? 'border-coral-400 focus:ring-coral-400 bg-coral-50/20' : ''}`}
+            aria-invalid={Boolean(dateError)}
           />
+          <p className="mt-1 text-[11px] text-ink-500">
+            Format: DD/MM/YYYY (Min. 2 days ahead)
+            {formValues.travel_date && !dateError ? ` • Selected: ${formatDisplayDate(formValues.travel_date)}` : ''}
+          </p>
           {dateError && (
-            <p className="mt-1 text-xs text-coral-600">{dateError}</p>
+            <p className="mt-1 text-xs text-coral-600 font-medium">{dateError}</p>
           )}
         </div>
 
@@ -983,8 +1263,9 @@ export function EnquiryForm({
               name="number_of_adults"
               type="number"
               min={1}
-              defaultValue={2}
-              className="input"
+              value={formValues.number_of_adults}
+              onChange={(e) => setFormValues((prev) => ({ ...prev, number_of_adults: Number(e.target.value) || 1 }))}
+              className="input bg-white text-center"
             />
           </div>
           <div>
@@ -993,8 +1274,9 @@ export function EnquiryForm({
               name="number_of_children"
               type="number"
               min={0}
-              defaultValue={0}
-              className="input"
+              value={formValues.number_of_children}
+              onChange={(e) => setFormValues((prev) => ({ ...prev, number_of_children: Number(e.target.value) || 0 }))}
+              className="input bg-white text-center"
             />
           </div>
           <div>
@@ -1003,18 +1285,38 @@ export function EnquiryForm({
               name="number_of_infants"
               type="number"
               min={0}
-              defaultValue={0}
-              className="input"
+              value={formValues.number_of_infants}
+              onChange={(e) => setFormValues((prev) => ({ ...prev, number_of_infants: Number(e.target.value) || 0 }))}
+              className="input bg-white text-center"
             />
           </div>
         </div>
-        <input name="budget" type="number" min={0} placeholder="Approximate budget (optional)" className="input" />
-        <textarea
-          name="message"
-          rows={3}
-          placeholder="Tell us a bit about your trip…"
-          className="input"
-        />
+
+        <div>
+          <label className="mb-1 block text-xs font-medium text-ink-600">Approximate Budget (₹, optional)</label>
+          <input
+            name="budget"
+            type="number"
+            step="any"
+            min={0}
+            value={formValues.budget}
+            onChange={(e) => setFormValues((prev) => ({ ...prev, budget: e.target.value }))}
+            placeholder="e.g. 50000 or 25000.50"
+            className="input bg-white"
+          />
+        </div>
+
+        <div>
+          <label className="mb-1 block text-xs font-medium text-ink-600">Special Requests / Notes</label>
+          <textarea
+            name="message"
+            rows={3}
+            value={formValues.message}
+            onChange={(e) => setFormValues((prev) => ({ ...prev, message: e.target.value }))}
+            placeholder="Tell us a bit about your trip…"
+            className="input bg-white resize-none"
+          />
+        </div>
       </div>
 
       {formError && (

@@ -1,7 +1,5 @@
-'use server';
-
-import { createServiceClient } from '@/lib/supabase/service';
 import { createCustomerClient } from '@/lib/supabase/server';
+import { createServiceClient } from '@/lib/supabase/service';
 import { sendGmail, isGmailConfigured } from '@/lib/email/gmail';
 import {
   hashToken,
@@ -21,21 +19,48 @@ type SignupOtpMemoryRecord = {
   createdAt: number;
 };
 
-// Global in-memory fallback store to guarantee zero-failure OTP delivery
 const signupOtpMemoryMap = new Map<string, SignupOtpMemoryRecord>();
 
 export type InitiateSignupResult = {
   error?: string;
-  step?: 'otp_required';
   signupTicket?: string;
   maskedEmail?: string;
-  cooldownSeconds?: number;
 };
 
 export type VerifySignupResult = {
   error?: string;
   success?: boolean;
 };
+
+/**
+ * Checks whether a username is already taken in customer_accounts or auth.users metadata.
+ */
+export async function isUsernameAlreadyTaken(username: string): Promise<boolean> {
+  const trimmed = username.trim().toLowerCase();
+  if (!trimmed) return false;
+
+  try {
+    const serviceSupabase = createServiceClient();
+    const { data: accountData } = await serviceSupabase
+      .from('customer_accounts')
+      .select('id')
+      .ilike('username', trimmed)
+      .maybeSingle();
+
+    if (accountData) return true;
+
+    // Fallback check against auth users metadata
+    const { data: usersData } = await serviceSupabase.auth.admin.listUsers();
+    const match = usersData?.users?.some(
+      (u) => (u.user_metadata?.username as string)?.toLowerCase() === trimmed
+    );
+    if (match) return true;
+  } catch (err) {
+    console.warn('isUsernameAlreadyTaken check notice:', err);
+  }
+
+  return false;
+}
 
 /**
  * Checks whether an email is already registered in customer_accounts, customers, or profiles.
@@ -67,7 +92,6 @@ async function isEmailAlreadyTaken(email: string): Promise<boolean> {
     }
   } catch (checkErr) {
     console.warn('isEmailAlreadyTaken service check warning:', checkErr);
-    // Fallback to customer client check
     try {
       const customerSupabase = await createCustomerClient();
       const { data: custData } = await customerSupabase
@@ -83,21 +107,45 @@ async function isEmailAlreadyTaken(email: string): Promise<boolean> {
 }
 
 /**
- * Step 1: Validates signup details, checks for duplicate email, and sends a 6-digit OTP.
+ * Step 1: Validates signup details, username uniqueness, checks for duplicate email, and sends a 6-digit OTP.
  */
 export async function initiateCustomerSignupFlow(params: {
   fullName: string;
+  username: string;
   email: string;
   password: string;
   confirmPassword: string;
 }): Promise<InitiateSignupResult> {
   const fullName = params.fullName.trim();
+  const username = (params.username || '').trim().toLowerCase();
   const email = params.email.trim().toLowerCase();
   const password = params.password.trim();
   const confirmPassword = params.confirmPassword.trim();
 
   if (!fullName) {
     return { error: 'Please enter your full name.' };
+  }
+
+  if (!username) {
+    return { error: 'Please choose a username.' };
+  }
+
+  if (username.length < 3) {
+    return { error: 'Username must be at least 3 characters.' };
+  }
+
+  if (username.length > 30) {
+    return { error: 'Username must be at most 30 characters.' };
+  }
+
+  if (!/^[a-zA-Z0-9_.-]+$/.test(username)) {
+    return { error: 'Username can only contain letters, numbers, dots, and underscores.' };
+  }
+
+  // Check username uniqueness
+  const usernameTaken = await isUsernameAlreadyTaken(username);
+  if (usernameTaken) {
+    return { error: 'Username is already taken' };
   }
 
   if (!email || !email.includes('@')) {
@@ -179,9 +227,10 @@ export async function initiateCustomerSignupFlow(params: {
     console.warn('Signup OTP database insert notice (memory store active):', dbErr?.message);
   }
 
-  // Encrypt the signup ticket (AES-256-GCM) with validated registration details
+  // Encrypt the signup ticket (AES-256-GCM) with validated registration details including username
   const signupTicket = encryptTicket({
     fullName,
+    username,
     email,
     password,
     codeHash: hashedCode,
@@ -204,7 +253,7 @@ export async function initiateCustomerSignupFlow(params: {
           <div style="padding: 32px 28px;">
             <p style="font-size: 15px; color: #1e293b; margin: 0 0 16px; font-weight: 600;">Hi ${fullName},</p>
             <p style="font-size: 14px; color: #475569; line-height: 1.6; margin: 0 0 24px;">
-              Thank you for creating your account with Travinco. Please enter the verification code below to verify your email and activate your account:
+              Thank you for creating your account with Travinco. Your chosen username is <strong>@${username}</strong>. Please enter the verification code below to verify your email and activate your account:
             </p>
             <div style="background-color: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 12px; padding: 20px; text-align: center; margin: 0 0 24px;">
               <span style="font-family: 'Courier New', Courier, monospace; font-size: 34px; font-weight: 800; letter-spacing: 8px; color: #065f46; display: inline-block;">
@@ -226,32 +275,32 @@ export async function initiateCustomerSignupFlow(params: {
 
   const emailResult = await sendGmail({
     to: email,
-    subject: `${otpCode} is your Travinco verification code`,
+    subject: `${otpCode} is your Travinco sign-up verification code`,
     html,
   });
 
   if (emailResult.error) {
-    console.error('initiateCustomerSignupFlow sendGmail error:', emailResult.error);
-    return { error: 'Could not send verification email. Please check your address and try again.' };
+    console.error('Failed to send verification code email:', emailResult.error);
+    return {
+      error: 'We could not send your verification code. Please check your email and try again.',
+    };
   }
 
   return {
-    step: 'otp_required',
     signupTicket,
     maskedEmail: maskEmail(email),
-    cooldownSeconds: 60,
   };
 }
 
 /**
- * Resends a fresh 6-digit signup OTP for an active signup ticket.
+ * Resends a fresh 6-digit verification code for an existing pending signup session.
  */
-export async function resendCustomerSignupOtpFlow(signupTicket: string): Promise<{
-  error?: string;
-  success?: boolean;
-}> {
+export async function resendCustomerSignupOtpFlow(
+  signupTicket: string
+): Promise<{ error?: string; success?: boolean }> {
   const payload = decryptTicket<{
     fullName: string;
+    username: string;
     email: string;
     password: string;
     codeHash: string;
@@ -259,14 +308,14 @@ export async function resendCustomerSignupOtpFlow(signupTicket: string): Promise
   }>(signupTicket);
 
   if (!payload || payload.exp < Date.now()) {
-    return { error: 'Your signup session has expired. Please fill in your details again.' };
+    return { error: 'Your signup session has expired. Please fill out the form again.' };
   }
 
   const trimmedEmail = payload.email.trim().toLowerCase();
 
   const existingMem = signupOtpMemoryMap.get(trimmedEmail);
   if (existingMem && Date.now() - existingMem.createdAt < 45 * 1000) {
-    return { error: 'Please wait a moment before requesting another code.' };
+    return { error: 'Please wait a moment before requesting another verification code.' };
   }
 
   const otpCode = generateOtpCode();
@@ -331,6 +380,7 @@ export async function verifyCustomerSignupOtpFlow(
 ): Promise<VerifySignupResult> {
   const payload = decryptTicket<{
     fullName: string;
+    username: string;
     email: string;
     password: string;
     codeHash: string;
@@ -338,45 +388,40 @@ export async function verifyCustomerSignupOtpFlow(
   }>(signupTicket);
 
   if (!payload || payload.exp < Date.now()) {
-    return { error: 'Your signup session has expired. Please register again.' };
+    return { error: 'Your signup session has expired. Please start over.' };
   }
 
   const trimmedOtp = enteredOtp.trim();
   if (trimmedOtp.length !== 6) {
-    return { error: 'Please enter the 6-digit verification code.' };
+    return { error: 'Please enter all 6 digits of your verification code.' };
   }
 
-  const computedHash = hashToken(trimmedOtp);
   const trimmedEmail = payload.email.trim().toLowerCase();
+  const computedHash = hashToken(trimmedOtp);
   let verified = false;
 
-  // 1. Try DB verification if record exists
+  // 1. Check database OTP record first
   try {
     const serviceSupabase = createServiceClient();
-    const signupKey = `signup:${trimmedEmail}`;
-
     const { data: record } = await serviceSupabase
       .from('enquiry_email_otps')
-      .select('*')
-      .eq('email', signupKey)
-      .is('verified_at', null)
+      .select('id, code_hash, expires_at, attempts')
+      .eq('email', `signup:${trimmedEmail}`)
+      .gt('expires_at', new Date().toISOString())
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
 
     if (record) {
-      if (new Date(record.expires_at) < new Date()) {
-        return { error: 'This verification code has expired. Please request a new one.' };
-      }
       if (record.attempts >= MAX_OTP_ATTEMPTS) {
-        return { error: 'Too many incorrect attempts. Please return to the signup page and try again.' };
+        return { error: 'Too many incorrect attempts. Please request a new verification code.' };
       }
 
-      if (computedHash === record.code_hash) {
+      if (record.code_hash === computedHash) {
         verified = true;
         await serviceSupabase
           .from('enquiry_email_otps')
-          .update({ verified_at: new Date().toISOString() })
+          .delete()
           .eq('id', record.id);
       } else {
         const nextAttempts = record.attempts + 1;
@@ -412,6 +457,7 @@ export async function verifyCustomerSignupOtpFlow(
     email_confirm: true,
     user_metadata: {
       full_name: payload.fullName,
+      username: payload.username,
       role: 'customer',
       is_customer_signup: 'true',
     },
@@ -438,6 +484,7 @@ export async function verifyCustomerSignupOtpFlow(
       {
         id: userId,
         full_name: payload.fullName,
+        username: payload.username,
         email: trimmedEmail,
       },
       { onConflict: 'id' }
@@ -479,17 +526,22 @@ export async function verifyCustomerSignupOtpFlow(
               <p style="color: #a7f3d0; font-size: 13px; margin: 6px 0 0; text-transform: uppercase; letter-spacing: 1.5px;">Welcome to Your Travel Portal</p>
             </div>
             <div style="padding: 32px 28px;">
-              <p style="font-size: 18px; color: #065f46; margin: 0 0 16px; font-weight: 700;">Account Created Successfully!</p>
-              <p style="font-size: 15px; color: #1e293b; margin: 0 0 12px; font-weight: 600;">Hi ${payload.fullName},</p>
-              <p style="font-size: 14px; color: #475569; line-height: 1.6; margin: 0 0 20px;">
-                Your Travinco account is now active and ready. You can sign in anytime to view your personalized holiday proposals, track quotations, and manage confirmed invoices.
+              <p style="font-size: 15px; color: #1e293b; margin: 0 0 16px; font-weight: 600;">Welcome, ${payload.fullName}!</p>
+              <p style="font-size: 14px; color: #475569; line-height: 1.6; margin: 0 0 16px;">
+                Your Travinco customer account has been created successfully. Your username is <strong>@${payload.username}</strong>.
               </p>
-              <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; margin: 0 0 24px;">
-                <p style="font-size: 13px; color: #334155; margin: 0 0 6px;"><strong>Registered Email:</strong> ${trimmedEmail}</p>
-                <p style="font-size: 13px; color: #334155; margin: 0;"><strong>Status:</strong> Active &amp; Verified</p>
+              <p style="font-size: 14px; color: #475569; line-height: 1.6; margin: 0 0 24px;">
+                You can now sign in at any time with either your <strong>email (${trimmedEmail})</strong> or your <strong>username (@${payload.username})</strong> to access your tailored holiday proposals, track your bookings, and view official invoices.
+              </p>
+              <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 18px 20px; margin: 0 0 24px;">
+                <p style="font-size: 13px; color: #15803d; margin: 0; font-weight: 600;">
+                  ✔ Direct Quotations &amp; Tailored Packages<br>
+                  ✔ Trip Booking History &amp; Official Invoices<br>
+                  ✔ 24/7 Dedicated Destination Specialists
+                </p>
               </div>
               <p style="font-size: 13px; color: #64748b; line-height: 1.5; margin: 0;">
-                If you have any questions or need custom trip recommendations, our travel specialists are ready to help.
+                If you have any questions or are ready to plan your next journey, our destination specialists are here to help.
               </p>
             </div>
             <div style="background-color: #f8fafc; border-top: 1px solid #f1f5f9; padding: 16px 24px; text-align: center;">

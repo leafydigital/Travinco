@@ -86,5 +86,5 @@ export async function signOut() {
   } catch (err) {
     console.warn('SignOut server error caught:', err);
   }
-  redirect('/travinco_admin_login');
+  redirect('/account/login');
 }

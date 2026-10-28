@@ -184,6 +184,24 @@ export async function verifyEnquiryEmailOtp(
 
       otpMemoryMap.delete(trimmedEmail);
       return { verified: true };
+    } else {
+      // Check if recently verified within the last 30 seconds (handles double-submit race conditions in serverless)
+      const { data: recentVerified } = await supabase
+        .from('enquiry_email_otps')
+        .select('*')
+        .eq('email', trimmedEmail)
+        .eq('code_hash', computedHash)
+        .not('verified_at', 'is', null)
+        .order('verified_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (
+        recentVerified?.verified_at &&
+        Date.now() - new Date(recentVerified.verified_at).getTime() < 30 * 1000
+      ) {
+        return { verified: true };
+      }
     }
   } catch (dbErr) {
     console.warn('Database verify failed, checking memory fallback:', dbErr);

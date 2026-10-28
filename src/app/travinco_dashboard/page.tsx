@@ -53,7 +53,7 @@ export default async function AdminDashboardPage({
     if (firstItem && firstItem.href !== '/travinco_dashboard') {
       redirect(firstItem.href);
     }
-    redirect('/travinco_admin_login?reason=forbidden');
+    redirect('/account/login?reason=forbidden');
   }
 
   const supabase = await createClient();

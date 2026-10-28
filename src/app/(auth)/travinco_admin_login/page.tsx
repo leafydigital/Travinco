@@ -1,56 +1,13 @@
-import type { Metadata } from 'next';
-import { LoginForm } from './login-form';
+import { redirect } from 'next/navigation';
 
-export const metadata: Metadata = {
-  title: 'Admin sign in',
-  robots: { index: false, follow: false },
-};
-
-const REASON_MESSAGES: Record<string, string> = {
-  not_staff: 'That account is a customer account, not a staff account — please sign in with your staff email.',
-  deactivated: 'This staff account has been deactivated. Contact your administrator.',
-  forbidden: 'Access denied: You do not have permission to access that page. Please sign in with an authorized account.',
-  reset_success: 'Your password has been reset successfully! Please sign in with your new password.',
-};
-
-export default function LoginPage({
+export default function RetiredAdminLoginPage({
   searchParams,
 }: {
   searchParams: { reason?: string; redirectTo?: string };
 }) {
-  const reasonMessage = searchParams.reason ? REASON_MESSAGES[searchParams.reason] : null;
-  const isSuccess = searchParams.reason === 'reset_success';
-
-  return (
-    <main className="flex min-h-screen items-center justify-center bg-ink-50 px-4">
-      <div className="card w-full max-w-sm p-8 shadow-sm">
-        <div className="mb-4 flex items-center justify-between">
-          <span className="font-display text-xl font-bold tracking-tight text-brand-700">
-            Travinco
-          </span>
-          <span className="rounded bg-brand-50 px-2 py-0.5 text-xs font-semibold uppercase tracking-wider text-brand-700">
-            Staff Portal
-          </span>
-        </div>
-        <h1 className="text-xl font-semibold text-ink-900">Admin sign in</h1>
-        <p className="mt-1 text-sm text-ink-500">
-          Staff access only. Contact your administrator if you need an account.
-        </p>
-        {reasonMessage && (
-          <p
-            className={`mt-4 rounded-lg border px-3 py-2 text-sm ${
-              isSuccess
-                ? 'border-emerald-200 bg-emerald-50 text-emerald-800 font-medium'
-                : 'border-sand-200 bg-sand-50 text-sand-800'
-            }`}
-          >
-            {reasonMessage}
-          </p>
-        )}
-        <div className="mt-6">
-          <LoginForm redirectTo={searchParams.redirectTo} />
-        </div>
-      </div>
-    </main>
-  );
+  const query = new URLSearchParams();
+  if (searchParams.redirectTo) query.set('redirectTo', searchParams.redirectTo);
+  if (searchParams.reason) query.set('reason', searchParams.reason);
+  const qStr = query.toString();
+  redirect(`/account/login${qStr ? `?${qStr}` : ''}`);
 }

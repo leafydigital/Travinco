@@ -176,20 +176,36 @@ export async function verifyEnquiryOtpAndSubmit(
   const initialPriority = computePriorityFromDate(parsed.data.travel_date);
   let enquiryNumber = `ENQ-${new Date().getFullYear()}-${Math.floor(10000 + Math.random() * 90000)}`;
 
+  const isUuid = Boolean(
+    parsed.data.package_id &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(parsed.data.package_id)
+  );
+  const validPackageId = isUuid ? parsed.data.package_id : null;
+  const customPkg = (raw.custom_package_name || parsed.data.custom_package_name)?.toString()?.trim();
+  let effectiveDestination = parsed.data.destination || null;
+  let effectiveMessage = parsed.data.message || null;
+
+  if (customPkg) {
+    if (!effectiveDestination) effectiveDestination = customPkg;
+    effectiveMessage = effectiveMessage
+      ? `[Custom Package: ${customPkg}]\n${effectiveMessage}`
+      : `[Custom Package: ${customPkg}]`;
+  }
+
   const payload = {
     customer_id: customerId,
     customer_name: parsed.data.customer_name,
     phone: parsed.data.phone,
     whatsapp_number: parsed.data.whatsapp_number || null,
     email: targetEmail,
-    package_id: parsed.data.package_id || null,
-    destination: parsed.data.destination || null,
+    package_id: validPackageId,
+    destination: effectiveDestination,
     travel_date: parsed.data.travel_date || null,
     number_of_adults: parsed.data.number_of_adults,
     number_of_children: parsed.data.number_of_children,
     number_of_infants: parsed.data.number_of_infants,
     budget: parsed.data.budget || null,
-    message: parsed.data.message || null,
+    message: effectiveMessage,
     source: 'website' as const,
     status: 'new' as const,
     priority: initialPriority,

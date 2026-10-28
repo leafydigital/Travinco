@@ -1,9 +1,10 @@
-import { Suspense } from 'react';
+import { Suspense, cache } from 'react';
 import { requireProfile } from '@/lib/supabase/auth-helpers';
 import { LeadsFilterBar } from './leads-filter-bar';
 import { LeadsTable } from './leads-table';
 import { UploadExcelButton } from './upload-excel-button';
-import { getLeadsTableList } from './actions';
+import { getLeadsTableList, clearAndArchiveLeads } from './actions';
+import { ClearDataButton } from '@/components/admin/clear-data-button';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = { title: 'Leads — Travinco Admin' };
@@ -64,6 +65,40 @@ function LeadsTableSkeleton() {
   );
 }
 
+// Per-request memo (primitive args so React cache can dedupe): the table and the
+// Clear Data button share one list/count query
+const getLeadsTableListCached = cache(
+  (page: number, pageSize: number, q: string, status: string) =>
+    getLeadsTableList({ page, pageSize, q, status })
+);
+
+function readListParams(searchParams: PageProps['searchParams']) {
+  return {
+    page: Math.max(1, Number(searchParams.page ?? 1)),
+    pageSize: Math.max(10, Math.min(100, Number(searchParams.limit ?? 20))),
+    q: searchParams.q ?? '',
+    status: searchParams.status ?? '',
+  };
+}
+
+/**
+ * Clear Data button enabled only when the table has rows. With a search/status filter
+ * active, an empty result does not prove the table is empty, so the server decides.
+ */
+async function LeadsClearDataSlot({ searchParams }: { searchParams: PageProps['searchParams'] }) {
+  const { page, pageSize, q, status } = readListParams(searchParams);
+  const result = await getLeadsTableListCached(page, pageSize, q, status);
+  const hasFilters = Boolean(q.trim() || status.trim());
+  return (
+    <ClearDataButton
+      entityLabel="leads"
+      sheetTab="Leads"
+      action={clearAndArchiveLeads}
+      hasData={result.totalCount > 0 || hasFilters}
+    />
+  );
+}
+
 async function LeadsTableContent({
   searchParams,
   isAdmin,
@@ -71,17 +106,8 @@ async function LeadsTableContent({
   searchParams: PageProps['searchParams'];
   isAdmin: boolean;
 }) {
-  const page = Math.max(1, Number(searchParams.page ?? 1));
-  const pageSize = Math.max(10, Math.min(100, Number(searchParams.limit ?? 20)));
-  const q = searchParams.q ?? '';
-  const status = searchParams.status ?? '';
-
-  const result = await getLeadsTableList({
-    page,
-    pageSize,
-    q,
-    status,
-  });
+  const { page, pageSize, q, status } = readListParams(searchParams);
+  const result = await getLeadsTableListCached(page, pageSize, q, status);
 
   return (
     <LeadsTable
@@ -111,7 +137,14 @@ export default async function LeadsPage({ searchParams }: PageProps) {
             Track customer enquiries, import spreadsheet records, and manage conversion pipelines
           </p>
         </div>
-        <UploadExcelButton />
+        <div className="flex flex-wrap items-center gap-2.5">
+          {isAdmin && (
+            <Suspense key={suspKey} fallback={<ClearDataButton entityLabel="leads" sheetTab="Leads" loading />}>
+              <LeadsClearDataSlot searchParams={searchParams} />
+            </Suspense>
+          )}
+          <UploadExcelButton />
+        </div>
       </div>
 
       {/* 2. Instant Search, Status Dropdown Filter & Page Size Selector */}

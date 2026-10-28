@@ -55,9 +55,8 @@ export const getCustomer = cache(async (): Promise<CurrentCustomer | null> => {
       id: user.id,
       email: user.email,
       full_name: (user.user_metadata?.full_name as string) || user.email.split('@')[0],
-      phone: null,
+      username: (user.user_metadata?.username as string) || user.email.split('@')[0],
       created_at: user.created_at,
-      updated_at: user.updated_at ?? user.created_at,
     } as CurrentCustomer;
   }
 

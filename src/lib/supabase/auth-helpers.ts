@@ -1,6 +1,8 @@
 import { createAdminClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import { cache } from 'react';
+import { headers } from 'next/headers';
+import { STAFF_CONTEXT_HEADER, decodeStaffContext, type StaffContext } from '@/lib/supabase/staff-context';
 import type { Tables } from '@/types/database';
 
 export type CurrentProfile = Tables<'profiles'>;
@@ -27,36 +29,58 @@ export type PermissionAction = 'view' | 'edit';
  * Non-throwing helper returning current staff profile or null (cached per request).
  * Uses createAdminClient() so it reads strictly from the staff/admin session cookie (sb-admin-auth-token).
  */
-export const getProfile = cache(async (): Promise<CurrentProfile | null> => {
-  const supabase = await createAdminClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+/**
+ * Verified staff context forwarded by the middleware for /travinco_dashboard requests
+ * (null outside that scope, e.g. API routes -> callers fall back to DB queries).
+ */
+const getForwardedStaffContext = cache((): StaffContext | null => {
+  try {
+    return decodeStaffContext(headers().get(STAFF_CONTEXT_HEADER));
+  } catch {
+    return null; // headers() unavailable outside a request scope
+  }
+});
 
-  if (!user) return null;
+export const getProfile = cache(async (): Promise<CurrentProfile | null> => {
+  // Fast path: middleware already verified JWT + active staff role + not a customer account
+  const forwarded = getForwardedStaffContext();
+  if (forwarded) {
+    const profile = forwarded.profile as CurrentProfile;
+    return profile.is_active ? profile : null;
+  }
+
+  const supabase = await createAdminClient();
+  // getClaims() verifies the JWT locally when asymmetric signing keys are used
+  // (and falls back to a getUser() network call otherwise).
+  const { data: claimsData } = await supabase.auth.getClaims();
+  const claims = claimsData?.claims;
+  const userId = claims?.sub;
+
+  if (!userId) return null;
 
   // Strictly reject customer accounts from being treated as staff
+  const userMeta = (claims.user_metadata ?? {}) as Record<string, unknown>;
   const isCustomerMeta =
-    user.user_metadata?.is_customer_signup === 'true' ||
-    user.user_metadata?.is_customer_signup === true ||
-    user.user_metadata?.role === 'customer';
+    userMeta.is_customer_signup === 'true' ||
+    userMeta.is_customer_signup === true ||
+    userMeta.role === 'customer';
 
   if (isCustomerMeta) return null;
 
-  const { data: customerAccount } = await supabase
-    .from('customer_accounts')
-    .select('id')
-    .eq('id', user.id)
-    .maybeSingle();
+  const [{ data: customerAccount }, { data: profile }] = await Promise.all([
+    supabase
+      .from('customer_accounts')
+      .select('id')
+      .eq('id', userId)
+      .maybeSingle(),
+    supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .maybeSingle(),
+  ]);
 
   if (customerAccount) return null;
-
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', user.id)
-    .maybeSingle();
-
   if (!profile || !profile.is_active) return null;
   return profile;
 });
@@ -70,7 +94,7 @@ export const requireProfile = cache(async (): Promise<CurrentProfile> => {
   const profile = await getProfile();
 
   if (!profile) {
-    redirect('/travinco_admin_login');
+    redirect('/account/login');
   }
 
   return profile;
@@ -81,6 +105,16 @@ export const requireProfile = cache(async (): Promise<CurrentProfile> => {
  * Wrapped in React cache() so the layout and pages share one DB round-trip per render pass.
  */
 export const getStaffPermissions = cache(async (profileId: string) => {
+  // Fast path: middleware loaded the current staff member's permission rows already
+  const forwarded = getForwardedStaffContext();
+  if (forwarded && forwarded.profile.id === profileId) {
+    return buildStaffPermissions(
+      profileId,
+      forwarded.perms.rows as Tables<'staff_permissions'>[],
+      forwarded.perms.settingValue
+    );
+  }
+
   const supabase = await createAdminClient();
   const [{ data: dbPerms }, { data: settingRow }] = await Promise.all([
     supabase
@@ -94,8 +128,17 @@ export const getStaffPermissions = cache(async (profileId: string) => {
       .maybeSingle(),
   ]);
 
-  if (settingRow?.value && Array.isArray((settingRow.value as any).pages)) {
-    const grantedPages = (settingRow.value as any).pages as string[];
+  return buildStaffPermissions(profileId, dbPerms ?? [], settingRow?.value ?? null);
+});
+
+/** Shared transform: website_settings page grants override staff_permissions rows. */
+function buildStaffPermissions(
+  profileId: string,
+  dbPerms: Tables<'staff_permissions'>[],
+  settingValue: unknown
+) {
+  if (settingValue && Array.isArray((settingValue as any).pages)) {
+    const grantedPages = (settingValue as any).pages as string[];
     return grantedPages.map((pageKey) => ({
       id: `virtual_${profileId}_${pageKey}`,
       profile_id: profileId,
@@ -106,8 +149,8 @@ export const getStaffPermissions = cache(async (profileId: string) => {
     }));
   }
 
-  return dbPerms ?? [];
-});
+  return dbPerms;
+}
 
 /** Throws redirect for pages requiring a specific role tier. */
 export async function assertRole(
@@ -115,7 +158,7 @@ export async function assertRole(
   allowed: UserRole[]
 ) {
   if (!allowed.includes(profile.role)) {
-    redirect('/travinco_admin_login?reason=forbidden');
+    redirect('/account/login?reason=forbidden');
   }
 }
 

@@ -1,11 +1,10 @@
 'use client';
 
-import { useState, useMemo, useTransition, useEffect, useCallback } from 'react';
+import { useState, useMemo, useTransition, useEffect, useCallback, useRef } from 'react';
 import type { MasterHotelRateItem } from '@/lib/excel/master-parser';
 import type { RateMasterQueryResult, MasterFilterOptions } from '@/lib/services/master-rates-db';
 import {
   uploadMasterExcelAction,
-  getMasterRatesAction,
   getMasterRateByIdAction,
   deleteMasterRateAction,
   updateMasterRateAction,
@@ -142,12 +141,24 @@ export function MasterClient({ initialData, filterOptions, isAdmin = false }: Ma
     dateRangeFilter,
   ]);
 
+  // In-flight list request (aborted when superseded or when the page unmounts)
+  const abortRef = useRef<AbortController | null>(null);
+  useEffect(() => () => abortRef.current?.abort(), []);
+
   // Load rates from DB with current filters and pagination
   const loadRates = useCallback(
     async (pageToLoad = currentPage, sizeToLoad = pageSize) => {
+      // Cancel any in-flight request (newer filters win; also avoids out-of-order results)
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+
       setIsLoading(true);
       try {
-        const res = await getMasterRatesAction({
+        // Plain GET fetch instead of a Server Action: Server Actions are queued with
+        // router navigations in Next 14, so a slow reload would block leaving the page.
+        const qs = new URLSearchParams();
+        const params: Record<string, string | number> = {
           search: globalSearch,
           location: locationFilter,
           hotelName: hotelFilter,
@@ -159,17 +170,31 @@ export function MasterClient({ initialData, filterOptions, isAdmin = false }: Ma
           pageSize: sizeToLoad,
           sortBy,
           sortOrder,
+        };
+        Object.entries(params).forEach(([k, v]) => {
+          if (v !== '' && v !== undefined && v !== null) qs.set(k, String(v));
         });
+
+        const response = await fetch(`/api/admin/master/rates?${qs.toString()}`, {
+          signal: controller.signal,
+          cache: 'no-store',
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const res = (await response.json()) as RateMasterQueryResult;
 
         setRates(res.data);
         setTotalCount(res.total);
         setTotalPages(res.totalPages);
         setCurrentPage(res.page);
       } catch (err) {
+        if ((err as Error)?.name === 'AbortError') return; // superseded or page left
         console.error('Failed to load master rates from DB:', err);
         toast.error('Failed to load rates from database.');
       } finally {
-        setIsLoading(false);
+        if (abortRef.current === controller) {
+          abortRef.current = null;
+          setIsLoading(false);
+        }
       }
     },
     [
@@ -187,8 +212,17 @@ export function MasterClient({ initialData, filterOptions, isAdmin = false }: Ma
     ]
   );
 
-  // Debounced / Triggered reload when filters change
+  // Debounced / Triggered reload when filters change.
+  // Skipped on first render: the server already streamed page 1 as initialData.
+  // Compared by value (not a "first run" flag) so React Strict Mode's double effect doesn't refetch.
+  const filterKey = JSON.stringify([
+    pageSize, globalSearch, locationFilter, hotelFilter, categoryFilter,
+    seasonFilter, roomFilter, dateRangeFilter, sortBy, sortOrder,
+  ]);
+  const lastFilterKey = useRef(filterKey);
   useEffect(() => {
+    if (lastFilterKey.current === filterKey) return;
+    lastFilterKey.current = filterKey;
     const timer = setTimeout(() => {
       loadRates(1, pageSize);
     }, 250);

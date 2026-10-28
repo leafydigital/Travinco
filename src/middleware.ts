@@ -2,6 +2,7 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 import { sanitizeCookies } from '@/lib/supabase/cookie-sanitizer';
 import { ADMIN_AUTH_COOKIE, CUSTOMER_AUTH_COOKIE } from '@/lib/supabase/server';
+import { STAFF_CONTEXT_HEADER, encodeStaffContext } from '@/lib/supabase/staff-context';
 
 /** Sanitizes and validates a redirect path to prevent open redirect vulnerabilities. */
 function getSafeRedirectPath(rawPath: string | null | undefined, fallback: string): string {
@@ -41,6 +42,8 @@ export async function middleware(request: NextRequest) {
     'x-travinco-area',
     isAdminRoute || isStaffLoginRoute ? 'admin' : 'customer'
   );
+  // Never trust a client-supplied staff context; only this middleware may set it (below).
+  request.headers.delete(STAFF_CONTEXT_HEADER);
 
   let response = NextResponse.next({
     request: {
@@ -132,29 +135,66 @@ export async function middleware(request: NextRequest) {
 
   if ((isAdminRoute || isStaffLoginRoute) && hasAdminCookie) {
     try {
-      const { data: { user } } = await adminSupabase.auth.getUser();
-      if (user) {
-        // Confirm staff role in public.profiles
-        const { data: profile } = await adminSupabase
-          .from('profiles')
-          .select('role, is_active')
-          .eq('id', user.id)
-          .maybeSingle();
+      // getClaims() verifies the JWT locally with asymmetric keys (falls back to getUser() otherwise)
+      const { data: claimsData } = await adminSupabase.auth.getClaims();
+      const userId = claimsData?.claims?.sub;
+      if (userId) {
+        // Confirm staff role in public.profiles and ensure it isn't a customer account.
+        // On dashboard routes the permission rows are loaded in the same parallel round
+        // and forwarded to the page (saves the page two sequential DB round trips).
+        const [{ data: profile }, { data: custAccount }, permsRes, settingRes] = await Promise.all([
+          adminSupabase
+            .from('profiles')
+            .select('*')
+            .eq('id', userId)
+            .maybeSingle(),
+          adminSupabase
+            .from('customer_accounts')
+            .select('id')
+            .eq('id', userId)
+            .maybeSingle(),
+          isAdminRoute
+            ? adminSupabase.from('staff_permissions').select('*').eq('profile_id', userId)
+            : Promise.resolve(null),
+          isAdminRoute
+            ? adminSupabase
+                .from('website_settings')
+                .select('value')
+                .eq('key', `staff_perms_${userId}`)
+                .maybeSingle()
+            : Promise.resolve(null),
+        ]);
 
         if (
           profile &&
           profile.is_active &&
-          ['super_admin', 'admin', 'sales_staff', 'accounts_staff'].includes(profile.role)
+          ['super_admin', 'admin', 'sales_staff', 'accounts_staff'].includes(profile.role) &&
+          !custAccount
         ) {
-          const { data: custAccount } = await adminSupabase
-            .from('customer_accounts')
-            .select('id')
-            .eq('id', user.id)
-            .maybeSingle();
+          adminUser = claimsData!.claims;
+          isStaff = true;
 
-          if (!custAccount) {
-            adminUser = user;
-            isStaff = true;
+          // Forward verified staff context to Server Components (same rules as getProfile():
+          // customer-flagged accounts are never treated as staff there, so skip them here too).
+          const meta = (claimsData!.claims.user_metadata ?? {}) as Record<string, unknown>;
+          const isCustomerMeta =
+            meta.is_customer_signup === 'true' ||
+            meta.is_customer_signup === true ||
+            meta.role === 'customer';
+
+          if (isAdminRoute && !isCustomerMeta && permsRes && !permsRes.error && !settingRes?.error) {
+            const encoded = encodeStaffContext({
+              profile,
+              perms: { rows: permsRes.data ?? [], settingValue: settingRes?.data?.value ?? null },
+            });
+            if (encoded) {
+              request.headers.set(STAFF_CONTEXT_HEADER, encoded);
+              // Rebuild the pass-through response so the new request header is forwarded,
+              // keeping any refreshed session cookies.
+              const prev = response;
+              response = NextResponse.next({ request: { headers: request.headers } });
+              prev.cookies.getAll().forEach((cookie) => response.cookies.set(cookie));
+            }
           }
         }
       }
@@ -165,9 +205,10 @@ export async function middleware(request: NextRequest) {
   let customerUser = null;
   let isCustomer = false;
 
+  // On admin routes the customer session only matters when the visitor is NOT confirmed staff
   const needsCustomerCheck =
     hasCustomerCookie &&
-    (isAdminRoute || isCustomerAuthRoute || isProtectedCustomerRoute || isBookingRoute);
+    ((isAdminRoute && !isStaff) || isCustomerAuthRoute || isProtectedCustomerRoute || isBookingRoute);
 
   if (needsCustomerCheck) {
     try {
@@ -200,16 +241,16 @@ export async function middleware(request: NextRequest) {
   // 1. Admin Routes Gate (/travinco_dashboard/**)
   if (isAdminRoute) {
     if (pathname === '/travinco_dashboard/login') {
-      return createRedirect(new URL('/travinco_admin_login', request.url));
+      return createRedirect(new URL('/account/login', request.url));
     }
 
     if (!isStaff) {
       // If customer attempts to access admin dashboard, strictly deny access
       if (isCustomer) {
-        return createRedirect(new URL('/travinco_admin_login?reason=not_staff', request.url));
+        return createRedirect(new URL('/account/login?reason=not_staff', request.url));
       }
       // Unauthenticated visitor
-      const redirectUrl = new URL('/travinco_admin_login', request.url);
+      const redirectUrl = new URL('/account/login', request.url);
       if (pathname !== '/travinco_dashboard') {
         redirectUrl.searchParams.set('redirectTo', pathname);
       }
@@ -220,32 +261,35 @@ export async function middleware(request: NextRequest) {
     return response;
   }
 
-  // 2. Staff Login Route Gate (/travinco_admin_login)
+  // 2. Staff Login Route Gate (/travinco_admin_login retired -> redirect to /account/login)
   if (isStaffLoginRoute) {
-    if (isStaff) {
-      if (
-        pathname.startsWith('/travinco_admin_login/reset-password') ||
-        request.nextUrl.searchParams.has('reason')
-      ) {
-        return response;
-      }
+    const redirectUrl = new URL('/account/login', request.url);
+    const redirectTo = request.nextUrl.searchParams.get('redirectTo');
+    const reason = request.nextUrl.searchParams.get('reason');
+    if (redirectTo) redirectUrl.searchParams.set('redirectTo', redirectTo);
+    if (reason) redirectUrl.searchParams.set('reason', reason);
+    return createRedirect(redirectUrl);
+  }
+
+  // 3. Unified Auth Routes (/account/login, /account/signup)
+  if (isCustomerAuthRoute) {
+    const hasReason = request.nextUrl.searchParams.has('reason');
+    const hasAction = request.nextUrl.searchParams.has('action');
+
+    // If already authenticated as staff visiting /account/login (without reason/action), redirect to dashboard
+    if (isStaff && !hasReason && !hasAction) {
       const redirectTo = request.nextUrl.searchParams.get('redirectTo');
       const safePath = getSafeRedirectPath(redirectTo, '/travinco_dashboard');
       return createRedirect(new URL(safePath, request.url));
     }
-    return response;
-  }
 
-  // 3. Customer Auth Routes (/account/login, /account/signup)
-  if (isCustomerAuthRoute) {
     // If user is already authenticated as customer, redirect to customer account
-    if (isCustomer) {
+    if (isCustomer && !hasReason && !hasAction) {
       const redirectTo = request.nextUrl.searchParams.get('redirectTo');
       const safePath = getSafeRedirectPath(redirectTo, '/account/bookings');
       return createRedirect(new URL(safePath, request.url));
     }
 
-    // Admin session alone does NOT redirect away from customer login. Display login form!
     return response;
   }
 

@@ -75,11 +75,12 @@ export function PhoneInput({
 
   const country = COUNTRY_PHONE_CODES.find((c) => c.code === dialCode) ?? COUNTRY_PHONE_CODES[0];
   const digitsOnly = number.replace(/\D/g, '');
-  const isValidLength = digitsOnly.length === country.digits;
-  const showError = touched && number.length > 0 && !isValidLength;
+  const isAllZeros = digitsOnly.length > 0 && /^0+$/.test(digitsOnly);
+  const isValidLength = digitsOnly.length === country.digits && !isAllZeros;
+  const showError = touched && number.length > 0 && (!isValidLength || isAllZeros);
 
   useEffect(() => {
-    const valid = number.length === 0 ? !required : isValidLength;
+    const valid = number.length === 0 ? !required : (digitsOnly.length === country.digits && !isAllZeros);
     onValidityChange?.(valid);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [number, dialCode, required]);
@@ -93,7 +94,7 @@ export function PhoneInput({
             setDialCode(e.target.value);
             setTouched(false);
           }}
-          className="input w-28 shrink-0 text-base"
+          className={`input w-28 shrink-0 text-base ${showError ? 'border-coral-400 focus:ring-coral-400' : ''}`}
           aria-label="Country code"
         >
           {COUNTRY_PHONE_CODES.map((c, i) => (
@@ -113,13 +114,14 @@ export function PhoneInput({
           // Larger, bolder text specifically for phone numbers — these
           // get mistyped easily, so legibility matters more here than
           // on most fields.
-          className="input flex-1 text-base font-medium tracking-wide"
+          className={`input flex-1 text-base font-medium tracking-wide ${showError ? 'border-coral-400 focus:ring-coral-400' : ''}`}
         />
       </div>
       {showError && (
-        <p className="mt-1 text-xs text-coral-600">
-          {country.country} numbers need exactly {country.digits} digits — you entered{' '}
-          {digitsOnly.length}.
+        <p className="mt-1 text-xs text-coral-600 font-medium">
+          {isAllZeros
+            ? 'Entered valid mobile number'
+            : `${country.country} numbers need exactly ${country.digits} digits — you entered ${digitsOnly.length}.`}
         </p>
       )}
       {/* The actual field submitted with the form: full E.164-style

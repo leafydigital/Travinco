@@ -20,6 +20,7 @@ import {
   ShieldCheck,
   ArrowLeft,
   RefreshCw,
+  AtSign,
 } from 'lucide-react';
 import {
   initiateCustomerSignup,
@@ -138,12 +139,40 @@ export default function SignupPage() {
   const [step, setStep] = useState<'credentials' | 'otp'>('credentials');
   const [isLoading, setIsLoading] = useState(false);
   const [fullName, setFullName] = useState('');
+  const [username, setUsername] = useState('');
+  const [usernameTouched, setUsernameTouched] = useState(false);
+  const [usernameError, setUsernameError] = useState<string | null>(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [signupError, setSignupError] = useState<string | null>(null);
+
+  function validateUsername(val: string): string | null {
+    const trimmed = val.trim();
+    if (!trimmed) return 'Username is required';
+    if (trimmed.length < 3) return 'Username must be at least 3 characters';
+    if (trimmed.length > 30) return 'Username must be at most 30 characters';
+    if (!/^[a-zA-Z0-9_.-]+$/.test(trimmed)) {
+      return 'Username can only contain letters, numbers, dots, and underscores';
+    }
+    return null;
+  }
+
+  function handleUsernameChange(val: string) {
+    setUsername(val);
+    if (usernameTouched) {
+      setUsernameError(validateUsername(val));
+    } else {
+      setUsernameError(null);
+    }
+  }
+
+  function handleUsernameBlur() {
+    setUsernameTouched(true);
+    setUsernameError(validateUsername(username));
+  }
 
   // OTP step states
   const [signupTicket, setSignupTicket] = useState('');
@@ -184,6 +213,13 @@ export default function SignupPage() {
   // Stage 1: Validate details, check duplicates, send OTP
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    const uErr = validateUsername(username);
+    if (uErr) {
+      setUsernameTouched(true);
+      setUsernameError(uErr);
+      return;
+    }
+
     if (isLoading || !allRulesMet || !emailIsValidDomain || !passwordsMatch) return;
 
     setIsLoading(true);
@@ -191,6 +227,7 @@ export default function SignupPage() {
     try {
       const result = await initiateCustomerSignup({
         full_name: fullName,
+        username: username.trim().toLowerCase(),
         email,
         password,
         confirm_password: confirmPassword,
@@ -203,12 +240,12 @@ export default function SignupPage() {
         return;
       }
 
-      if (result.step === 'otp_required' && result.signupTicket) {
+      if (result.signupTicket) {
         setSignupTicket(result.signupTicket);
         setMaskedEmail(result.maskedEmail || email);
         setOtpDigits(['', '', '', '', '', '']);
         setOtpError(null);
-        setCooldown(result.cooldownSeconds || 60);
+        setCooldown(60);
         setStep('otp');
         toast.success(`Verification code sent to ${result.maskedEmail || email}`);
       }
@@ -404,6 +441,35 @@ export default function SignupPage() {
                     </div>
                   </div>
 
+                  {/* Username (New field placed directly below Full Name) */}
+                  <div>
+                    <label className="label">
+                      Username <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        required
+                        disabled={isLoading}
+                        placeholder="e.g. johndoe"
+                        value={username}
+                        onChange={(e) => handleUsernameChange(e.target.value)}
+                        onBlur={handleUsernameBlur}
+                        className={`input pl-10 pr-4 py-2.5 text-sm rounded-xl border-ink-200 focus:border-emerald-600 focus:ring-emerald-600 disabled:opacity-60 transition ${
+                          usernameError ? 'border-coral-400 focus:ring-coral-400 bg-coral-50/20' : ''
+                        }`}
+                        autoComplete="username"
+                      />
+                      <AtSign className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-400" />
+                    </div>
+                    {usernameError && (
+                      <p className="mt-1 text-xs text-coral-600 font-medium">{usernameError}</p>
+                    )}
+                    <p className="mt-1 text-[11px] text-ink-400 leading-snug">
+                      Your unique handle to log in to your account.
+                    </p>
+                  </div>
+
                   <div>
                     <label className="label">
                       Email address <span className="text-red-500">*</span>
@@ -529,7 +595,15 @@ export default function SignupPage() {
 
                   <button
                     type="submit"
-                    disabled={isLoading || !allRulesMet || !emailIsValidDomain || !passwordsMatch}
+                    disabled={
+                      isLoading ||
+                      !fullName.trim() ||
+                      !username.trim() ||
+                      Boolean(usernameError) ||
+                      !allRulesMet ||
+                      !emailIsValidDomain ||
+                      !passwordsMatch
+                    }
                     className="btn-primary w-full justify-center flex items-center gap-2 py-3 rounded-xl font-semibold shadow-md shadow-emerald-700/20 cursor-pointer disabled:opacity-50 hover:shadow-lg transition-all active:scale-[0.99] mt-3"
                   >
                     {isLoading ? (

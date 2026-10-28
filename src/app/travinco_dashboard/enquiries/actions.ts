@@ -3,6 +3,9 @@
 import { createClient } from '@/lib/supabase/server';
 import { requireProfile, checkModulePermission } from '@/lib/supabase/auth-helpers';
 import { revalidatePath } from 'next/cache';
+import { hasActiveRows, fetchAllActiveRows, softDeleteRows } from '@/lib/archive-to-sheet';
+import { appendRowsToSheet } from '@/lib/google-sheets';
+import { createServiceClient } from '@/lib/supabase/service';
 import { z } from 'zod';
 import type { EnquiryStatus, FollowupType } from '@/types/database';
 
@@ -682,3 +685,59 @@ export async function getEnquiryTabCounts(): Promise<EnquiryTabCounts> {
   };
 }
 
+
+// ─── Clear Data: archive all enquiries to Google Sheets, then soft-delete ─────
+const ENQUIRIES_SHEET_HEADERS = [
+  'ID', 'Enquiry #', 'Customer Name', 'Phone', 'WhatsApp', 'Email', 'Destination',
+  'Travel Date', 'Return Date', 'Adults', 'Children', 'Infants', 'Budget', 'Message',
+  'Source', 'Status', 'Priority', 'Assigned Staff', 'Last Contacted', 'Next Follow-up',
+  'Notes', 'Created At', 'Cleared At', 'Cleared By',
+];
+
+export async function clearAndArchiveEnquiries(): Promise<{ error?: string; count?: number }> {
+  const profile = await requireProfile();
+  if (!['admin', 'super_admin'].includes(profile.role)) {
+    return { error: 'Only admins can clear enquiries data.' };
+  }
+
+  try {
+    // Fast exit: nothing to archive, skip the full fetch and Google entirely
+    if (!(await hasActiveRows('enquiries'))) return { count: 0 };
+
+
+    const enquiries = await fetchAllActiveRows<Record<string, any>>('enquiries');
+    if (enquiries.length === 0) return { count: 0 };
+
+    // Resolve assigned staff names for readability in the sheet
+    const staffIds = Array.from(new Set(enquiries.map((e) => e.assigned_staff).filter(Boolean)));
+    const staffNames = new Map<string, string>();
+    if (staffIds.length > 0) {
+      const { data: staff } = await createServiceClient()
+        .from('profiles')
+        .select('id, full_name')
+        .in('id', staffIds);
+      (staff ?? []).forEach((s: any) => staffNames.set(s.id, s.full_name));
+    }
+
+    const clearedAt = new Date().toISOString();
+    const clearedBy = profile.full_name || profile.email;
+    const rows = enquiries.map((e) => [
+      e.id, e.enquiry_number, e.customer_name, e.phone, e.whatsapp_number, e.email, e.destination,
+      e.travel_date, e.return_date, e.number_of_adults, e.number_of_children, e.number_of_infants,
+      e.budget, e.message, e.source, e.status, e.priority,
+      e.assigned_staff ? staffNames.get(e.assigned_staff) ?? e.assigned_staff : null,
+      e.last_contacted_at, e.next_followup_date, e.notes, e.created_at, clearedAt, clearedBy,
+    ]);
+
+    // Only clear the table once the sheet write has succeeded
+    await appendRowsToSheet('Enquiries', ENQUIRIES_SHEET_HEADERS, rows);
+    await softDeleteRows('enquiries', enquiries.map((e) => e.id), profile.id);
+
+    revalidatePath('/travinco_dashboard/enquiries');
+    revalidatePath('/travinco_dashboard');
+    return { count: enquiries.length };
+  } catch (err) {
+    console.error('clearAndArchiveEnquiries failed:', err);
+    return { error: 'Could not archive enquiries to Google Sheets. No data was cleared.' };
+  }
+}

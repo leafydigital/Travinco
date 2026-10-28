@@ -17,6 +17,12 @@ const nextConfig = {
   },
   experimental: {
     optimizePackageImports: ['lucide-react', 'date-fns', 'recharts', 'sonner'],
+    // Client router cache: revisiting a dynamic page within 30s renders instantly from cache.
+    // Own edits still show immediately (server actions call revalidatePath / router.refresh).
+    staleTimes: {
+      dynamic: 30,
+      static: 180,
+    },
     serverActions: {
       bodySizeLimit: '5mb',
     },

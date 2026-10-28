@@ -171,7 +171,7 @@ export function LoginForm({ redirectTo }: { redirectTo?: string }) {
               {isPending ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  <span>Checking database…</span>
+                  <span>Checking…</span>
                 </>
               ) : (
                 <span>Verify Email &amp; Continue</span>
@@ -414,13 +414,12 @@ export function LoginForm({ redirectTo }: { redirectTo?: string }) {
 
       {state.error && (
         <div
-          className={`rounded-xl border p-3.5 text-xs transition-all ${
-            state.isLocked
-              ? 'border-red-300 bg-red-50 text-red-900 shadow-sm'
-              : typeof state.remainingAttempts === 'number' && state.remainingAttempts < 5
+          className={`rounded-xl border p-3.5 text-xs transition-all ${state.isLocked
+            ? 'border-red-300 bg-red-50 text-red-900 shadow-sm'
+            : typeof state.remainingAttempts === 'number' && state.remainingAttempts < 5
               ? 'border-amber-300 bg-amber-50 text-amber-900 shadow-sm'
               : 'border-red-200 bg-red-50 text-red-700'
-          }`}
+            }`}
         >
           <div className="flex items-start gap-2.5">
             {state.isLocked ? (

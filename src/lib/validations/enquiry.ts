@@ -1,26 +1,56 @@
 import { z } from 'zod';
 
 export const enquiryFormSchema = z.object({
-  customer_name: z.string().min(2, 'Please enter your name').max(120),
-  phone: z.string().min(8, 'Enter a valid phone number').max(20),
-  whatsapp_number: z.string().max(20).optional().or(z.literal('')),
-  email: z.string().email('Enter a valid email — we verify it with a code'),
-  package_id: z.string().uuid().optional().or(z.literal('')),
+  customer_name: z
+    .string({ required_error: 'Full name is required' })
+    .trim()
+    .min(1, 'Full name is required')
+    .max(120, 'Full name must be under 120 characters')
+    .refine((val) => !/\d/.test(val), {
+      message: 'Enter valid full name',
+    })
+    .refine((val) => /^[a-zA-Z\s'.\-]+$/.test(val), {
+      message: 'Full name can only contain letters and spaces',
+    }),
+  phone: z
+    .string({ required_error: 'Phone number is required' })
+    .trim()
+    .min(1, 'Phone number is required')
+    .max(30)
+    .refine(
+      (val) => {
+        const digits = val.replace(/\D/g, '');
+        return digits.length >= 7 && !/^0+$/.test(digits);
+      },
+      {
+        message: 'Entered valid mobile number',
+      }
+    ),
+  whatsapp_number: z.string().max(30).optional().or(z.literal('')),
+  email: z
+    .string({ required_error: 'Email address is required' })
+    .trim()
+    .min(1, 'Email address is required')
+    .email('Please enter a valid email address (e.g. name@example.com)'),
+  package_id: z.string().optional().or(z.literal('')),
+  custom_package_name: z.string().max(200).optional().or(z.literal('')),
   destination: z.string().max(120).optional().or(z.literal('')),
   travel_date: z
-    .string({ required_error: 'Please select your travel date' })
-    .min(1, 'Please select your travel date')
+    .string({ required_error: 'Travel date is required' })
+    .min(1, 'Travel date is required')
     .refine(
       (val) => {
         if (!/^\d{4}-\d{2}-\d{2}$/.test(val)) return false;
-        const selected = new Date(val + 'T00:00:00');
+        const parts = val.split('-');
+        const selected = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 0, 0, 0, 0);
         if (Number.isNaN(selected.getTime())) return false;
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        return selected >= today;
+        const minDate = new Date();
+        minDate.setDate(minDate.getDate() + 2); // at least 2 days ahead
+        minDate.setHours(0, 0, 0, 0);
+        return selected >= minDate;
       },
       {
-        message: 'Travel date cannot be in the past.',
+        message: 'Travel date must be at least 2 days in advance (DD/MM/YYYY)',
       }
     ),
   number_of_adults: z.coerce.number().int().min(1).default(1),
@@ -30,7 +60,7 @@ export const enquiryFormSchema = z.object({
     .string()
     .optional()
     .or(z.literal(''))
-    .transform((val) => (val ? Number(val) : undefined))
+    .transform((val) => (val && String(val).trim() ? parseFloat(String(val).trim()) : undefined))
     .refine((val) => val === undefined || (!Number.isNaN(val) && val >= 0), {
       message: 'Enter a valid budget amount',
     }),
@@ -40,3 +70,4 @@ export const enquiryFormSchema = z.object({
 });
 
 export type EnquiryFormValues = z.infer<typeof enquiryFormSchema>;
+

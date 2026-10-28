@@ -1,4 +1,4 @@
-import { Suspense } from 'react';
+import { Suspense, cache } from 'react';
 import { requireProfile, assertModulePermission, checkModulePermission } from '@/lib/supabase/auth-helpers';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { formatDate } from '@/lib/utils/format';
@@ -8,7 +8,8 @@ import { EnquiryRowActions } from './enquiry-row-actions';
 import { FollowupDateCell } from './followup-date-cell';
 import { EnquiryPagination } from './enquiry-pagination';
 import { AutoRefresh } from '@/components/admin/auto-refresh';
-import { getEnquiriesTableList, getEnquiryTabCounts } from './actions';
+import { getEnquiriesTableList, getEnquiryTabCounts, clearAndArchiveEnquiries } from './actions';
+import { ClearDataButton } from '@/components/admin/clear-data-button';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -41,6 +42,22 @@ function buildHref(
   return `?${params.toString()}`;
 }
 
+// Per-request memo: the tab badges and the Clear Data button share one count query
+const getTabCountsCached = cache(() => getEnquiryTabCounts());
+
+/** Clear Data button enabled only when the (unfiltered) "All" count is above zero. */
+async function EnquiryClearDataSlot() {
+  const counts = await getTabCountsCached();
+  return (
+    <ClearDataButton
+      entityLabel="enquiries"
+      sheetTab="Enquiries"
+      action={clearAndArchiveEnquiries}
+      hasData={counts.allCount > 0}
+    />
+  );
+}
+
 function TabCountersSkeleton() {
   return (
     <div className="flex flex-wrap gap-2 text-sm">
@@ -56,7 +73,7 @@ async function EnquiryTabBadges({
 }: {
   searchParams: Record<string, string | undefined>;
 }) {
-  const counts = await getEnquiryTabCounts();
+  const counts = await getTabCountsCached();
 
   return (
     <div className="flex flex-wrap gap-2 text-sm">
@@ -322,10 +339,19 @@ export default async function AdminEnquiriesPage({
         >
           <ArrowLeft className="h-4 w-4" /> Back to dashboard
         </Link>
-        <h1 className="text-xl font-semibold text-ink-900">Enquiries</h1>
-        <p className="text-sm text-ink-500">
-          Track, prioritize, and follow up with customer travel enquiries and quote requests
-        </p>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h1 className="text-xl font-semibold text-ink-900">Enquiries</h1>
+            <p className="text-sm text-ink-500">
+              Track, prioritize, and follow up with customer travel enquiries and quote requests
+            </p>
+          </div>
+          {isAdmin && (
+            <Suspense fallback={<ClearDataButton entityLabel="enquiries" sheetTab="Enquiries" loading />}>
+              <EnquiryClearDataSlot />
+            </Suspense>
+          )}
+        </div>
       </div>
 
       {/* 2. Streaming View Tabs (All, Follow-up Today, Overdue Follow-up) */}
