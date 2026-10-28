@@ -1,12 +1,12 @@
 import { Suspense } from 'react';
-import { createClient } from '@/lib/supabase/server';
+import { createPublicClient } from '@/lib/supabase/public';
 import { BlogExplorer, type BlogExplorerPost } from '@/components/public/blog-explorer';
 import { getBlogPageContent } from '@/lib/blog-page-content';
 import { getPageTitlesContent } from '@/lib/page-titles-content';
 import type { Metadata } from 'next';
 
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
+// Served from cache, refreshed in the background every 60s; admin saves purge it instantly.
+export const revalidate = 60;
 
 export async function generateMetadata(): Promise<Metadata> {
   const titlesContent = await getPageTitlesContent();
@@ -19,7 +19,7 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 async function BlogPostsSection({ pageContent }: { pageContent: any }) {
-  const supabase = await createClient();
+  const supabase = createPublicClient();
 
   const [
     { data: postsData },

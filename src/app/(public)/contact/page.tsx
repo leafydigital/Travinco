@@ -16,8 +16,8 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
+// Served from cache, refreshed in the background every 60s; admin saves purge it instantly.
+export const revalidate = 60;
 
 export async function generateMetadata(): Promise<Metadata> {
   const [titlesContent, contactContent] = await Promise.all([

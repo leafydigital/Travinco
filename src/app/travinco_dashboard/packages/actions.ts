@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { requireProfile, checkModulePermission } from '@/lib/supabase/auth-helpers';
 import { packageSchema, packageCategories, slugify, type PackageFormValues } from '@/lib/validations/package';
-import { revalidatePath } from 'next/cache';
+import { revalidatePath } from '@/lib/public-cache'; // also purges cached public website content
 import { redirect } from 'next/navigation';
 
 export type ActionState = { error?: string; fieldErrors?: Record<string, string> };

@@ -4,12 +4,13 @@ import { SiteFooter } from '@/components/public/site-footer';
 import { getGeneralSettings } from '@/lib/settings';
 import { getNavbarFooterContent } from '@/lib/navbar-footer-content';
 import { getPageTitlesContent } from '@/lib/page-titles-content';
-import { createClient } from '@/lib/supabase/server';
-import { getCustomer } from '@/lib/supabase/customer-auth-helpers';
+import { createPublicClient } from '@/lib/supabase/public';
 import { AuthToastNotifier } from '@/components/public/auth-toast-notifier';
 
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
+// Shared by every public page: built from cached, cookie-free reads so content pages
+// can be served from the CDN. The signed-in customer's name is loaded client-side
+// by <SiteHeader /> (see /api/customer/me).
+export const revalidate = 60;
 
 export async function generateMetadata(): Promise<Metadata> {
   const titlesContent = await getPageTitlesContent();
@@ -26,7 +27,7 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function PublicLayout({ children }: { children: React.ReactNode }) {
-  const supabase = await createClient();
+  const supabase = createPublicClient();
 
   const [
     settings,
@@ -34,7 +35,6 @@ export default async function PublicLayout({ children }: { children: React.React
     pageTitlesContent,
     destinationsRes,
     deletedSettingsRes,
-    customer,
   ] = await Promise.all([
     getGeneralSettings(),
     getNavbarFooterContent(),
@@ -45,7 +45,6 @@ export default async function PublicLayout({ children }: { children: React.React
       .eq('status', 'published')
       .order('sort_order', { ascending: true }),
     supabase.from('website_settings').select('key').like('key', 'deleted_destination_%'),
-    getCustomer(),
   ]);
 
   const destinationsData = destinationsRes.data;
@@ -63,8 +62,6 @@ export default async function PublicLayout({ children }: { children: React.React
       slug: d.slug,
     }));
 
-  const customerName = customer?.full_name ?? customer?.email ?? null;
-
   return (
     <div className="flex min-h-screen flex-col">
       <AuthToastNotifier />
@@ -74,7 +71,6 @@ export default async function PublicLayout({ children }: { children: React.React
       <SiteHeader
         whatsappNumber={settings.whatsapp}
         destinations={activeDestinations}
-        customerName={customerName}
         navbarContent={navbarFooterContent.navbar}
       />
       {/*

@@ -1,12 +1,12 @@
 import { Suspense } from 'react';
-import { createClient } from '@/lib/supabase/server';
+import { createPublicClient } from '@/lib/supabase/public';
 import { PackagesExplorer, type PackageExplorerItem } from '@/components/public/packages-explorer';
 import { getPackagesPageContent } from '@/lib/packages-page-content';
 import { getPageTitlesContent } from '@/lib/page-titles-content';
 import type { Metadata } from 'next';
 
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
+// Served from cache, refreshed in the background every 60s; admin saves purge it instantly.
+export const revalidate = 60;
 
 export async function generateMetadata(): Promise<Metadata> {
   const titlesContent = await getPageTitlesContent();
@@ -24,7 +24,7 @@ async function PackagesDataSection({
   pageContent: any;
   searchParams: { destination?: string; category?: string; search?: string; q?: string };
 }) {
-  const supabase = await createClient();
+  const supabase = createPublicClient();
   const today = new Date().toISOString().slice(0, 10);
 
   const [

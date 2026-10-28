@@ -1,4 +1,5 @@
-import { createClient } from '@/lib/supabase/server';
+// Public website content: read with the cookie-free anon client so it can be cached
+import { createPublicClient } from '@/lib/supabase/public';
 
 export type GeneralSettings = {
   business_name?: string;
@@ -16,7 +17,7 @@ export type GeneralSettings = {
 /** Reads a single settings row by key. Returns null if not yet configured
  * (Settings page hasn't been saved) so callers can fall back gracefully. */
 export async function getSetting<T = Record<string, unknown>>(key: string): Promise<T | null> {
-  const supabase = await createClient();
+  const supabase = createPublicClient();
   const { data } = await supabase
     .from('website_settings')
     .select('value')

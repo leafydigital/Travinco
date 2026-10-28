@@ -1,4 +1,5 @@
-import { createClient } from '@/lib/supabase/server';
+// Public website content: read with the cookie-free anon client so it can be cached
+import { createPublicClient } from '@/lib/supabase/public';
 import {
   type NavbarFooterContent,
   DEFAULT_NAVBAR_FOOTER_CONTENT,
@@ -9,7 +10,7 @@ export * from './navbar-footer-content-types';
 
 export async function getNavbarFooterContent(): Promise<NavbarFooterContent> {
   try {
-    const supabase = await createClient();
+    const supabase = createPublicClient();
     const [settingsRes, generalSettings] = await Promise.all([
       supabase
         .from('website_settings')

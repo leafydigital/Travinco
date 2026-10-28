@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server';
+import { createPublicClient } from '@/lib/supabase/public';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import Image from 'next/image';
@@ -8,7 +8,7 @@ import type { Tables } from '@/types/database';
 export const revalidate = 300;
 
 async function getDestination(slug: string) {
-  const supabase = await createClient();
+  const supabase = createPublicClient();
   const { data: destination, error: destinationError } = await supabase
     .from('destinations')
     .select('*')

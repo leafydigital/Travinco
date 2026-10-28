@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server';
+import { createPublicClient } from '@/lib/supabase/public';
 import { CodeEmbed } from './code-embed';
 import type { PluginSlot as SlotType } from '@/types/database';
 
@@ -17,7 +17,7 @@ interface PluginSlotProps {
  */
 export async function PluginSlot({ slot, className, containerClassName }: PluginSlotProps) {
   try {
-    const supabase = await createClient();
+    const supabase = createPublicClient();
     const { data: plugins, error } = await supabase
       .from('plugins')
       .select('id, name, code, position')

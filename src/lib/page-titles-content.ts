@@ -1,4 +1,5 @@
-import { createClient } from '@/lib/supabase/server';
+// Public website content: read with the cookie-free anon client so it can be cached
+import { createPublicClient } from '@/lib/supabase/public';
 import {
   type PageTitlesContent,
   DEFAULT_PAGE_TITLES_CONTENT,
@@ -16,7 +17,7 @@ export async function getPageTitlesContent(): Promise<PageTitlesContent> {
   let data: Partial<PageTitlesContent> | null = null;
 
   try {
-    const supabase = await createClient();
+    const supabase = createPublicClient();
     const { data: settingsRow } = await supabase
       .from('website_settings')
       .select('value')

@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server';
 import { requireProfile, checkModulePermission } from '@/lib/supabase/auth-helpers';
 import { destinationSchema } from '@/lib/validations/settings';
 import { slugify } from '@/lib/validations/package';
-import { revalidatePath } from 'next/cache';
+import { revalidatePath } from '@/lib/public-cache'; // also purges cached public website content
 import type { ContentStatus } from '@/types/database';
 import { invalidateTourMastersCache } from '@/lib/tour/data';
 

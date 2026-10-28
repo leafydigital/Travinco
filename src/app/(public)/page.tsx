@@ -1,5 +1,5 @@
 import { Suspense } from 'react';
-import { createClient } from '@/lib/supabase/server';
+import { createPublicClient } from '@/lib/supabase/public';
 import Link from 'next/link';
 import Image from 'next/image';
 import { HeroSlider, type HeroSlideItem } from '@/components/public/hero-slider';
@@ -20,7 +20,7 @@ import {
   Calendar,
   MapPin,
 } from 'lucide-react';
-import { getThemeImagesAction } from '@/app/travinco_dashboard/theme/actions';
+import { fetchThemeImages } from '@/lib/theme-images';
 import { getHomePageContent, DEFAULT_HOME_PAGE_CONTENT } from '@/lib/home-page-content';
 import { PluginSlot } from '@/components/plugins/plugin-slot';
 
@@ -41,8 +41,8 @@ function getExperienceIcon(key: string) {
 import type { Metadata } from 'next';
 import { getPageTitlesContent } from '@/lib/page-titles-content';
 
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
+// Served from cache, refreshed in the background every 60s; admin saves purge it instantly.
+export const revalidate = 60;
 
 export async function generateMetadata(): Promise<Metadata> {
   const titlesContent = await getPageTitlesContent();
@@ -80,7 +80,7 @@ function HomeDestinationsSkeleton({ homeContent }: { homeContent: any }) {
 
 async function HomeDestinationsSection({ homeContent }: { homeContent: any }) {
   try {
-    const supabase = await createClient();
+    const supabase = createPublicClient();
     const { data: destinations } = await supabase
       .from('destinations')
       .select('id, name, slug, cover_image_url, description')
@@ -188,7 +188,7 @@ function HomePackagesSkeleton() {
 
 async function HomePackagesSection() {
   try {
-    const supabase = await createClient();
+    const supabase = createPublicClient();
     const { data: featuredPackages } = await supabase
       .from('travel_packages')
       .select(
@@ -292,7 +292,7 @@ function HomeBlogSkeleton({ homeContent }: { homeContent: any }) {
 
 async function HomeBlogSection({ homeContent }: { homeContent: any }) {
   try {
-    const supabase = await createClient();
+    const supabase = createPublicClient();
     const { data: recentPosts } = await supabase
       .from('blog_posts')
       .select('id, title, slug, excerpt, cover_image_url, created_at')
@@ -373,7 +373,7 @@ export default async function HomePage() {
 
   try {
     const [tiRes, hcRes] = await Promise.all([
-      getThemeImagesAction(),
+      fetchThemeImages(createPublicClient()),
       getHomePageContent(),
     ]);
     themeImagesRes = tiRes ?? { data: [] };

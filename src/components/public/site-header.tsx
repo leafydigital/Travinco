@@ -39,7 +39,7 @@ function normalizePathOrUrl(url?: string): string {
 export function SiteHeader({
   whatsappNumber,
   destinations,
-  customerName,
+  customerName: initialCustomerName,
   navbarContent,
 }: {
   whatsappNumber?: string;
@@ -55,6 +55,21 @@ export function SiteHeader({
   const { t } = useTranslation();
   const [mobileDestinationsOpen, setMobileDestinationsOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+
+  // The public layout is cached and shared by all visitors, so the signed-in
+  // customer's name is loaded in the browser (re-checked on each route change
+  // so login/logout is reflected without a full reload).
+  const [customerName, setCustomerName] = useState<string | null>(initialCustomerName ?? null);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch('/api/customer/me', { cache: 'no-store', credentials: 'same-origin', signal: controller.signal })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { name?: string | null } | null) => {
+        if (data) setCustomerName(data.name ?? null);
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, [pathname]);
 
   const effectiveNavbar = navbarContent || DEFAULT_NAVBAR_FOOTER_CONTENT.navbar;
   const darkLogo = normalizePathOrUrl(effectiveNavbar.logo_image_url) || '/images/green_logo.png';

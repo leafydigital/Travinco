@@ -1,5 +1,5 @@
 import { Suspense } from 'react';
-import { createClient } from '@/lib/supabase/server';
+import { createPublicClient } from '@/lib/supabase/public';
 import {
   DestinationsExplorer,
   type DestinationExplorerItem,
@@ -8,8 +8,8 @@ import { getDestinationsPageContent } from '@/lib/destinations-page-content';
 import { getPageTitlesContent } from '@/lib/page-titles-content';
 import type { Metadata } from 'next';
 
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
+// Served from cache, refreshed in the background every 60s; admin saves purge it instantly.
+export const revalidate = 60;
 
 export async function generateMetadata(): Promise<Metadata> {
   const titlesContent = await getPageTitlesContent();
@@ -28,7 +28,7 @@ async function DestinationsDataSection({
   pageContent: any;
   initialSearch: string;
 }) {
-  const supabase = await createClient();
+  const supabase = createPublicClient();
 
   const [
     { data: destinationsData },

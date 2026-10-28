@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server';
+import { createPublicClient } from '@/lib/supabase/public';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import Image from 'next/image';
@@ -15,7 +15,7 @@ type PackageWithDestination = Tables<'travel_packages'> & {
 };
 
 async function getPackage(slug: string) {
-  const supabase = await createClient();
+  const supabase = createPublicClient();
 
   // Fetched as a plain (non-joined) query so the row type comes straight
   // from Tables<'travel_packages'> with no join-string inference involved.

@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { requireProfile, checkModulePermission } from '@/lib/supabase/auth-helpers';
 import { eventSchema, offerSchema } from '@/lib/validations/content';
-import { revalidatePath } from 'next/cache';
+import { revalidatePath } from '@/lib/public-cache'; // also purges cached public website content
 import type { ContentStatus } from '@/types/database';
 
 // ---------- EVENTS ----------

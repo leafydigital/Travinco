@@ -19,8 +19,8 @@ import { AboutFaqAccordion } from '@/components/public/about-faq-accordion';
 
 import { getPageTitlesContent } from '@/lib/page-titles-content';
 
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
+// Served from cache, refreshed in the background every 60s; admin saves purge it instantly.
+export const revalidate = 60;
 
 export async function generateMetadata(): Promise<Metadata> {
   const [content, titlesContent] = await Promise.all([

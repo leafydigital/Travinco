@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server';
+import { createPublicClient } from '@/lib/supabase/public';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import Image from 'next/image';
@@ -9,7 +9,7 @@ import { ArrowLeft } from 'lucide-react';
 export const revalidate = 300;
 
 async function getPost(slug: string) {
-  const supabase = await createClient();
+  const supabase = createPublicClient();
   const { data: post, error } = await supabase
     .from('blog_posts')
     .select('*')

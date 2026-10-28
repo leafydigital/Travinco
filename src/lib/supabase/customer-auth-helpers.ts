@@ -16,11 +16,17 @@ export const getCustomer = cache(async (): Promise<CurrentCustomer | null> => {
   if (!hasCustomerCookie) return null;
 
   const supabase = await createCustomerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // getClaims() verifies the JWT locally (ES256 signing keys) instead of a ~1s
+  // round trip to the Auth server; it falls back to getUser() for symmetric keys.
+  const { data: claimsData } = await supabase.auth.getClaims();
+  const claims = claimsData?.claims;
+  if (!claims?.sub) return null;
 
-  if (!user) return null;
+  const user = {
+    id: claims.sub as string,
+    email: (claims.email as string | undefined) || undefined,
+    user_metadata: (claims.user_metadata ?? {}) as Record<string, any>,
+  };
 
   // Verify customer_accounts and customer status in parallel
   const [accountRes, custRecordRes] = await Promise.all([
@@ -56,7 +62,8 @@ export const getCustomer = cache(async (): Promise<CurrentCustomer | null> => {
       email: user.email,
       full_name: (user.user_metadata?.full_name as string) || user.email.split('@')[0],
       username: (user.user_metadata?.username as string) || user.email.split('@')[0],
-      created_at: user.created_at,
+      // Rare fallback path only: created_at isn't in the JWT, fetch it from Auth
+      created_at: (await supabase.auth.getUser()).data.user?.created_at ?? new Date().toISOString(),
     } as CurrentCustomer;
   }
 

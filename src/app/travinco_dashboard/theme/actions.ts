@@ -3,7 +3,7 @@
 import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { requireProfile, checkPageAccess } from '@/lib/supabase/auth-helpers';
 import { uploadImageToBucket } from '@/lib/storage-upload';
-import { revalidatePath } from 'next/cache';
+import { revalidatePath } from '@/lib/public-cache';
 import type { Tables } from '@/types/database';
 
 /**
@@ -20,22 +20,9 @@ export async function revalidatePublicAndTheme() {
 }
 
 
-export type ThemeImageItem = {
-  id: string;
-  page: string; // 'home' | 'about' | 'gallery' | 'common'
-  placement: string; // 'hero' | 'banner' | 'story' | 'showcase' | 'background'
-  image_url: string;
-  title: string | null;
-  subtitle: string | null;
-  badge: string | null;
-  button_text: string | null;
-  link_url: string | null;
-  sort_order: number;
-  is_active: boolean;
-  is_deleted: boolean;
-  created_at: string;
-  updated_at: string;
-};
+import type { ThemeImageItem } from '@/lib/theme-images';
+import { fetchThemeImages } from '@/lib/theme-images';
+export type { ThemeImageItem };
 
 const BUCKET = 'theme-images';
 const FALLBACK_BUCKET = 'site-images';
@@ -44,49 +31,7 @@ const FALLBACK_BUCKET = 'site-images';
  * Fetch all theme images from DB (with fallback to website_settings if table doesn't exist yet).
  */
 export async function getThemeImagesAction(): Promise<{ data: ThemeImageItem[]; error?: string }> {
-  try {
-    const supabase = await createClient();
-
-    // Query deleted tombstones from website_settings
-    const { data: deletedMarkers } = await supabase
-      .from('website_settings')
-      .select('key')
-      .like('key', 'deleted_theme_img_%');
-
-    const deletedIds = new Set(
-      (deletedMarkers || []).map((m: { key: string }) => m.key.replace('deleted_theme_img_', ''))
-    );
-
-    // 1. Try querying theme_images table
-    const { data: dbData, error: dbError } = await supabase
-      .from('theme_images')
-      .select('*')
-      .order('sort_order', { ascending: true })
-      .order('created_at', { ascending: false });
-
-    if (!dbError && dbData) {
-      const activeItems = (dbData as ThemeImageItem[]).filter(
-        (img) => !img.is_deleted && !deletedIds.has(img.id)
-      );
-      return { data: activeItems };
-    }
-
-    // 2. Fallback to website_settings if table not created yet in Supabase studio
-    const { data: settingsData } = await supabase
-      .from('website_settings')
-      .select('key, value')
-      .like('key', 'theme_img_%');
-
-    const fallbackItems: ThemeImageItem[] = (settingsData ?? [])
-      .map((s) => s.value as ThemeImageItem)
-      .filter((item) => item && !item.is_deleted && !deletedIds.has(item.id))
-      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
-
-    return { data: fallbackItems };
-  } catch (err: any) {
-    console.error('Error fetching theme images:', err);
-    return { data: [], error: 'Could not load theme images.' };
-  }
+  return fetchThemeImages(await createClient());
 }
 
 /**

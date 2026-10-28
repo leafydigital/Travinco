@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { requireProfile, checkModulePermission } from '@/lib/supabase/auth-helpers';
 import { itineraryDaySchema } from '@/lib/validations/package';
-import { revalidatePath } from 'next/cache';
+import { revalidatePath } from '@/lib/public-cache'; // also purges cached public website content
 import { z } from 'zod';
 
 async function checkEditPermission(): Promise<{ error?: string }> {

@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { requireProfile, assertPageAccess } from '@/lib/supabase/auth-helpers';
 import { generalSettingsSchema, bookingSettingsSchema, termsSettingsSchema, faqsSettingsSchema } from '@/lib/validations/settings';
-import { revalidatePath } from 'next/cache';
+import { revalidatePath } from '@/lib/public-cache'; // also purges cached public website content
 
 async function upsertSetting(key: string, value: unknown, updatedBy: string) {
   const supabase = await createClient();
