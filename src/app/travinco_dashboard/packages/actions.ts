@@ -3,7 +3,16 @@
 import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { requireProfile, checkModulePermission } from '@/lib/supabase/auth-helpers';
-import { packageSchema, packageCategories, slugify, type PackageFormValues } from '@/lib/validations/package';
+import {
+  packageSchema,
+  packageCategories,
+  slugify,
+  fieldErrorsFromZod,
+  validatePackageExtras,
+  MAX_FEATURED_PACKAGES,
+  type PackageFormValues,
+} from '@/lib/validations/package';
+import { invalidateTourMastersCache } from '@/lib/tour/data';
 import { revalidatePath } from '@/lib/public-cache'; // also purges cached public website content
 import { redirect } from 'next/navigation';
 
@@ -46,6 +55,126 @@ async function logActivity(params: {
   });
 }
 
+type ServerClient = Awaited<ReturnType<typeof createClient>>;
+
+/** Extra inputs the package form sends alongside the core field values. */
+export type PackageSaveOptions = {
+  /** Destination typed by staff that doesn't exist yet (used when destination_id is empty). */
+  destinationName?: string | null;
+  /** A currently featured package to un-feature so this one can take its slot. */
+  replaceFeaturedId?: string | null;
+};
+
+/** Stand-in id so the rest of the form can be validated before a typed destination is created. */
+const PENDING_DESTINATION_ID = '00000000-0000-0000-0000-000000000000';
+
+function withPendingDestination(raw: PackageFormValues, destinationName?: string | null) {
+  return {
+    ...raw,
+    destination_id: raw.destination_id || (destinationName?.trim() ? PENDING_DESTINATION_ID : raw.destination_id),
+  };
+}
+
+/**
+ * Returns the destination id to save: the selected id, or an existing
+ * destination matching the typed name (case-insensitive), or a newly created one.
+ */
+async function resolveDestinationId(
+  supabase: ServerClient,
+  destinationId: string | null | undefined,
+  destinationName: string | null | undefined
+): Promise<{ id?: string; error?: string }> {
+  if (destinationId) return { id: destinationId };
+  const name = destinationName?.trim().replace(/\s+/g, ' ');
+  if (!name) return {};
+  if (name.length < 2 || name.length > 120) {
+    return { error: 'Destination name must be between 2 and 120 characters.' };
+  }
+
+  const { data: existing } = await supabase.from('destinations').select('id, name');
+  const match = (existing ?? []).find(
+    (d: { id: string; name: string }) => d.name.trim().toLowerCase() === name.toLowerCase()
+  );
+  if (match) return { id: match.id };
+
+  const baseSlug = slugify(name) || 'destination';
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const slug = attempt === 0 ? baseSlug : `${baseSlug}-${Date.now().toString(36)}${attempt}`;
+    // Published so the destination name shows on public package cards right away.
+    const { data, error } = await supabase
+      .from('destinations')
+      .insert({ name, slug, status: 'published' })
+      .select('id')
+      .single();
+    if (!error && data) {
+      revalidatePath('/travinco_dashboard/destinations');
+      invalidateTourMastersCache();
+      return { id: data.id };
+    }
+    if (error?.code !== '23505') break;
+  }
+  return { error: `Could not create the destination "${name}".` };
+}
+
+export type FeaturedPackage = { id: string; title: string; cover_image_url: string | null };
+
+/** Featured packages that are actually live candidates (not deleted/archived). */
+async function fetchActiveFeatured(supabase: ServerClient): Promise<FeaturedPackage[]> {
+  const [{ data: featured }, { data: deletedMarkers }] = await Promise.all([
+    supabase
+      .from('travel_packages')
+      .select('id, title, cover_image_url, status, is_deleted')
+      .eq('is_featured', true)
+      .or('is_deleted.is.null,is_deleted.eq.false')
+      .neq('status', 'archived')
+      .order('updated_at', { ascending: false }),
+    supabase.from('website_settings').select('key').like('key', 'deleted_package_%'),
+  ]);
+  const deleted = new Set(
+    (deletedMarkers ?? []).map((m: { key: string }) => m.key.replace('deleted_package_', ''))
+  );
+  return (featured ?? [])
+    .filter((p: any) => p.is_deleted !== true && !deleted.has(p.id))
+    .map((p: any) => ({ id: p.id, title: p.title, cover_image_url: p.cover_image_url ?? null }));
+}
+
+/** Lists the currently featured packages (for the "featured limit" modal). */
+export async function getFeaturedPackages(): Promise<{
+  packages: FeaturedPackage[];
+  max: number;
+  error?: string;
+}> {
+  const profile = await requireProfile();
+  const perm = await checkModulePermission(profile, 'packages', 'view');
+  if (!perm.allowed) return { packages: [], max: MAX_FEATURED_PACKAGES, error: perm.error };
+  const supabase = await createClient();
+  return { packages: await fetchActiveFeatured(supabase), max: MAX_FEATURED_PACKAGES };
+}
+
+/**
+ * Enforces the homepage limit. `adding` packages are about to become featured;
+ * `releaseIds` will be un-featured in the same save; `selfId` is not double-counted.
+ */
+async function checkFeaturedCapacity(
+  supabase: ServerClient,
+  { adding, selfId, releaseIds = [] }: { adding: number; selfId?: string; releaseIds?: string[] }
+): Promise<string | null> {
+  if (adding <= 0) return null;
+  const featured = await fetchActiveFeatured(supabase);
+  const remaining = featured.filter((p) => p.id !== selfId && !releaseIds.includes(p.id));
+  if (remaining.length + adding > MAX_FEATURED_PACKAGES) {
+    return `Only ${MAX_FEATURED_PACKAGES} packages can be featured on the homepage. Un-feature one first (currently featured: ${remaining
+      .map((p) => p.title)
+      .join(', ')}).`;
+  }
+  return null;
+}
+
+async function unfeaturePackages(supabase: ServerClient, ids: string[]) {
+  if (ids.length === 0) return;
+  await supabase.from('travel_packages').update({ is_featured: false }).in('id', ids);
+}
+
 export async function createPackage(
   raw: PackageFormValues,
   imageUrls: string[] = [],
@@ -54,7 +183,8 @@ export async function createPackage(
   inclusions: string[] = [],
   exclusions: string[] = [],
   faqs: { question: string; answer: string }[] = [],
-  publishNow = false
+  publishNow = false,
+  options: PackageSaveOptions = {}
 ): Promise<ActionState & { id?: string }> {
   const profile = await requireProfile();
   const perm = await checkModulePermission(profile, 'packages', 'edit');
@@ -62,16 +192,31 @@ export async function createPackage(
     return { error: perm.error || 'You do not have permission to create packages.' };
   }
 
-  const parsed = packageSchema.safeParse(raw);
+  const extrasError = validatePackageExtras({ itineraryDays, inclusions, exclusions, faqs });
+  if (extrasError) return { error: extrasError };
+
+  // Validate the rest of the form before creating any typed-in destination.
+  const preParsed = packageSchema.safeParse(withPendingDestination(raw, options.destinationName));
+  if (!preParsed.success) {
+    return { error: 'Please fix the highlighted fields.', fieldErrors: fieldErrorsFromZod(preParsed.error) };
+  }
+
+  const supabase = await createClient();
+
+  const releaseIds = options.replaceFeaturedId ? [options.replaceFeaturedId] : [];
+  if (preParsed.data.is_featured) {
+    const capacityError = await checkFeaturedCapacity(supabase, { adding: 1, releaseIds });
+    if (capacityError) return { error: capacityError, fieldErrors: { is_featured: capacityError } };
+  }
+
+  const destination = await resolveDestinationId(supabase, raw.destination_id, options.destinationName);
+  if (destination.error) {
+    return { error: destination.error, fieldErrors: { destination_id: destination.error } };
+  }
+
+  const parsed = packageSchema.safeParse({ ...raw, destination_id: destination.id });
   if (!parsed.success) {
-    const fieldErrors: Record<string, string> = {};
-    for (const issue of parsed.error.issues) {
-      const field = issue.path[0];
-      if (typeof field === 'string' && !fieldErrors[field]) {
-        fieldErrors[field] = issue.message;
-      }
-    }
-    return { error: 'Please fix the highlighted fields.', fieldErrors };
+    return { error: 'Please fix the highlighted fields.', fieldErrors: fieldErrorsFromZod(parsed.error) };
   }
 
   const validImageUrls = imageUrls.map((u) => u.trim()).filter(Boolean);
@@ -92,7 +237,6 @@ export async function createPackage(
     }
   }
 
-  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -113,6 +257,8 @@ export async function createPackage(
     }
     return { error: 'Could not create the package. Please try again.' };
   }
+
+  if (parsed.data.is_featured) await unfeaturePackages(supabase, releaseIds);
 
   // Any images pasted on the create form go in right away — no cap on
   // how many, matching the multi-URL paste flow already used on the
@@ -148,34 +294,33 @@ export async function createPackage(
 
   if (itineraryDays.length > 0) {
     await supabase.from('package_itineraries').insert(
-      itineraryDays.map((day) => ({
+      itineraryDays.map((day, index) => ({
         package_id: data.id,
-        day_number: day.day_number,
-        title: day.title,
-        description: day.description || null,
+        day_number: index + 1,
+        title: day.title.trim(),
+        description: day.description?.trim() || null,
       }))
     );
   }
 
   if (inclusions.length > 0) {
     await supabase.from('package_inclusions').insert(
-      inclusions.map((item, index) => ({ package_id: data.id, item, sort_order: index }))
+      inclusions.map((item, index) => ({ package_id: data.id, item: item.trim(), sort_order: index }))
     );
   }
 
   if (exclusions.length > 0) {
     await supabase.from('package_exclusions').insert(
-      exclusions.map((item, index) => ({ package_id: data.id, item, sort_order: index }))
+      exclusions.map((item, index) => ({ package_id: data.id, item: item.trim(), sort_order: index }))
     );
   }
 
-  const validFaqs = faqs.filter((f) => f.question.trim() && f.answer.trim());
-  if (validFaqs.length > 0) {
+  if (faqs.length > 0) {
     await supabase.from('package_faqs').insert(
-      validFaqs.map((f, index) => ({
+      faqs.map((f, index) => ({
         package_id: data.id,
-        question: f.question,
-        answer: f.answer,
+        question: f.question.trim(),
+        answer: f.answer.trim(),
         sort_order: index,
       }))
     );
@@ -189,12 +334,14 @@ export async function createPackage(
   });
 
   revalidatePath('/travinco_dashboard/packages');
+  if (parsed.data.is_featured) revalidatePath('/');
   return { id: data.id };
 }
 
 export async function updatePackage(
   id: string,
-  raw: PackageFormValues
+  raw: PackageFormValues,
+  options: PackageSaveOptions = {}
 ): Promise<ActionState> {
   const profile = await requireProfile();
   const perm = await checkModulePermission(profile, 'packages', 'edit');
@@ -202,16 +349,9 @@ export async function updatePackage(
     return { error: perm.error || 'You do not have permission to edit packages.' };
   }
 
-  const parsed = packageSchema.safeParse(raw);
-  if (!parsed.success) {
-    const fieldErrors: Record<string, string> = {};
-    for (const issue of parsed.error.issues) {
-      const field = issue.path[0];
-      if (typeof field === 'string' && !fieldErrors[field]) {
-        fieldErrors[field] = issue.message;
-      }
-    }
-    return { error: 'Please fix the highlighted fields.', fieldErrors };
+  const preParsed = packageSchema.safeParse(withPendingDestination(raw, options.destinationName));
+  if (!preParsed.success) {
+    return { error: 'Please fix the highlighted fields.', fieldErrors: fieldErrorsFromZod(preParsed.error) };
   }
 
   const supabase = await createClient();
@@ -220,6 +360,24 @@ export async function updatePackage(
     .select('*')
     .eq('id', id)
     .single();
+
+  const releaseIds =
+    options.replaceFeaturedId && options.replaceFeaturedId !== id ? [options.replaceFeaturedId] : [];
+  const becomingFeatured = preParsed.data.is_featured && !before?.is_featured;
+  if (becomingFeatured) {
+    const capacityError = await checkFeaturedCapacity(supabase, { adding: 1, selfId: id, releaseIds });
+    if (capacityError) return { error: capacityError, fieldErrors: { is_featured: capacityError } };
+  }
+
+  const destination = await resolveDestinationId(supabase, raw.destination_id, options.destinationName);
+  if (destination.error) {
+    return { error: destination.error, fieldErrors: { destination_id: destination.error } };
+  }
+
+  const parsed = packageSchema.safeParse({ ...raw, destination_id: destination.id });
+  if (!parsed.success) {
+    return { error: 'Please fix the highlighted fields.', fieldErrors: fieldErrorsFromZod(parsed.error) };
+  }
 
   const { error } = await supabase
     .from('travel_packages')
@@ -233,6 +391,8 @@ export async function updatePackage(
     return { error: 'Could not update the package. Please try again.' };
   }
 
+  if (becomingFeatured) await unfeaturePackages(supabase, releaseIds);
+
   await logActivity({
     action: 'package.updated',
     entityType: 'travel_packages',
@@ -244,6 +404,7 @@ export async function updatePackage(
   revalidatePath('/travinco_dashboard/packages');
   revalidatePath(`/admin/packages/${id}`);
   if (before?.slug) revalidatePath(`/packages/${before.slug}`);
+  if (before?.is_featured !== parsed.data.is_featured) revalidatePath('/');
   return {};
 }
 
@@ -311,6 +472,11 @@ export async function toggleFeatured(id: string, isFeatured: boolean) {
     return { error: perm.error || 'You do not have permission to feature packages.' };
   }
   const supabase = await createClient();
+
+  if (isFeatured) {
+    const capacityError = await checkFeaturedCapacity(supabase, { adding: 1, selfId: id });
+    if (capacityError) return { error: capacityError };
+  }
 
   const { error } = await supabase
     .from('travel_packages')
@@ -518,6 +684,8 @@ export type BulkPackageInput = {
   title: string;
   slug?: string;
   destination_id?: string | null;
+  /** New destination typed by staff (used when destination_id is empty). */
+  destination_name?: string | null;
   category?: (typeof packageCategories)[number];
   duration_days: number;
   duration_nights: number;
@@ -557,7 +725,8 @@ export type BulkPackageInput = {
 };
 
 export async function bulkCreatePackages(
-  items: BulkPackageInput[]
+  items: BulkPackageInput[],
+  options: { unfeatureIds?: string[] } = {}
 ): Promise<{ error?: string; count?: number; packages?: any[] }> {
   const profile = await requireProfile();
   const perm = await checkModulePermission(profile, 'packages', 'edit');
@@ -569,13 +738,88 @@ export async function bulkCreatePackages(
     return { error: 'Please provide at least one package to save.' };
   }
 
-  // Filter candidate items with a valid title
-  const candidates = items.filter((item) => item.title && item.title.trim().length >= 2);
+  const candidates = items.filter((item) => item.title && item.title.trim().length > 0);
   if (candidates.length === 0) {
-    return { error: 'Each package must have a valid title (at least 2 characters).' };
+    return { error: 'Each package must have a valid title (at least 3 characters).' };
+  }
+
+  // 1. Validate every package with the same rules as the single package form.
+  const validated: { item: BulkPackageInput; data: PackageFormValues; images: string[] }[] = [];
+  for (const [i, item] of candidates.entries()) {
+    const label = `Package ${i + 1} ("${item.title.trim()}")`;
+
+    const extrasError = validatePackageExtras({
+      itineraryDays: item.itineraryDays ?? [],
+      inclusions: item.inclusions ?? [],
+      exclusions: item.exclusions ?? [],
+      faqs: item.faqs ?? [],
+    });
+    if (extrasError) return { error: `${label}: ${extrasError}` };
+
+    const parsed = packageSchema.safeParse({
+      title: item.title,
+      slug: slugify(item.slug || item.title) || 'package',
+      destination_id:
+        item.destination_id?.trim() || (item.destination_name?.trim() ? PENDING_DESTINATION_ID : null),
+      category: item.category || 'other',
+      duration_days: item.duration_days,
+      duration_nights: item.duration_nights,
+      base_price: item.base_price ?? 0,
+      discount_price: item.discount_price ?? null,
+      child_price: item.child_price ?? null,
+      currency: item.currency || 'INR',
+      short_description: item.short_description ?? '',
+      full_description: item.full_description ?? '',
+      highlights: item.highlights ?? [],
+      available_from: item.available_from || null,
+      available_to: item.available_to || null,
+      total_seats: item.total_seats ?? null,
+      pickup_info: item.pickup_info?.trim() || null,
+      is_featured: Boolean(item.is_featured),
+      meta_title: item.meta_title?.trim() || null,
+      meta_description: item.meta_description?.trim() || null,
+    });
+    if (!parsed.success) {
+      const message = Object.values(fieldErrorsFromZod(parsed.error))[0] ?? 'Invalid details';
+      return { error: `${label}: ${message}` };
+    }
+
+    const images = Array.isArray(item.imageUrls) ? item.imageUrls.map((u) => u.trim()).filter(Boolean) : [];
+    if (item.status === 'published') {
+      const missing: string[] = [];
+      if (!parsed.data.base_price || parsed.data.base_price <= 0) missing.push('a starting price');
+      if (images.length === 0 && !item.cover_image_url) missing.push('at least one photo');
+      if (missing.length > 0) {
+        return { error: `${label}: can't publish without ${missing.join(' and ')}. Save it as a draft instead.` };
+      }
+    }
+
+    validated.push({ item, data: parsed.data, images });
   }
 
   const supabase = await createClient();
+
+  // 2. Homepage featured limit across existing + new packages.
+  const unfeatureIds = options.unfeatureIds ?? [];
+  const featuredCount = validated.filter((v) => v.data.is_featured).length;
+  const capacityError = await checkFeaturedCapacity(supabase, { adding: featuredCount, releaseIds: unfeatureIds });
+  if (capacityError) return { error: capacityError };
+
+  // 3. Resolve typed destinations (shared across the batch so one name creates one destination).
+  const destinationIds = new Map<string, string>();
+  for (const v of validated) {
+    if (v.item.destination_id?.trim()) continue;
+    const name = v.item.destination_name?.trim() ?? '';
+    const key = name.toLowerCase();
+    if (!destinationIds.has(key)) {
+      const resolved = await resolveDestinationId(supabase, null, name);
+      if (resolved.error || !resolved.id) {
+        return { error: resolved.error || `Could not resolve destination "${name}".` };
+      }
+      destinationIds.set(key, resolved.id);
+    }
+  }
+
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -586,10 +830,8 @@ export async function bulkCreatePackages(
     .select('slug');
   const usedSlugs = new Set((existingPackages || []).map((p) => p.slug.toLowerCase()));
 
-  const preparedCandidates = candidates.map((item) => {
-    const rawTitle = item.title.trim();
-    let baseSlug = item.slug ? slugify(item.slug) : slugify(rawTitle);
-    if (!baseSlug) baseSlug = 'package';
+  const preparedCandidates = validated.map(({ item, data, images }) => {
+    const baseSlug = data.slug;
     let slug = baseSlug;
     let counter = 2;
     while (usedSlugs.has(slug)) {
@@ -598,46 +840,18 @@ export async function bulkCreatePackages(
     }
     usedSlugs.add(slug);
 
-    const days = Math.max(1, Math.floor(Number(item.duration_days) || 1));
-    const nights = Math.max(0, Math.floor(Number(item.duration_nights) || 0));
-    const basePrice = Math.max(0, Number(item.base_price) || 0);
-    const discountPrice =
-      item.discount_price && Number(item.discount_price) > 0
-        ? Math.min(basePrice, Number(item.discount_price))
-        : null;
-
-    const validImages = Array.isArray(item.imageUrls)
-      ? item.imageUrls.map((u) => u.trim()).filter(Boolean)
-      : [];
-    const coverUrl = validImages[0] || item.cover_image_url || null;
+    const destinationId =
+      item.destination_id?.trim() || destinationIds.get((item.destination_name?.trim() ?? '').toLowerCase())!;
 
     return {
       item,
       slug,
       payload: {
-        title: rawTitle,
+        ...withAutoSeo({ ...data, destination_id: destinationId }),
         slug,
-        destination_id: item.destination_id && item.destination_id.trim() ? item.destination_id.trim() : null,
-        category: item.category || 'other',
-        duration_days: days,
-        duration_nights: nights,
-        base_price: basePrice,
-        discount_price: discountPrice,
-        child_price: item.child_price && Number(item.child_price) > 0 ? Number(item.child_price) : null,
-        currency: item.currency || 'INR',
-        available_from: item.available_from || null,
-        available_to: item.available_to || null,
-        total_seats: item.total_seats && Number(item.total_seats) > 0 ? Math.floor(Number(item.total_seats)) : null,
-        pickup_info: item.pickup_info?.trim() || null,
-        is_featured: Boolean(item.is_featured),
-        short_description: item.short_description?.trim() || null,
-        full_description: item.full_description?.trim() || null,
-        highlights: Array.isArray(item.highlights) ? item.highlights.filter(Boolean) : [],
-        cover_image_url: coverUrl,
+        cover_image_url: images[0] || item.cover_image_url || null,
         video_url: item.videoUrls?.[0] || item.video_url || null,
         status: item.status === 'published' ? 'published' : 'draft',
-        meta_title: item.meta_title?.trim() || rawTitle,
-        meta_description: item.meta_description?.trim() || item.short_description?.trim() || null,
         created_by: user?.id ?? null,
       },
     };
@@ -653,6 +867,11 @@ export async function bulkCreatePackages(
   if (insertError) {
     console.error('Error during bulk create packages:', insertError);
     return { error: 'Failed to bulk create packages: ' + insertError.message };
+  }
+
+  if (featuredCount > 0) {
+    await unfeaturePackages(supabase, unfeatureIds);
+    revalidatePath('/');
   }
 
   // Map inserted package IDs by slug to attach sub-resources

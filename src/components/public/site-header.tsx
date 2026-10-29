@@ -74,9 +74,13 @@ export function SiteHeader({
   const effectiveNavbar = navbarContent || DEFAULT_NAVBAR_FOOTER_CONTENT.navbar;
   const darkLogo = normalizePathOrUrl(effectiveNavbar.logo_image_url) || '/images/green_logo.png';
   const lightLogo = normalizePathOrUrl(effectiveNavbar.logo_light_image_url) || '/images/white_logo.png';
-  const navLinksList = (effectiveNavbar.nav_links && effectiveNavbar.nav_links.length > 0)
-    ? effectiveNavbar.nav_links.filter((l) => l.visible !== false)
-    : DEFAULT_NAVBAR_FOOTER_CONTENT.navbar.nav_links;
+  const navLinksList = (
+    (effectiveNavbar.nav_links && effectiveNavbar.nav_links.length > 0)
+      ? effectiveNavbar.nav_links.filter((l) => l.visible !== false)
+      : DEFAULT_NAVBAR_FOOTER_CONTENT.navbar.nav_links
+  )
+    // Destinations is no longer a navbar item (destinations lead to filtered packages instead)
+    .filter((l) => l.key !== 'destinations' && normalizePathOrUrl(l.href) !== '/destinations');
   const showCta = !!effectiveNavbar.cta_button_text;
   const ctaText = effectiveNavbar.cta_button_text || t('nav_book_with_us');
   const ctaHref = normalizePathOrUrl(effectiveNavbar.cta_button_url) || '/booking';

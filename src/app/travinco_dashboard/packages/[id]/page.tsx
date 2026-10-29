@@ -69,7 +69,7 @@ export default async function EditPackagePage({ params }: { params: { id: string
   if (!pkg) notFound();
 
   return (
-    <div className="max-w-3xl space-y-8 pb-16">
+    <div className="space-y-8 pb-16">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
@@ -112,56 +112,59 @@ export default async function EditPackagePage({ params }: { params: { id: string
         }}
       />
 
-      <div className="card space-y-4 p-5">
-        <h2 className="text-sm font-semibold text-ink-800">Day-by-day itinerary</h2>
-        <ItineraryManager packageId={pkg.id} days={itinerary ?? []} />
+      <div className="grid gap-6 lg:grid-cols-2">
+        <div className="card space-y-4 p-5">
+          <h2 className="text-sm font-semibold text-ink-800">Day-by-day itinerary</h2>
+          <ItineraryManager packageId={pkg.id} days={itinerary ?? []} />
+        </div>
+        <div className="card space-y-4 p-5">
+          <h2 className="text-sm font-semibold text-ink-800">Frequently asked questions</h2>
+          <FaqManager
+            packageId={pkg.id}
+            faqs={faqs ?? []}
+            onAdd={addFaq}
+            onUpdate={updateFaq}
+            onRemove={removeFaq}
+          />
+        </div>
       </div>
 
-      <div className="card space-y-4 p-5">
-        <h2 className="text-sm font-semibold text-ink-800">Inclusions</h2>
-        <InclusionExclusionManager
-          packageId={pkg.id}
-          items={inclusions ?? []}
-          onAdd={addInclusion}
-          onAddBulk={addInclusionsBulk}
-          onUpdate={updateInclusion}
-          onRemove={removeInclusion}
-          label="What's included"
-        />
+      <div className="grid gap-6 lg:grid-cols-2">
+        <div className="card space-y-4 p-5">
+          <h2 className="text-sm font-semibold text-ink-800">Inclusions</h2>
+          <InclusionExclusionManager
+            packageId={pkg.id}
+            items={inclusions ?? []}
+            onAdd={addInclusion}
+            onAddBulk={addInclusionsBulk}
+            onUpdate={updateInclusion}
+            onRemove={removeInclusion}
+            label="What's included"
+          />
+        </div>
+        <div className="card space-y-4 p-5">
+          <h2 className="text-sm font-semibold text-ink-800">Exclusions</h2>
+          <InclusionExclusionManager
+            packageId={pkg.id}
+            items={exclusions ?? []}
+            onAdd={addExclusion}
+            onAddBulk={addExclusionsBulk}
+            onUpdate={updateExclusion}
+            onRemove={removeExclusion}
+            label="What's not included"
+          />
+        </div>
       </div>
 
-      <div className="card space-y-4 p-5">
-        <h2 className="text-sm font-semibold text-ink-800">Exclusions</h2>
-        <InclusionExclusionManager
-          packageId={pkg.id}
-          items={exclusions ?? []}
-          onAdd={addExclusion}
-          onAddBulk={addExclusionsBulk}
-          onUpdate={updateExclusion}
-          onRemove={removeExclusion}
-          label="What's not included"
-        />
-      </div>
-
-      <div className="card space-y-4 p-5">
-        <h2 className="text-sm font-semibold text-ink-800">Frequently asked questions</h2>
-        <FaqManager
-          packageId={pkg.id}
-          faqs={faqs ?? []}
-          onAdd={addFaq}
-          onUpdate={updateFaq}
-          onRemove={removeFaq}
-        />
-      </div>
-
-      <div className="card space-y-4 p-5">
-        <h2 className="text-sm font-semibold text-ink-800">Gallery images</h2>
-        <PackageImagesManager packageId={pkg.id} images={images ?? []} />
-      </div>
-
-      <div className="card space-y-4 p-5">
-        <h2 className="text-sm font-semibold text-ink-800">Videos</h2>
-        <PackageVideosManager packageId={pkg.id} videos={videos ?? []} />
+      <div className="grid gap-6 lg:grid-cols-2">
+        <div className="card space-y-4 p-5">
+          <h2 className="text-sm font-semibold text-ink-800">Gallery images</h2>
+          <PackageImagesManager packageId={pkg.id} images={images ?? []} />
+        </div>
+        <div className="card space-y-4 p-5">
+          <h2 className="text-sm font-semibold text-ink-800">Videos</h2>
+          <PackageVideosManager packageId={pkg.id} videos={videos ?? []} />
+        </div>
       </div>
 
       <PackageSaveCard formId="package-form" />

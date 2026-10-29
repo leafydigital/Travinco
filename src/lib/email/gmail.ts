@@ -16,6 +16,29 @@ import nodemailer from 'nodemailer';
  * with confirmed-correct credentials, that's the most likely cause —
  * see the error logged below for the actual underlying reason.
  */
+/** Sender display name used for every email the application sends. */
+export const EMAIL_SENDER_NAME = 'Travinco - Notifications';
+
+// Reused (pooled) SMTP connection: avoids a new TLS handshake + login per email,
+// which made OTP / welcome emails noticeably slower on warm server instances.
+let cachedTransporter: { key: string; transporter: nodemailer.Transporter } | null = null;
+
+function getTransporter(user: string, pass: string) {
+  const key = `${user}:${pass}`;
+  if (cachedTransporter?.key === key) return cachedTransporter.transporter;
+  const transporter = nodemailer.createTransport({
+    pool: true,
+    maxConnections: 3,
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true,
+    auth: { user, pass },
+    connectionTimeout: 10000,
+  });
+  cachedTransporter = { key, transporter };
+  return transporter;
+}
+
 export function isGmailConfigured() {
   return Boolean(process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD);
 }
@@ -36,17 +59,12 @@ export async function sendGmail({
     return { error: 'not_configured' };
   }
 
-  const transporter = nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 465,
-    secure: true,
-    auth: { user, pass },
-    connectionTimeout: 10000,
-  });
+  const transporter = getTransporter(user, pass);
 
   try {
     await transporter.sendMail({
-      from: user,
+      // Display name shown in recipients' inboxes (instead of the bare Gmail username)
+      from: { name: EMAIL_SENDER_NAME, address: user },
       to,
       subject,
       html,

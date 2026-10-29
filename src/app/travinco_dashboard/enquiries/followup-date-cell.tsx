@@ -7,6 +7,8 @@ import { toast } from 'sonner';
 import { Calendar, X, Clock, AlertTriangle, Loader2 } from 'lucide-react';
 import { updateEnquiryFollowupDate } from './actions';
 import { formatDate } from '@/lib/utils/format';
+import { DatePickerDMY, formatIsoAsDMY } from '@/components/public/date-picker-dmy';
+import { addYearsIso, todayIso } from '@/lib/utils/iso-date';
 
 export function FollowupDateCell({
   enquiryId,
@@ -27,7 +29,8 @@ export function FollowupDateCell({
   const [displayedDate, setDisplayedDate] = useState<string | null>(currentDate);
   const [mounted, setMounted] = useState(false);
 
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = todayIso();
+  const maxDateStr = addYearsIso(todayStr, 1);
   const [selectedDate, setSelectedDate] = useState<string>(currentDate ?? todayStr);
 
   useEffect(() => {
@@ -78,12 +81,16 @@ export function FollowupDateCell({
       toast.error('Follow-up date cannot be in the past.');
       return;
     }
+    if (dateToSave && dateToSave > maxDateStr) {
+      toast.error('Follow-up date must be within 1 year from today.');
+      return;
+    }
 
     const previousDate = displayedDate;
     // Optimistic UI: reflect in table immediately and close modal
     setDisplayedDate(dateToSave);
     setIsOpen(false);
-    toast.success(dateToSave ? `Follow-up set to ${dateToSave}` : 'Follow-up date cleared');
+    toast.success(dateToSave ? `Follow-up set to ${formatIsoAsDMY(dateToSave)}` : 'Follow-up date cleared');
 
     startTransition(async () => {
       const result = await updateEnquiryFollowupDate(enquiryId, dateToSave);
@@ -135,12 +142,12 @@ export function FollowupDateCell({
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
           {/* Backdrop */}
           <div
-            className="fixed inset-0 bg-navy-950/45 backdrop-blur-xs transition-opacity animate-in fade-in duration-150"
+            className="fixed inset-0 bg-ink-950/50 transition-opacity animate-in fade-in duration-150"
             onClick={() => !isPending && setIsOpen(false)}
           />
-
+  
           {/* Modal Content */}
-          <div className="relative z-10 w-full max-w-sm rounded-2xl border border-ink-200 bg-white p-5 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+          <div className="relative z-10 w-full max-w-sm rounded-2xl border border-ink-200 bg-white p-5 shadow-lg shadow-ink-900/5 animate-in fade-in zoom-in-95 duration-150">
             {/* Header */}
             <div className="mb-4 flex items-start justify-between border-b border-ink-100 pb-3">
               <div className="flex items-center gap-2.5">
@@ -165,7 +172,7 @@ export function FollowupDateCell({
                 <X className="h-4 w-4" />
               </button>
             </div>
-
+  
             {/* Quick Presets */}
             <div className="mb-4">
               <label className="mb-1.5 block text-xs font-medium text-ink-600">Quick presets</label>
@@ -190,21 +197,19 @@ export function FollowupDateCell({
                 })}
               </div>
             </div>
-
+  
             {/* Date Input */}
             <div className="space-y-3">
               <div>
                 <label className="mb-1.5 block text-xs font-medium text-ink-600">Custom follow-up date</label>
-                <input
-                  type="date"
+                <DatePickerDMY
                   value={selectedDate}
                   min={todayStr}
-                  onChange={(e) => setSelectedDate(e.target.value)}
-                  disabled={isPending}
-                  className="input w-full text-sm"
+                  max={maxDateStr}
+                  onChange={setSelectedDate}
                 />
               </div>
-
+  
               {/* Action Buttons */}
               <div className="flex items-center justify-between gap-2 pt-2 border-t border-ink-100">
                 {displayedDate ? (
@@ -219,7 +224,7 @@ export function FollowupDateCell({
                 ) : (
                   <span />
                 )}
-
+  
                 <div className="flex items-center gap-2">
                   <button
                     type="button"

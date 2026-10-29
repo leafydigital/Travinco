@@ -70,17 +70,6 @@ export default async function BookingPage({
       <section className="pt-10 sm:pt-14 pb-20 px-4 sm:px-6 relative z-10">
         <div className="mx-auto max-w-4xl">
           <div className="card border-t-4 border-t-emerald-500 p-6 sm:p-10 bg-white shadow-xl shadow-ink-900/5">
-            {packages && packages.length > 0 && (
-              <p className="mb-6 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-ink-150 bg-sand-50/70 p-3 text-xs text-ink-500">
-                <span>
-                  Looking for an existing itinerary? Mention the package title or explore all packages first.
-                </span>
-                <a href="/packages" className="font-semibold text-brand-600 hover:underline">
-                  Browse Packages →
-                </a>
-              </p>
-            )}
-
             <EnquiryForm
               buttonLabel="Send Quote"
               isLoggedIn={Boolean(customer)}

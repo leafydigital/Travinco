@@ -20,6 +20,7 @@ interface ExpenseRowActionsProps {
     amount: number | string;
     payment_method: string;
     reference_number?: string | null;
+    notes?: string | null;
     expense_categories?: { name: string } | { name: string }[] | null;
   };
   categories: { id: string; name: string }[];

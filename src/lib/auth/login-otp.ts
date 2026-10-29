@@ -1,5 +1,6 @@
 'use server';
 
+import { escapeLike } from '@/lib/auth/signup-rules';
 import { createServerClient } from '@supabase/ssr';
 import { createCustomerClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -37,7 +38,9 @@ export type InitiateLoginResult = {
   remainingAttempts?: number;
   userType?: 'staff' | 'customer';
   redirectUrl?: string;
-  step?: 'otp_required';
+  step?: 'otp_required' | 'signed_in';
+  /** True when the customer session cookie was set (no OTP step any more). */
+  success?: boolean;
   loginTicket?: string;
   maskedEmail?: string;
 };
@@ -76,7 +79,7 @@ export async function initiateCustomerLoginFlow(
       const { data: accountRow } = await serviceSupabase
         .from('customer_accounts')
         .select('email, full_name, username')
-        .ilike('username', trimmedInput)
+        .ilike('username', escapeLike(trimmedInput))
         .maybeSingle();
 
       if (accountRow?.email) {
@@ -87,23 +90,6 @@ export async function initiateCustomerLoginFlow(
       console.warn('customer_accounts username lookup notice:', lookupErr);
     }
 
-    // Fallback: check Supabase auth users list metadata
-    if (!resolvedEmail) {
-      try {
-        const { data: usersData } = await serviceSupabase.auth.admin.listUsers();
-        const match = usersData?.users?.find(
-          (u) =>
-            (u.user_metadata?.username as string)?.toLowerCase() === trimmedInput.toLowerCase()
-        );
-        if (match?.email) {
-          resolvedEmail = match.email.toLowerCase();
-          userFullName = (match.user_metadata?.full_name as string) || undefined;
-        }
-      } catch (authListErr) {
-        console.warn('Fallback username lookup notice:', authListErr);
-      }
-    }
-
     if (!resolvedEmail) {
       return {
         error: 'The email/username or password you entered is incorrect.',
@@ -111,36 +97,22 @@ export async function initiateCustomerLoginFlow(
     }
   }
 
-  // 2. Check login limit status (Max 3 attempts, no lockout timer)
+  // 2. Is THIS device temporarily blocked for this account? (per-device, see login-limiter)
   const lockoutStatus = await checkLoginLockout(resolvedEmail, 'customer');
-  if (lockoutStatus.limitReached) {
+  if (lockoutStatus.isLocked) {
+    const mins = lockoutStatus.minutesRemaining || 15;
     return {
-      error: 'You have reached your login limit. Please reset your password.',
+      error: `Too many failed attempts from this device. Please try again in ${mins} minute${mins === 1 ? '' : 's'}, or reset your password.`,
+      isLocked: true,
       limitReached: true,
       remainingAttempts: 0,
     };
   }
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-  if (!supabaseUrl || !supabaseAnonKey) {
-    return { error: 'Unable to connect right now. Please try again in a moment.' };
-  }
-
-  // Transient client: Does NOT set any cookies in the user's browser!
-  const transientSupabase = createServerClient(supabaseUrl, supabaseAnonKey, {
-    cookies: {
-      getAll() {
-        return [];
-      },
-      setAll() {
-        // NO-OP: do NOT write cookies to browser during credential validation!
-      },
-    },
-  });
-
-  const { data: authData, error: authError } = await transientSupabase.auth.signInWithPassword({
+  // 3. Sign in directly on the customer-scoped client (sets the session cookie).
+  //    No email OTP step: correct username/email + password signs the customer in.
+  const customerSupabase = await createCustomerClient();
+  const { data: authData, error: authError } = await customerSupabase.auth.signInWithPassword({
     email: resolvedEmail,
     password,
   });
@@ -153,9 +125,11 @@ export async function initiateCustomerLoginFlow(
     }
 
     const attemptStatus = await recordFailedLoginAttempt(resolvedEmail, 'customer', userFullName);
-    if (attemptStatus.limitReached) {
+    if (attemptStatus.isLocked) {
+      const mins = attemptStatus.minutesRemaining || 15;
       return {
-        error: 'You have reached your login limit. Please reset your password.',
+        error: `Too many failed attempts from this device. Please try again in ${mins} minute${mins === 1 ? '' : 's'}, or reset your password.`,
+        isLocked: true,
         limitReached: true,
         remainingAttempts: 0,
       };
@@ -168,137 +142,48 @@ export async function initiateCustomerLoginFlow(
     };
   }
 
-  // Check if customer account is deactivated or if staff user using anon/customer client
+  const userId = authData.user.id;
+
+  // 4. Account checks (in parallel): deactivated customer, or a staff account
   try {
-    const customerClient = await createCustomerClient();
-    const [custRecordRes, profileRes] = await Promise.all([
-      customerClient
-        .from('customers')
-        .select('id, is_active')
-        .eq('email', resolvedEmail)
-        .maybeSingle(),
-      customerClient
-        .from('profiles')
-        .select('id, role')
-        .eq('id', authData.user.id)
-        .maybeSingle(),
+    const [custRecordRes, profileRes, accountRes] = await Promise.all([
+      serviceSupabase.from('customers').select('id, is_active').eq('email', resolvedEmail).limit(1),
+      serviceSupabase.from('profiles').select('id').eq('id', userId).maybeSingle(),
+      serviceSupabase.from('customer_accounts').select('id').eq('id', userId).maybeSingle(),
     ]);
 
-    if (custRecordRes.data?.is_active === false) {
+    if (custRecordRes.data?.[0]?.is_active === false) {
+      await customerSupabase.auth.signOut();
       return { error: 'Your account is currently inactive. Please contact our support team.' };
+    }
+
+    if (profileRes.data && !accountRes.data) {
+      // Staff accounts have their own sign-in page
+      await customerSupabase.auth.signOut();
+      return { error: 'This is a staff account. Please sign in at /app.' };
+    }
+
+    // Ensure customer_accounts record exists
+    if (!accountRes.data) {
+      await serviceSupabase.from('customer_accounts').upsert(
+        {
+          id: userId,
+          email: resolvedEmail,
+          full_name:
+            (authData.user.user_metadata?.full_name as string) || userFullName || resolvedEmail.split('@')[0],
+          username: (authData.user.user_metadata?.username as string) || null,
+        },
+        { onConflict: 'id' }
+      );
     }
   } catch (checkErr) {
     console.warn('Customer status check warning:', checkErr);
   }
 
-  if (!isGmailConfigured()) {
-    return {
-      error: 'We could not send your verification email right now. Please try again in a few moments.',
-    };
-  }
+  // 5. Successful sign-in: reset this device's failed-attempt counter
+  await clearLoginAttempts(resolvedEmail, 'customer');
 
-  // Rate limiting on OTP requests
-  const existingMem = loginOtpMemoryMap.get(resolvedEmail);
-  if (existingMem && Date.now() - existingMem.createdAt < 45 * 1000) {
-    return {
-      error: 'Please wait a moment before requesting another verification code.',
-    };
-  }
-
-  // Generate 6-digit OTP code and expiry
-  const otpCode = generateOtpCode();
-  const expiresAtMs = Date.now() + LOGIN_OTP_TTL_MINUTES * 60 * 1000;
-  const expiresAtIso = new Date(expiresAtMs).toISOString();
-  const hashedCode = hashToken(otpCode);
-
-  // Store in memory map
-  loginOtpMemoryMap.set(resolvedEmail, {
-    codeHash: hashedCode,
-    expiresAt: expiresAtMs,
-    attempts: 0,
-    createdAt: Date.now(),
-  });
-
-  // Attempt database persistence
-  try {
-    const serviceSupabase = createServiceClient();
-    await serviceSupabase.from('enquiry_email_otps').insert({
-      email: `login:${resolvedEmail}`,
-      code_hash: hashedCode,
-      expires_at: expiresAtIso,
-      attempts: 0,
-    });
-  } catch (insertErr: any) {
-    console.warn('Login OTP database insert warning (memory store active):', insertErr?.message);
-  }
-
-  // Encrypt the login ticket with credentials, tokens, expiry, and codeHash for seamless verification
-  const loginTicket = encryptTicket({
-    email: resolvedEmail,
-    password,
-    userId: authData.user.id,
-    accessToken: authData.session.access_token,
-    refreshToken: authData.session.refresh_token,
-    codeHash: hashedCode,
-    exp: expiresAtMs,
-  });
-
-  const fullName =
-    (authData.user.user_metadata?.full_name as string) ||
-    resolvedEmail.split('@')[0];
-
-  const html = `
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <meta charset="utf-8">
-        <title>Your Travinco Login Verification Code</title>
-      </head>
-      <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; padding: 24px; margin: 0;">
-        <div style="max-width: 520px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
-          <div style="background-color: #022c22; padding: 28px 24px; text-align: center;">
-            <h1 style="color: #ffffff; font-size: 24px; margin: 0; font-weight: 700; letter-spacing: 1px;">TRAVINCO</h1>
-            <p style="color: #a7f3d0; font-size: 13px; margin: 6px 0 0; text-transform: uppercase; letter-spacing: 1.5px;">Customer Account Login</p>
-          </div>
-          <div style="padding: 32px 28px;">
-            <p style="font-size: 15px; color: #1e293b; margin: 0 0 16px; font-weight: 600;">Hello ${fullName},</p>
-            <p style="font-size: 14px; color: #475569; line-height: 1.6; margin: 0 0 24px;">
-              You have requested to sign in to your Travinco customer account. Please enter the verification code below to complete your sign-in:
-            </p>
-            <div style="background-color: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 12px; padding: 20px; text-align: center; margin: 0 0 24px;">
-              <span style="font-family: 'Courier New', Courier, monospace; font-size: 34px; font-weight: 800; letter-spacing: 8px; color: #065f46; display: inline-block;">
-                ${otpCode}
-              </span>
-              <p style="font-size: 12px; color: #047857; margin: 8px 0 0;">Valid for ${LOGIN_OTP_TTL_MINUTES} minutes</p>
-            </div>
-            <p style="font-size: 13px; color: #64748b; line-height: 1.5; margin: 0 0 8px;">
-              If you did not attempt to sign in to your Travinco account, someone may have entered your email address. Please change your password or contact our support team immediately.
-            </p>
-          </div>
-          <div style="background-color: #f8fafc; border-top: 1px solid #f1f5f9; padding: 16px 24px; text-align: center;">
-            <p style="font-size: 11px; color: #94a3b8; margin: 0;">&copy; ${new Date().getFullYear()} Travinco Tours. All rights reserved.</p>
-          </div>
-        </div>
-      </body>
-    </html>
-  `;
-
-  const emailResult = await sendGmail({
-    to: resolvedEmail,
-    subject: `${otpCode} is your Travinco login verification code`,
-    html,
-  });
-
-  if (emailResult.error) {
-    console.error('Failed to send login verification code:', emailResult.error);
-    return { error: 'Failed to send verification email. Please try again.' };
-  }
-
-  return {
-    step: 'otp_required',
-    loginTicket,
-    maskedEmail: maskEmail(resolvedEmail),
-  };
+  return { success: true, step: 'signed_in', userType: 'customer' };
 }
 
 /**

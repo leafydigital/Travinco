@@ -52,13 +52,13 @@ export function DeleteConfirmModal({
 
   const content = (
     <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs transition-opacity animate-in fade-in duration-150"
+      className="fixed inset-0 bg-ink-950/50 z-[9999] flex items-center justify-center p-4 transition-opacity animate-in fade-in duration-150"
       onClick={() => {
         if (!isPending) onClose();
       }}
     >
       <div
-        className="relative w-full mx-auto rounded-2xl bg-white p-5 sm:p-6 shadow-2xl border border-ink-100 animate-in zoom-in-95 duration-150 box-border"
+        className="relative w-full mx-auto rounded-2xl bg-white p-5 sm:p-6 shadow-lg shadow-ink-900/5 border border-ink-100 animate-in zoom-in-95 duration-150 box-border"
         style={{ maxWidth: '400px' }}
         role="dialog"
         aria-modal="true"
@@ -73,7 +73,7 @@ export function DeleteConfirmModal({
             <p className="mt-1.5 text-xs text-ink-500 leading-relaxed break-words">{description}</p>
           </div>
         </div>
-
+  
         <div className="mt-5 flex items-center justify-end gap-2.5 border-t border-ink-100 pt-4">
           <button
             type="button"

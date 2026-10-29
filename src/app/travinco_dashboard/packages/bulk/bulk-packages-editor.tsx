@@ -26,11 +26,65 @@ import {
   Star,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { bulkCreatePackages, type BulkPackageInput } from '../actions';
+import { bulkCreatePackages, getFeaturedPackages, type BulkPackageInput } from '../actions';
 import { uploadPackageImage } from '../upload-actions';
-import { packageCategories, slugify } from '@/lib/validations/package';
+import {
+  packageCategories,
+  packageSchema,
+  slugify,
+  validatePackageExtras,
+  fieldErrorsFromZod,
+  HIGHLIGHT_MAX_LENGTH,
+  SHORT_DESCRIPTION_MAX_LENGTH,
+  MAX_FEATURED_PACKAGES,
+} from '@/lib/validations/package';
+import {
+  AdminDateField,
+  CurrencyCombobox,
+  DestinationCombobox,
+  FeaturedCheckingHint,
+  FeaturedLimitModal,
+  availabilityRange,
+  blockNonNumericKeys,
+  parseNonNegative,
+  type FeaturedItem,
+} from '@/components/admin/package-fields';
 
 export type DestinationOption = { id: string; name: string };
+
+type EditorTab = 'basic' | 'pricing' | 'itinerary' | 'inclusions' | 'media' | 'seo';
+
+/** Which tab holds each validated field, so errors can jump to it. */
+const FIELD_TAB: Record<string, EditorTab> = {
+  title: 'basic',
+  slug: 'basic',
+  destination_id: 'basic',
+  category: 'basic',
+  duration_days: 'basic',
+  duration_nights: 'basic',
+  short_description: 'basic',
+  full_description: 'basic',
+  base_price: 'pricing',
+  discount_price: 'pricing',
+  child_price: 'pricing',
+  currency: 'pricing',
+  available_from: 'pricing',
+  available_to: 'pricing',
+  total_seats: 'pricing',
+  is_featured: 'pricing',
+  highlights: 'inclusions',
+  meta_title: 'seo',
+  meta_description: 'seo',
+  itinerary: 'itinerary',
+  extras: 'inclusions',
+};
+
+const PENDING_DESTINATION_ID = '00000000-0000-0000-0000-000000000000';
+
+/** Non-blank lines of a one-per-line textarea. */
+function lines(list: string[]) {
+  return list.map((s) => s.trim()).filter(Boolean);
+}
 
 export type BulkPackageDraft = {
   id: string;
@@ -38,9 +92,11 @@ export type BulkPackageDraft = {
   title: string;
   slug: string;
   destination_id: string;
+  /** Typed destination that doesn't exist yet (created on save). */
+  destination_name: string;
   category: (typeof packageCategories)[number];
-  duration_days: number;
-  duration_nights: number;
+  duration_days: number | '';
+  duration_nights: number | '';
   short_description: string;
   full_description: string;
 
@@ -83,6 +139,7 @@ function createEmptyPackageDraft(index: number): BulkPackageDraft {
     title: '',
     slug: '',
     destination_id: '',
+    destination_name: '',
     category: 'family',
     duration_days: 3,
     duration_nights: 2,
@@ -123,15 +180,111 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
     createEmptyPackageDraft(2),
   ]);
   const [activeIdx, setActiveIdx] = useState(0);
-  const [activeTab, setActiveTab] = useState<'basic' | 'pricing' | 'itinerary' | 'inclusions' | 'media' | 'seo'>('basic');
+  const [activeTab, setActiveTab] = useState<EditorTab>('basic');
   const [formError, setFormError] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [singleImageUrlInput, setSingleImageUrlInput] = useState('');
+  /** Inline errors per draft id (set when "Bulk Save" validation fails). */
+  const [errorsById, setErrorsById] = useState<Record<string, Record<string, string>>>({});
+  const [showRowErrors, setShowRowErrors] = useState(false);
+
+  // Featured (homepage) slots: existing featured packages are fetched lazily
+  const [existingFeatured, setExistingFeatured] = useState<FeaturedItem[] | null>(null);
+  const [unfeatureIds, setUnfeatureIds] = useState<string[]>([]);
+  const [featuredModalItems, setFeaturedModalItems] = useState<FeaturedItem[] | null>(null);
+  const [checkingFeatured, setCheckingFeatured] = useState(false);
+
+  const range = availabilityRange();
 
   // Fallback if activeIdx goes out of bounds
   const currentPkg = packages[activeIdx] || packages[0];
+  const currentErrors = (currentPkg && errorsById[currentPkg.id]) || {};
+  const nightsError =
+    typeof currentPkg?.duration_days === 'number' &&
+    typeof currentPkg?.duration_nights === 'number' &&
+    currentPkg.duration_nights > currentPkg.duration_days
+      ? 'Nights must be less than or equal to days'
+      : currentErrors.duration_nights;
+
+  /** Props for number inputs: clearable, never negative. */
+  function numberInput(
+    field: 'duration_days' | 'duration_nights' | 'base_price' | 'discount_price' | 'child_price' | 'total_seats',
+    integer = false
+  ) {
+    return {
+      type: 'number',
+      min: 0,
+      step: integer ? 1 : 'any',
+      inputMode: integer ? ('numeric' as const) : ('decimal' as const),
+      value: currentPkg?.[field] ?? '',
+      onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => blockNonNumericKeys(e, !integer),
+      onChange: (e: React.ChangeEvent<HTMLInputElement>) => {
+        const parsed = parseNonNegative(e.target.value, integer);
+        if (parsed !== null) updateCurrent(field, parsed as never);
+      },
+    };
+  }
+
+  function fieldClass(field: string) {
+    return currentErrors[field] ? 'border-red-400 focus:border-red-500 focus:ring-red-500' : '';
+  }
+
+  function fieldError(field: string) {
+    return currentErrors[field] ? <p className="field-error">{currentErrors[field]}</p> : null;
+  }
+
+  async function handleFeaturedToggle(checked: boolean) {
+    if (!checked) {
+      updateCurrent('is_featured', false);
+      return;
+    }
+    let existing = existingFeatured;
+    if (!existing) {
+      setCheckingFeatured(true);
+      const res = await getFeaturedPackages();
+      setCheckingFeatured(false);
+      if (res.error) {
+        toast.error(res.error);
+        return;
+      }
+      existing = res.packages.map((p) => ({ ...p, kind: 'existing' as const }));
+      setExistingFeatured(existing);
+    }
+    const stillFeatured = existing.filter((p) => !unfeatureIds.includes(p.id));
+    const batchFeatured = packages
+      .filter((p, idx) => idx !== activeIdx && p.is_featured)
+      .map((p) => ({
+        id: p.id,
+        title: p.title,
+        cover_image_url: p.images[0] ?? null,
+        kind: 'draft' as const,
+      }));
+    if (stillFeatured.length + batchFeatured.length >= MAX_FEATURED_PACKAGES) {
+      setFeaturedModalItems([...stillFeatured, ...batchFeatured]);
+      return;
+    }
+    updateCurrent('is_featured', true);
+  }
+
+  function handleFeaturedRemove(item: FeaturedItem) {
+    if (item.kind === 'draft') {
+      setPackages((prev) => prev.map((p) => (p.id === item.id ? { ...p, is_featured: false } : p)));
+    } else {
+      setUnfeatureIds((prev) => [...prev, item.id]);
+    }
+    updateCurrent('is_featured', true);
+    setFeaturedModalItems(null);
+  }
 
   function updateCurrent<K extends keyof BulkPackageDraft>(field: K, value: BulkPackageDraft[K]) {
+    const draftId = packages[activeIdx]?.id;
+    const errorKey = field === 'destination_name' ? 'destination_id' : (field as string);
+    if (draftId && errorsById[draftId]?.[errorKey]) {
+      setErrorsById((prev) => {
+        const { [errorKey]: _removed, ...rest } = prev[draftId] ?? {};
+        return { ...prev, [draftId]: rest };
+      });
+    }
     setPackages((prev) =>
       prev.map((pkg, idx) => {
         if (idx !== activeIdx) return pkg;
@@ -145,16 +298,17 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
         }
 
         // Auto-adjust nights when days changes
-        if (field === 'duration_days' && typeof value === 'number') {
+        if (field === 'duration_days' && typeof value === 'number' && typeof pkg.duration_days === 'number') {
           if (pkg.duration_nights === Math.max(0, pkg.duration_days - 1)) {
             updated.duration_nights = Math.max(0, value - 1);
           }
           // Adjust default itinerary days length if matching
-          if (updated.itineraryDays.length === pkg.duration_days) {
-            if (value > pkg.duration_days) {
-              const extraDays = Array.from({ length: value - pkg.duration_days }, (_, i) => ({
-                day_number: pkg.duration_days + i + 1,
-                title: `Day ${pkg.duration_days + i + 1} Itinerary`,
+          const prevDays = pkg.duration_days;
+          if (updated.itineraryDays.length === prevDays && value <= 60) {
+            if (value > prevDays) {
+              const extraDays = Array.from({ length: value - prevDays }, (_, i) => ({
+                day_number: prevDays + i + 1,
+                title: `Day ${prevDays + i + 1} Itinerary`,
                 description: '',
               }));
               updated.itineraryDays = [...updated.itineraryDays, ...extraDays];
@@ -339,16 +493,11 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
   // Submit all packages in bulk
   function handleBulkSave() {
     setFormError(null);
+    setShowRowErrors(true);
 
     const validPackages = packages.filter((p) => p.title.trim().length > 0);
     if (validPackages.length === 0) {
       setFormError('Please enter at least one package with a title.');
-      return;
-    }
-
-    const invalid = validPackages.find((p) => p.title.trim().length < 3);
-    if (invalid) {
-      setFormError(`"${invalid.title}" is too short. Package titles must be at least 3 characters.`);
       return;
     }
 
@@ -369,25 +518,26 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
         title: p.title.trim(),
         slug: p.slug.trim() || slugify(p.title),
         destination_id: p.destination_id || null,
+        destination_name: p.destination_id ? null : p.destination_name.trim() || null,
         category: p.category,
-        duration_days: Math.max(1, p.duration_days),
-        duration_nights: Math.max(0, p.duration_nights),
-        short_description: p.short_description.trim() || null,
-        full_description: p.full_description.trim() || null,
+        duration_days: p.duration_days === '' ? (undefined as unknown as number) : p.duration_days,
+        duration_nights: p.duration_nights === '' ? (undefined as unknown as number) : p.duration_nights,
+        short_description: p.short_description,
+        full_description: p.full_description,
         base_price: typeof p.base_price === 'number' ? p.base_price : 0,
-        discount_price: typeof p.discount_price === 'number' && p.discount_price > 0 ? p.discount_price : null,
-        child_price: typeof p.child_price === 'number' && p.child_price > 0 ? p.child_price : null,
-        currency: p.currency || 'INR',
+        discount_price: typeof p.discount_price === 'number' ? p.discount_price : null,
+        child_price: typeof p.child_price === 'number' ? p.child_price : null,
+        currency: p.currency,
         available_from: p.available_from || null,
         available_to: p.available_to || null,
-        total_seats: typeof p.total_seats === 'number' && p.total_seats > 0 ? p.total_seats : null,
+        total_seats: typeof p.total_seats === 'number' ? p.total_seats : null,
         pickup_info: p.pickup_info.trim() || null,
         is_featured: p.is_featured,
-        highlights: p.highlights.filter(Boolean),
-        inclusions: p.inclusions.filter(Boolean),
-        exclusions: p.exclusions.filter(Boolean),
-        itineraryDays: p.itineraryDays.filter((d) => d.title.trim()),
-        faqs: p.faqs.filter((f) => f.question.trim() && f.answer.trim()),
+        highlights: lines(p.highlights),
+        inclusions: lines(p.inclusions),
+        exclusions: lines(p.exclusions),
+        itineraryDays: p.itineraryDays,
+        faqs: p.faqs,
         imageUrls: allImages,
         videoUrls: validVideos,
         cover_image_url: allImages[0] || null,
@@ -397,8 +547,46 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
       };
     });
 
+    // Same rules as the single package form; jump to the first problem.
+    const nextErrors: Record<string, Record<string, string>> = {};
+    let firstProblem: { draftId: string; tab: EditorTab; message: string } | null = null;
+    payload.forEach((item, i) => {
+      const draft = validPackages[i]!;
+      const check = packageSchema.safeParse({
+        ...item,
+        destination_id: item.destination_id || (item.destination_name ? PENDING_DESTINATION_ID : null),
+      });
+      const errs = check.success ? {} : fieldErrorsFromZod(check.error);
+      const extrasError = validatePackageExtras(item);
+      if (extrasError) errs[extrasError.startsWith('Itinerary') ? 'itinerary' : 'extras'] = extrasError;
+      if (item.status === 'published') {
+        if (!item.base_price) errs.base_price ??= 'A starting price is required to publish';
+        if (!item.imageUrls?.length) errs.extras ??= 'At least one photo is required to publish';
+      }
+      if (Object.keys(errs).length > 0) {
+        nextErrors[draft.id] = errs;
+        if (!firstProblem) {
+          const [field, message] = Object.entries(errs)[0]!;
+          const tab = item.status === 'published' && field === 'extras' && !item.imageUrls?.length ? 'media' : FIELD_TAB[field] ?? 'basic';
+          firstProblem = { draftId: draft.id, tab, message: `Package ${i + 1} ("${item.title}"): ${message}` };
+        }
+      }
+    });
+    setErrorsById(nextErrors);
+
+    if (firstProblem) {
+      const { draftId, tab, message } = firstProblem as { draftId: string; tab: EditorTab; message: string };
+      setActiveIdx(packages.findIndex((p) => p.id === draftId));
+      setActiveTab(tab);
+      setFormError(message);
+      toast.error(message);
+      return;
+    }
+
+    const featuredInBatch = payload.some((p) => p.is_featured);
+
     startTransition(async () => {
-      const res = await bulkCreatePackages(payload);
+      const res = await bulkCreatePackages(payload, { unfeatureIds: featuredInBatch ? unfeatureIds : [] });
       if (res.error) {
         setFormError(res.error);
         toast.error(res.error);
@@ -410,7 +598,7 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
     });
   }
 
-  const validCount = packages.filter((p) => p.title.trim().length >= 2).length;
+  const validCount = packages.filter((p) => p.title.trim().length > 0).length;
 
   return (
     <div className="space-y-6">
@@ -480,7 +668,8 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
           <div className="space-y-2 max-h-[700px] overflow-y-auto pr-1">
             {packages.map((pkg, idx) => {
               const isSelected = idx === activeIdx;
-              const destName = destinations.find((d) => d.id === pkg.destination_id)?.name;
+              const destName = destinations.find((d) => d.id === pkg.destination_id)?.name || pkg.destination_name.trim();
+              const hasErrors = Object.keys(errorsById[pkg.id] ?? {}).length > 0;
               const hasTitle = Boolean(pkg.title.trim());
 
               return (
@@ -490,7 +679,9 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
                   className={`group relative rounded-xl border p-3 transition-all cursor-pointer ${
                     isSelected
                       ? 'border-brand-500 bg-brand-50/40 shadow-xs ring-1 ring-brand-400'
-                      : 'border-ink-150 bg-white hover:border-ink-300 hover:bg-ink-50/40'
+                      : hasErrors
+                        ? 'border-coral-300 bg-coral-50/40 hover:border-coral-400'
+                        : 'border-ink-150 bg-white hover:border-ink-300 hover:bg-ink-50/40'
                   }`}
                 >
                   <div className="flex items-start justify-between gap-2">
@@ -561,7 +752,7 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
                       {pkg.duration_days}D/{pkg.duration_nights}N
                     </span>
                     <span className="font-semibold text-brand-700">
-                      {pkg.base_price ? `₹${Number(pkg.base_price).toLocaleString('en-IN')}` : 'Price not set'}
+                      {pkg.base_price ? `${pkg.currency || 'INR'} ${Number(pkg.base_price).toLocaleString('en-IN')}` : 'Price not set'}
                     </span>
                     {pkg.images && pkg.images.length > 0 ? (
                       <span className="inline-flex items-center gap-1 rounded bg-brand-50 px-1.5 py-0.5 text-[10px] font-semibold text-brand-700">
@@ -677,8 +868,8 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
           {/* TAB 1: Basic Information */}
           {activeTab === 'basic' && (
             <div className="space-y-4 animate-in fade-in duration-100">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="sm:col-span-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
+                <div className="sm:col-span-2 lg:col-span-3">
                   <label className="label">
                     Package Title <span className="text-coral-500">*</span>
                   </label>
@@ -688,27 +879,28 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
                     value={currentPkg?.title}
                     onChange={(e) => updateCurrent('title', e.target.value)}
                     placeholder="e.g. 5D/4N Munnar & Alleppey Special Honeymoon"
-                    className="input font-medium"
+                    className={`input font-medium ${fieldClass('title')}`}
                   />
+                  {fieldError('title')}
                 </div>
 
-                <div>
-                  <label className="label">Destination</label>
-                  <select
-                    value={currentPkg?.destination_id}
-                    onChange={(e) => updateCurrent('destination_id', e.target.value)}
-                    className="input cursor-pointer"
-                  >
-                    <option value="">No specific destination</option>
-                    {destinations.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.name}
-                      </option>
-                    ))}
-                  </select>
+                <div className="sm:col-span-2 lg:col-span-3">
+                  <label className="label">
+                    Destination <span className="text-coral-500">*</span>
+                  </label>
+                  <DestinationCombobox
+                    destinations={destinations}
+                    value={{ id: currentPkg?.destination_id || null, name: currentPkg?.destination_name ?? '' }}
+                    invalid={Boolean(currentErrors.destination_id)}
+                    onChange={(next) => {
+                      updateCurrent('destination_id', next.id ?? '');
+                      updateCurrent('destination_name', next.name);
+                    }}
+                  />
+                  {fieldError('destination_id')}
                 </div>
 
-                <div>
+                <div className="lg:col-span-2">
                   <label className="label">Category</label>
                   <select
                     value={currentPkg?.category}
@@ -724,27 +916,22 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
                 </div>
 
                 <div>
-                  <label className="label">Duration (Days)</label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={60}
-                    value={currentPkg?.duration_days}
-                    onChange={(e) => updateCurrent('duration_days', parseInt(e.target.value || '1', 10))}
-                    className="input"
-                  />
+                  <label className="label">
+                    Days <span className="text-coral-500">*</span>
+                  </label>
+                  <input {...numberInput('duration_days', true)} className={`input ${fieldClass('duration_days')}`} />
+                  {fieldError('duration_days')}
                 </div>
 
                 <div>
-                  <label className="label">Duration (Nights)</label>
+                  <label className="label">
+                    Nights <span className="text-coral-500">*</span>
+                  </label>
                   <input
-                    type="number"
-                    min={0}
-                    max={60}
-                    value={currentPkg?.duration_nights}
-                    onChange={(e) => updateCurrent('duration_nights', parseInt(e.target.value || '0', 10))}
-                    className="input"
+                    {...numberInput('duration_nights', true)}
+                    className={`input ${nightsError ? 'border-red-400 focus:border-red-500 focus:ring-red-500' : ''}`}
                   />
+                  {nightsError && <p className="field-error">{nightsError}</p>}
                 </div>
 
                 <div className="sm:col-span-2">
@@ -754,37 +941,50 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
                     value={currentPkg?.slug}
                     onChange={(e) => updateCurrent('slug', slugify(e.target.value))}
                     placeholder="e.g. munnar-alleppey-honeymoon"
-                    className="input font-mono text-xs text-ink-700"
+                    className={`input font-mono text-xs text-ink-700 ${fieldClass('slug')}`}
                   />
-                  <p className="text-[11px] text-ink-400 mt-1">
-                    Auto-generated from title. Unique suffixes will be automatically added if collision occurs.
-                  </p>
+                  {fieldError('slug') ?? (
+                    <p className="text-[11px] text-ink-400 mt-1">
+                      Auto-generated from title; a suffix is added if it&apos;s taken.
+                    </p>
+                  )}
                 </div>
 
-                <div className="sm:col-span-2">
-                  <label className="label">Short Description (Card Summary)</label>
+                <div className="sm:col-span-2 lg:col-span-3">
+                  <label className="label">
+                    Short Description (Card Summary) <span className="text-coral-500">*</span>
+                  </label>
                   <textarea
-                    rows={2}
+                    rows={4}
+                    maxLength={SHORT_DESCRIPTION_MAX_LENGTH}
                     value={currentPkg?.short_description}
                     onChange={(e) => updateCurrent('short_description', e.target.value)}
-                    placeholder="Shown on package search cards (keep under 500 characters)"
-                    className="input text-xs"
+                    placeholder="Shown on package search cards"
+                    className={`input text-xs ${fieldClass('short_description')}`}
                   />
+                  {fieldError('short_description') ?? (
+                    <p className="text-[11px] text-ink-400 mt-1">
+                      {currentPkg?.short_description.length ?? 0}/{SHORT_DESCRIPTION_MAX_LENGTH} characters
+                    </p>
+                  )}
                 </div>
 
-                <div className="sm:col-span-2">
-                  <label className="label">Full Detailed Description</label>
+                <div className="sm:col-span-2 lg:col-span-3">
+                  <label className="label">
+                    Overview <span className="text-coral-500">*</span>
+                  </label>
                   <textarea
                     rows={4}
                     value={currentPkg?.full_description}
                     onChange={(e) => updateCurrent('full_description', e.target.value)}
                     placeholder="Complete trip overview and itinerary introduction…"
-                    className="input text-xs"
+                    className={`input text-xs ${fieldClass('full_description')}`}
                   />
+                  {fieldError('full_description')}
                 </div>
 
                 {/* Quick Cover Photo Banner */}
-                <div className="sm:col-span-2 rounded-xl border border-ink-150 p-3.5 bg-ink-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="sm:col-span-2 lg:col-span-6 rounded-xl border border-ink-150 p-3.5 bg-ink-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
                     <div className="relative h-14 w-20 shrink-0 rounded-lg overflow-hidden border border-ink-200 bg-ink-100 flex items-center justify-center">
                       {currentPkg?.images && currentPkg.images.length > 0 ? (
@@ -838,118 +1038,144 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
           {/* TAB 2: Pricing & Availability */}
           {activeTab === 'pricing' && (
             <div className="space-y-4 animate-in fade-in duration-100">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div>
                   <label className="label">
-                    Starting Price (₹) <span className="text-coral-500">*</span>
+                    Starting Price <span className="text-coral-500">*</span>
                   </label>
                   <input
-                    type="number"
-                    min={0}
-                    step={100}
-                    value={currentPkg?.base_price}
-                    onChange={(e) => updateCurrent('base_price', e.target.value === '' ? '' : parseFloat(e.target.value))}
+                    {...numberInput('base_price')}
                     placeholder="18500"
-                    className="input font-semibold"
+                    className={`input font-semibold ${fieldClass('base_price')}`}
                   />
+                  {fieldError('base_price')}
                 </div>
 
                 <div>
-                  <label className="label">Discount / Offer Price (₹)</label>
+                  <label className="label">Discount / Offer Price</label>
                   <input
-                    type="number"
-                    min={0}
-                    step={100}
-                    value={currentPkg?.discount_price}
-                    onChange={(e) => updateCurrent('discount_price', e.target.value === '' ? '' : parseFloat(e.target.value))}
+                    {...numberInput('discount_price')}
                     placeholder="15999"
-                    className="input"
+                    className={`input ${fieldClass('discount_price')}`}
                   />
+                  {fieldError('discount_price')}
                 </div>
 
                 <div>
-                  <label className="label">Children Price (₹)</label>
+                  <label className="label">Children Price</label>
                   <input
-                    type="number"
-                    min={0}
-                    step={100}
-                    value={currentPkg?.child_price}
-                    onChange={(e) => updateCurrent('child_price', e.target.value === '' ? '' : parseFloat(e.target.value))}
+                    {...numberInput('child_price')}
                     placeholder="8000"
-                    className="input"
+                    className={`input ${fieldClass('child_price')}`}
+                  />
+                  {fieldError('child_price')}
+                </div>
+
+                <div>
+                  <label className="label">
+                    Currency <span className="text-coral-500">*</span>
+                  </label>
+                  <CurrencyCombobox
+                    value={currentPkg?.currency ?? ''}
+                    invalid={Boolean(currentErrors.currency)}
+                    onChange={(code) => updateCurrent('currency', code)}
+                  />
+                  {fieldError('currency')}
+                </div>
+
+                <div>
+                  <label className="label">Available From</label>
+                  <AdminDateField
+                    value={currentPkg?.available_from ?? ''}
+                    min={range.min}
+                    max={range.max}
+                    onChange={(iso) => {
+                      updateCurrent('available_from', iso);
+                      if (iso && currentPkg?.available_to && currentPkg.available_to < iso) {
+                        updateCurrent('available_to', '');
+                      }
+                    }}
                   />
                 </div>
 
                 <div>
-                  <label className="label">Currency</label>
-                  <select
-                    value={currentPkg?.currency}
-                    onChange={(e) => updateCurrent('currency', e.target.value)}
-                    className="input cursor-pointer"
-                  >
-                    <option value="INR">INR — Indian Rupee</option>
-                    <option value="USD">USD — US Dollar</option>
-                    <option value="EUR">EUR — Euro</option>
-                    <option value="AED">AED — UAE Dirham</option>
-                    <option value="GBP">GBP — British Pound</option>
-                    <option value="SAR">SAR — Saudi Riyal</option>
-                    <option value="SGD">SGD — Singapore Dollar</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="label">Available From (Date)</label>
-                  <input
-                    type="date"
-                    value={currentPkg?.available_from}
-                    onChange={(e) => updateCurrent('available_from', e.target.value)}
-                    className="input text-xs"
+                  <label className="label">Available To</label>
+                  <AdminDateField
+                    value={currentPkg?.available_to ?? ''}
+                    min={currentPkg?.available_from || range.min}
+                    max={range.max}
+                    invalid={Boolean(currentErrors.available_to)}
+                    onChange={(iso) => updateCurrent('available_to', iso)}
                   />
-                </div>
-
-                <div>
-                  <label className="label">Available To (Date)</label>
-                  <input
-                    type="date"
-                    value={currentPkg?.available_to}
-                    onChange={(e) => updateCurrent('available_to', e.target.value)}
-                    className="input text-xs"
-                  />
+                  {fieldError('available_to')}
                 </div>
 
                 <div>
                   <label className="label">Total Seats / Capacity</label>
                   <input
-                    type="number"
-                    min={1}
-                    value={currentPkg?.total_seats}
-                    onChange={(e) => updateCurrent('total_seats', e.target.value === '' ? '' : parseInt(e.target.value, 10))}
+                    {...numberInput('total_seats', true)}
                     placeholder="e.g. 20"
-                    className="input text-xs"
+                    className={`input text-xs ${fieldClass('total_seats')}`}
                   />
+                  {fieldError('total_seats')}
                 </div>
 
-                <div className="sm:col-span-2">
+                <div>
                   <label className="label">Pickup Information</label>
                   <input
                     type="text"
                     value={currentPkg?.pickup_info}
                     onChange={(e) => updateCurrent('pickup_info', e.target.value)}
-                    placeholder="e.g. Pickup from Kochi Airport / Ernakulam Railway Station"
+                    placeholder="e.g. Pickup from Kochi Airport"
                     className="input text-xs"
                   />
                 </div>
 
-                <div className="sm:col-span-3 pt-2">
+                <div className="sm:col-span-2 lg:col-span-4 pt-2 space-y-1">
                   <label className="flex items-center gap-2.5 text-xs font-medium text-ink-800 cursor-pointer">
                     <input
                       type="checkbox"
                       checked={currentPkg?.is_featured}
-                      onChange={(e) => updateCurrent('is_featured', e.target.checked)}
+                      disabled={checkingFeatured}
+                      onChange={(e) => handleFeaturedToggle(e.target.checked)}
                       className="rounded border-ink-300 text-brand-600 focus:ring-brand-500 h-4 w-4"
                     />
                     <span>Feature this package on the website homepage</span>
+                    {checkingFeatured && <FeaturedCheckingHint />}
                   </label>
+                  {unfeatureIds.length > 0 && existingFeatured && (
+                    <p className="text-[11px] text-amber-700">
+                      Will be un-featured on save:{' '}
+                      {existingFeatured
+                        .filter((p) => unfeatureIds.includes(p.id))
+                        .map((p) => `“${p.title}”`)
+                        .join(', ')}{' '}
+                      <button
+                        type="button"
+                        className="font-medium underline"
+                        onClick={() => {
+                          setUnfeatureIds([]);
+                          setPackages((prev) => {
+                            // Re-check the cap: keep only as many featured drafts as the restored slots allow.
+                            let slots = MAX_FEATURED_PACKAGES - existingFeatured.length;
+                            return prev.map((p) => {
+                              if (!p.is_featured) return p;
+                              if (slots > 0) {
+                                slots--;
+                                return p;
+                              }
+                              return { ...p, is_featured: false };
+                            });
+                          });
+                        }}
+                      >
+                        Undo
+                      </button>
+                    </p>
+                  )}
+                  <p className="text-[11px] text-ink-400">
+                    Up to {MAX_FEATURED_PACKAGES} packages can be featured on the homepage at a time.
+                  </p>
                 </div>
               </div>
             </div>
@@ -981,6 +1207,11 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
                   <span>Add Day</span>
                 </button>
               </div>
+              {currentErrors.itinerary && (
+                <p className="rounded-lg border border-coral-200 bg-coral-50 px-3 py-2 text-xs text-coral-800">
+                  {currentErrors.itinerary}
+                </p>
+              )}
 
               <div className="space-y-3">
                 {currentPkg?.itineraryDays.map((day, dIdx) => (
@@ -1015,8 +1246,12 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
                         updateCurrent('itineraryDays', updated);
                       }}
                       placeholder={`e.g. Arrival in destination & leisure`}
-                      className="input text-xs font-medium"
+                      maxLength={200}
+                      className={`input text-xs font-medium ${
+                        showRowErrors && !day.title.trim() ? 'border-red-400 focus:border-red-500 focus:ring-red-500' : ''
+                      }`}
                     />
+                    {showRowErrors && !day.title.trim() && <p className="field-error">Day title is required</p>}
 
                     <textarea
                       rows={2}
@@ -1040,23 +1275,37 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
           {/* TAB 4: Inclusions & FAQs */}
           {activeTab === 'inclusions' && (
             <div className="space-y-5 animate-in fade-in duration-100">
+              {currentErrors.extras && (
+                <p className="rounded-lg border border-coral-200 bg-coral-50 px-3 py-2 text-xs text-coral-800">
+                  {currentErrors.extras}
+                </p>
+              )}
+
               {/* Highlights */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="label mb-0">Package Highlights (one per line)</label>
+                  <span className="text-[11px] text-ink-400">Max {HIGHLIGHT_MAX_LENGTH} characters per line</span>
                 </div>
                 <textarea
                   rows={3}
                   value={currentPkg?.highlights.join('\n')}
-                  onChange={(e) =>
-                    updateCurrent(
-                      'highlights',
-                      e.target.value.split('\n').map((s) => s.trim()).filter(Boolean)
-                    )
-                  }
+                  onChange={(e) => updateCurrent('highlights', e.target.value.split('\n'))}
                   placeholder={`Private houseboat cruise in Alleppey\nJeep safari in Wayanad\nComplimentary candle-light dinner`}
-                  className="input text-xs leading-relaxed"
+                  className={`input text-xs leading-relaxed ${fieldClass('highlights')}`}
                 />
+                {(() => {
+                  const tooLong = (currentPkg?.highlights ?? [])
+                    .map((h, i) => ({ n: i + 1, len: h.trim().length }))
+                    .filter((h) => h.len > HIGHLIGHT_MAX_LENGTH);
+                  return tooLong.length > 0 ? (
+                    <p className="field-error">
+                      {tooLong.map((h) => `Line ${h.n} has ${h.len} characters`).join('; ')} — max {HIGHLIGHT_MAX_LENGTH}.
+                    </p>
+                  ) : (
+                    fieldError('highlights')
+                  );
+                })()}
               </div>
 
               {/* Inclusions & Exclusions */}
@@ -1067,10 +1316,7 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
                     rows={5}
                     value={currentPkg?.inclusions.join('\n')}
                     onChange={(e) =>
-                      updateCurrent(
-                        'inclusions',
-                        e.target.value.split('\n').map((s) => s.trim()).filter(Boolean)
-                      )
+                      updateCurrent('inclusions', e.target.value.split('\n'))
                     }
                     placeholder={`All accommodation in 3/4-star hotels\nDaily buffet breakfast\nPrivate AC sedan for transfers\nToll, parking and driver charges`}
                     className="input text-xs leading-relaxed"
@@ -1083,10 +1329,7 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
                     rows={5}
                     value={currentPkg?.exclusions.join('\n')}
                     onChange={(e) =>
-                      updateCurrent(
-                        'exclusions',
-                        e.target.value.split('\n').map((s) => s.trim()).filter(Boolean)
-                      )
+                      updateCurrent('exclusions', e.target.value.split('\n'))
                     }
                     placeholder={`Airfare or train tickets\nEntry tickets to monuments\nPersonal expenses & laundry\nAny items not specified in inclusions`}
                     className="input text-xs leading-relaxed"
@@ -1141,8 +1384,12 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
                         updateCurrent('faqs', updated);
                       }}
                       placeholder="e.g. Is airport transfer included?"
-                      className="input text-xs"
+                      maxLength={300}
+                      className={`input text-xs ${
+                        showRowErrors && !faq.question.trim() ? 'border-red-400 focus:border-red-500 focus:ring-red-500' : ''
+                      }`}
                     />
+                    {showRowErrors && !faq.question.trim() && <p className="field-error">Question is required</p>}
                     <textarea
                       rows={2}
                       value={faq.answer}
@@ -1154,8 +1401,11 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
                         updateCurrent('faqs', updated);
                       }}
                       placeholder="Answer..."
-                      className="input text-xs"
+                      className={`input text-xs ${
+                        showRowErrors && !faq.answer.trim() ? 'border-red-400 focus:border-red-500 focus:ring-red-500' : ''
+                      }`}
                     />
+                    {showRowErrors && !faq.answer.trim() && <p className="field-error">Answer is required</p>}
                   </div>
                 ))}
               </div>
@@ -1395,6 +1645,14 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
               </div>
             </div>
           )}
+
+          <FeaturedLimitModal
+            isOpen={featuredModalItems !== null}
+            items={featuredModalItems ?? []}
+            max={MAX_FEATURED_PACKAGES}
+            onClose={() => setFeaturedModalItems(null)}
+            onRemove={handleFeaturedRemove}
+          />
 
           {/* Step Navigation footer inside panel */}
           <div className="flex items-center justify-between border-t border-ink-100 pt-4 text-xs">

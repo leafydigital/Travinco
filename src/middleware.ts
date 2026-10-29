@@ -27,7 +27,10 @@ function getSafeRedirectPath(rawPath: string | null | undefined, fallback: strin
 export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   const isAdminRoute = pathname.startsWith('/travinco_dashboard');
-  const isStaffLoginRoute = pathname === '/travinco_admin_login' || pathname.startsWith('/travinco_admin_login/');
+  // Staff sign-in lives at /app; /travinco_admin_login is a legacy alias that redirects there
+  const isLegacyStaffLoginRoute =
+    pathname === '/travinco_admin_login' || pathname.startsWith('/travinco_admin_login/');
+  const isStaffLoginRoute = pathname === '/app' || isLegacyStaffLoginRoute;
   const isCustomerAuthRoute =
     pathname === '/account/login' ||
     pathname === '/account/signup' ||
@@ -241,16 +244,16 @@ export async function middleware(request: NextRequest) {
   // 1. Admin Routes Gate (/travinco_dashboard/**)
   if (isAdminRoute) {
     if (pathname === '/travinco_dashboard/login') {
-      return createRedirect(new URL('/account/login', request.url));
+      return createRedirect(new URL('/app', request.url));
     }
 
     if (!isStaff) {
       // If customer attempts to access admin dashboard, strictly deny access
       if (isCustomer) {
-        return createRedirect(new URL('/account/login?reason=not_staff', request.url));
+        return createRedirect(new URL('/app?reason=not_staff', request.url));
       }
-      // Unauthenticated visitor
-      const redirectUrl = new URL('/account/login', request.url);
+      // Unauthenticated visitor -> staff sign-in
+      const redirectUrl = new URL('/app', request.url);
       if (pathname !== '/travinco_dashboard') {
         redirectUrl.searchParams.set('redirectTo', pathname);
       }
@@ -261,27 +264,32 @@ export async function middleware(request: NextRequest) {
     return response;
   }
 
-  // 2. Staff Login Route Gate (/travinco_admin_login retired -> redirect to /account/login)
+  // 2. Staff Login Route Gate (/app). Legacy /travinco_admin_login* -> /app
   if (isStaffLoginRoute) {
-    const redirectUrl = new URL('/account/login', request.url);
     const redirectTo = request.nextUrl.searchParams.get('redirectTo');
     const reason = request.nextUrl.searchParams.get('reason');
-    if (redirectTo) redirectUrl.searchParams.set('redirectTo', redirectTo);
-    if (reason) redirectUrl.searchParams.set('reason', reason);
-    return createRedirect(redirectUrl);
+
+    if (isLegacyStaffLoginRoute) {
+      const redirectUrl = new URL('/app', request.url);
+      if (redirectTo) redirectUrl.searchParams.set('redirectTo', redirectTo);
+      if (reason) redirectUrl.searchParams.set('reason', reason);
+      return createRedirect(redirectUrl);
+    }
+
+    // Already signed-in staff go straight to the dashboard
+    if (isStaff && !reason) {
+      const safePath = getSafeRedirectPath(redirectTo, '/travinco_dashboard');
+      return createRedirect(
+        new URL(safePath.startsWith('/travinco_dashboard') ? safePath : '/travinco_dashboard', request.url)
+      );
+    }
+    return response;
   }
 
   // 3. Unified Auth Routes (/account/login, /account/signup)
   if (isCustomerAuthRoute) {
     const hasReason = request.nextUrl.searchParams.has('reason');
     const hasAction = request.nextUrl.searchParams.has('action');
-
-    // If already authenticated as staff visiting /account/login (without reason/action), redirect to dashboard
-    if (isStaff && !hasReason && !hasAction) {
-      const redirectTo = request.nextUrl.searchParams.get('redirectTo');
-      const safePath = getSafeRedirectPath(redirectTo, '/travinco_dashboard');
-      return createRedirect(new URL(safePath, request.url));
-    }
 
     // If user is already authenticated as customer, redirect to customer account
     if (isCustomer && !hasReason && !hasAction) {

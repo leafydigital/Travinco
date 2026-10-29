@@ -22,6 +22,7 @@ import { toast } from 'sonner';
 import { bulkCreatePackages, type BulkPackageInput } from './actions';
 import { uploadPackageImage } from './upload-actions';
 import { packageCategories } from '@/lib/validations/package';
+import { ModalPortal } from '@/components/ui/modal-portal';
 
 export type DestinationOption = { id: string; name: string };
 
@@ -267,432 +268,434 @@ export function BulkCreateModal({
   const validCount = rows.filter((r) => r.title.trim().length > 0).length;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-ink-950/50 backdrop-blur-xs animate-in fade-in duration-150">
-      <div className="flex flex-col w-full max-w-6xl max-h-[92vh] bg-white rounded-2xl shadow-2xl border border-ink-100 overflow-hidden">
-        {/* Modal Header */}
-        <div className="flex items-center justify-between border-b border-ink-100 px-5 sm:px-6 py-4 bg-ink-50/60">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-50 text-brand-700 shadow-2xs">
-              <Layers className="h-5 w-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-lg font-bold text-ink-900">Bulk Create Packages</h2>
-                <span className="rounded-md bg-brand-100 px-2 py-0.5 text-xs font-semibold text-brand-800">
-                  Batch Mode
-                </span>
+    <ModalPortal>
+      <div className="fixed inset-0 bg-ink-950/50 z-50 flex items-center justify-center p-3 sm:p-5 animate-in fade-in duration-150">
+        <div className="flex flex-col w-full max-w-6xl max-h-[92vh] bg-white rounded-2xl shadow-lg shadow-ink-900/5 border border-ink-100 overflow-hidden">
+          {/* Modal Header */}
+          <div className="flex items-center justify-between border-b border-ink-100 px-5 sm:px-6 py-4 bg-ink-50/60">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-50 text-brand-700 shadow-2xs">
+                <Layers className="h-5 w-5" />
               </div>
-              <p className="text-xs text-ink-500">
-                Quickly add multiple tour packages to your catalog at once.
-              </p>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-lg font-bold text-ink-900">Bulk Create Packages</h2>
+                  <span className="rounded-md bg-brand-100 px-2 py-0.5 text-xs font-semibold text-brand-800">
+                    Batch Mode
+                  </span>
+                </div>
+                <p className="text-xs text-ink-500">
+                  Quickly add multiple tour packages to your catalog at once.
+                </p>
+              </div>
             </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {/* View Mode Tabs */}
-            <div className="flex items-center rounded-lg bg-ink-200/50 p-0.5 text-xs font-medium text-ink-600">
+  
+            <div className="flex items-center gap-2">
+              {/* View Mode Tabs */}
+              <div className="flex items-center rounded-lg bg-ink-200/50 p-0.5 text-xs font-medium text-ink-600">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('grid')}
+                  className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 transition cursor-pointer ${
+                    activeTab === 'grid'
+                      ? 'bg-white text-ink-900 font-semibold shadow-2xs'
+                      : 'hover:text-ink-900'
+                  }`}
+                >
+                  <TableIcon className="h-3.5 w-3.5" />
+                  <span>Table Grid</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('paste')}
+                  className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 transition cursor-pointer ${
+                    activeTab === 'paste'
+                      ? 'bg-white text-ink-900 font-semibold shadow-2xs'
+                      : 'hover:text-ink-900'
+                  }`}
+                >
+                  <FileSpreadsheet className="h-3.5 w-3.5" />
+                  <span>Paste Spreadsheet</span>
+                </button>
+              </div>
+  
+              <Link
+                href="/travinco_dashboard/packages/bulk"
+                onClick={onClose}
+                className="hidden sm:inline-flex items-center gap-1.5 rounded-lg border border-ink-200 bg-white px-2.5 py-1 text-xs font-semibold text-brand-700 hover:bg-brand-50 hover:border-brand-300 transition"
+                title="Open full-page bulk creator with complete fields and itineraries"
+              >
+                <span>Full Page Mode</span>
+                <ExternalLink className="h-3 w-3" />
+              </Link>
+  
               <button
                 type="button"
-                onClick={() => setActiveTab('grid')}
-                className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 transition cursor-pointer ${
-                  activeTab === 'grid'
-                    ? 'bg-white text-ink-900 font-semibold shadow-2xs'
-                    : 'hover:text-ink-900'
-                }`}
+                onClick={onClose}
+                disabled={isPending}
+                className="rounded-lg p-1.5 text-ink-400 hover:bg-ink-100 hover:text-ink-700 transition cursor-pointer"
               >
-                <TableIcon className="h-3.5 w-3.5" />
-                <span>Table Grid</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab('paste')}
-                className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 transition cursor-pointer ${
-                  activeTab === 'paste'
-                    ? 'bg-white text-ink-900 font-semibold shadow-2xs'
-                    : 'hover:text-ink-900'
-                }`}
-              >
-                <FileSpreadsheet className="h-3.5 w-3.5" />
-                <span>Paste Spreadsheet</span>
+                <X className="h-5 w-5" />
               </button>
             </div>
-
-            <Link
-              href="/travinco_dashboard/packages/bulk"
-              onClick={onClose}
-              className="hidden sm:inline-flex items-center gap-1.5 rounded-lg border border-ink-200 bg-white px-2.5 py-1 text-xs font-semibold text-brand-700 hover:bg-brand-50 hover:border-brand-300 transition"
-              title="Open full-page bulk creator with complete fields and itineraries"
-            >
-              <span>Full Page Mode</span>
-              <ExternalLink className="h-3 w-3" />
-            </Link>
-
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={isPending}
-              className="rounded-lg p-1.5 text-ink-400 hover:bg-ink-100 hover:text-ink-700 transition cursor-pointer"
-            >
-              <X className="h-5 w-5" />
-            </button>
           </div>
-        </div>
-
-        {/* Modal Body */}
-        <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-4">
-          {formError && (
-            <div className="flex items-center gap-2.5 rounded-xl border border-coral-200 bg-coral-50 p-3 text-xs text-coral-800">
-              <AlertCircle className="h-4 w-4 shrink-0 text-coral-600" />
-              <span className="font-medium">{formError}</span>
-            </div>
-          )}
-
-          {activeTab === 'grid' ? (
-            <div className="space-y-4">
-              {/* Grid Table Container */}
-              <div className="border border-ink-150 rounded-xl overflow-hidden shadow-2xs">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs min-w-[940px]">
-                    <thead className="bg-ink-50/80 border-b border-ink-100 uppercase tracking-wider text-[11px] font-semibold text-ink-600">
-                      <tr>
-                        <th className="w-10 px-3 py-2.5 text-center">#</th>
-                        <th className="w-14 px-2 py-2.5 text-center">Photo</th>
-                        <th className="min-w-[220px] px-3 py-2.5">
-                          Package Title <span className="text-coral-500">*</span>
-                        </th>
-                        <th className="w-44 px-3 py-2.5">Destination</th>
-                        <th className="w-36 px-3 py-2.5">Category</th>
-                        <th className="w-32 px-3 py-2.5 text-center">Duration</th>
-                        <th className="w-32 px-3 py-2.5">Price (₹)</th>
-                        <th className="w-28 px-3 py-2.5">Status</th>
-                        <th className="w-20 px-3 py-2.5 text-center">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-ink-100/70 bg-white">
-                      {rows.map((row, index) => (
-                        <tr
-                          key={row.id}
-                          className="hover:bg-brand-50/30 transition-colors group"
-                        >
-                          {/* Row Number */}
-                          <td className="px-3 py-2 text-center font-medium text-ink-400">
-                            {index + 1}
-                          </td>
-
-                          {/* Photo Cell */}
-                          <td className="px-2 py-2 text-center">
-                            <label className="relative inline-flex h-8 w-8 items-center justify-center rounded-lg border border-ink-200 bg-ink-50 hover:bg-brand-50 hover:border-brand-300 transition cursor-pointer overflow-hidden group">
-                              {uploadingRowId === row.id ? (
-                                <Loader2 className="h-3.5 w-3.5 animate-spin text-brand-600" />
-                              ) : row.cover_image_url ? (
-                                <>
-                                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                                  <img
-                                    src={row.cover_image_url}
-                                    alt=""
-                                    className="h-full w-full object-cover"
-                                  />
-                                  <div className="absolute inset-0 bg-ink-900/60 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white">
-                                    <UploadCloud className="h-3 w-3" />
-                                  </div>
-                                </>
-                              ) : (
-                                <ImageIcon className="h-3.5 w-3.5 text-ink-400 group-hover:text-brand-600" />
-                              )}
-                              <input
-                                type="file"
-                                accept="image/jpeg,image/png,image/webp"
-                                disabled={isPending || uploadingRowId === row.id}
-                                onChange={(e) => {
-                                  const file = e.target.files?.[0];
-                                  if (file) handleRowImageUpload(index, file);
-                                  e.target.value = '';
-                                }}
-                                className="sr-only"
-                              />
-                            </label>
-                          </td>
-
-                          {/* Title Input */}
-                          <td className="px-3 py-2">
-                            <input
-                              type="text"
-                              value={row.title}
-                              onChange={(e) => updateRow(index, 'title', e.target.value)}
-                              placeholder="e.g. 5D/4N Munnar & Alleppey"
-                              className="input h-8 text-xs w-full font-medium"
-                              disabled={isPending}
-                            />
-                          </td>
-
-                          {/* Destination Select */}
-                          <td className="px-3 py-2">
-                            <select
-                              value={row.destination_id}
-                              onChange={(e) => updateRow(index, 'destination_id', e.target.value)}
-                              className="input h-8 text-xs w-full cursor-pointer"
-                              disabled={isPending}
-                            >
-                              <option value="">— Select —</option>
-                              {destinations.map((d) => (
-                                <option key={d.id} value={d.id}>
-                                  {d.name}
-                                </option>
-                              ))}
-                            </select>
-                          </td>
-
-                          {/* Category Select */}
-                          <td className="px-3 py-2">
-                            <select
-                              value={row.category}
-                              onChange={(e) =>
-                                updateRow(index, 'category', e.target.value as (typeof packageCategories)[number])
-                              }
-                              className="input h-8 text-xs w-full capitalize cursor-pointer"
-                              disabled={isPending}
-                            >
-                              {packageCategories.map((c) => (
-                                <option key={c} value={c} className="capitalize">
-                                  {c}
-                                </option>
-                              ))}
-                            </select>
-                          </td>
-
-                          {/* Duration (Days & Nights) */}
-                          <td className="px-3 py-2">
-                            <div className="flex items-center gap-1">
-                              <div className="flex items-center gap-0.5">
+  
+          {/* Modal Body */}
+          <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-4">
+            {formError && (
+              <div className="flex items-center gap-2.5 rounded-xl border border-coral-200 bg-coral-50 p-3 text-xs text-coral-800">
+                <AlertCircle className="h-4 w-4 shrink-0 text-coral-600" />
+                <span className="font-medium">{formError}</span>
+              </div>
+            )}
+  
+            {activeTab === 'grid' ? (
+              <div className="space-y-4">
+                {/* Grid Table Container */}
+                <div className="border border-ink-150 rounded-xl overflow-hidden shadow-2xs">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs min-w-[940px]">
+                      <thead className="bg-ink-50/80 border-b border-ink-100 uppercase tracking-wider text-[11px] font-semibold text-ink-600">
+                        <tr>
+                          <th className="w-10 px-3 py-2.5 text-center">#</th>
+                          <th className="w-14 px-2 py-2.5 text-center">Photo</th>
+                          <th className="min-w-[220px] px-3 py-2.5">
+                            Package Title <span className="text-coral-500">*</span>
+                          </th>
+                          <th className="w-44 px-3 py-2.5">Destination</th>
+                          <th className="w-36 px-3 py-2.5">Category</th>
+                          <th className="w-32 px-3 py-2.5 text-center">Duration</th>
+                          <th className="w-32 px-3 py-2.5">Price (₹)</th>
+                          <th className="w-28 px-3 py-2.5">Status</th>
+                          <th className="w-20 px-3 py-2.5 text-center">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-ink-100/70 bg-white">
+                        {rows.map((row, index) => (
+                          <tr
+                            key={row.id}
+                            className="hover:bg-brand-50/30 transition-colors group"
+                          >
+                            {/* Row Number */}
+                            <td className="px-3 py-2 text-center font-medium text-ink-400">
+                              {index + 1}
+                            </td>
+  
+                            {/* Photo Cell */}
+                            <td className="px-2 py-2 text-center">
+                              <label className="relative inline-flex h-8 w-8 items-center justify-center rounded-lg border border-ink-200 bg-ink-50 hover:bg-brand-50 hover:border-brand-300 transition cursor-pointer overflow-hidden group">
+                                {uploadingRowId === row.id ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin text-brand-600" />
+                                ) : row.cover_image_url ? (
+                                  <>
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img
+                                      src={row.cover_image_url}
+                                      alt=""
+                                      className="h-full w-full object-cover"
+                                    />
+                                    <div className="absolute inset-0 bg-ink-900/60 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white">
+                                      <UploadCloud className="h-3 w-3" />
+                                    </div>
+                                  </>
+                                ) : (
+                                  <ImageIcon className="h-3.5 w-3.5 text-ink-400 group-hover:text-brand-600" />
+                                )}
                                 <input
-                                  type="number"
-                                  min={1}
-                                  max={60}
-                                  value={row.duration_days}
-                                  onChange={(e) =>
-                                    updateRow(index, 'duration_days', parseInt(e.target.value || '1', 10))
-                                  }
-                                  className="input h-8 w-12 text-center text-xs px-1"
-                                  title="Days"
-                                  disabled={isPending}
+                                  type="file"
+                                  accept="image/jpeg,image/png,image/webp"
+                                  disabled={isPending || uploadingRowId === row.id}
+                                  onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (file) handleRowImageUpload(index, file);
+                                    e.target.value = '';
+                                  }}
+                                  className="sr-only"
                                 />
-                                <span className="text-[11px] font-medium text-ink-400">D</span>
+                              </label>
+                            </td>
+  
+                            {/* Title Input */}
+                            <td className="px-3 py-2">
+                              <input
+                                type="text"
+                                value={row.title}
+                                onChange={(e) => updateRow(index, 'title', e.target.value)}
+                                placeholder="e.g. 5D/4N Munnar & Alleppey"
+                                className="input h-8 text-xs w-full font-medium"
+                                disabled={isPending}
+                              />
+                            </td>
+  
+                            {/* Destination Select */}
+                            <td className="px-3 py-2">
+                              <select
+                                value={row.destination_id}
+                                onChange={(e) => updateRow(index, 'destination_id', e.target.value)}
+                                className="input h-8 text-xs w-full cursor-pointer"
+                                disabled={isPending}
+                              >
+                                <option value="">— Select —</option>
+                                {destinations.map((d) => (
+                                  <option key={d.id} value={d.id}>
+                                    {d.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+  
+                            {/* Category Select */}
+                            <td className="px-3 py-2">
+                              <select
+                                value={row.category}
+                                onChange={(e) =>
+                                  updateRow(index, 'category', e.target.value as (typeof packageCategories)[number])
+                                }
+                                className="input h-8 text-xs w-full capitalize cursor-pointer"
+                                disabled={isPending}
+                              >
+                                {packageCategories.map((c) => (
+                                  <option key={c} value={c} className="capitalize">
+                                    {c}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+  
+                            {/* Duration (Days & Nights) */}
+                            <td className="px-3 py-2">
+                              <div className="flex items-center gap-1">
+                                <div className="flex items-center gap-0.5">
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    max={60}
+                                    value={row.duration_days}
+                                    onChange={(e) =>
+                                      updateRow(index, 'duration_days', parseInt(e.target.value || '1', 10))
+                                    }
+                                    className="input h-8 w-12 text-center text-xs px-1"
+                                    title="Days"
+                                    disabled={isPending}
+                                  />
+                                  <span className="text-[11px] font-medium text-ink-400">D</span>
+                                </div>
+                                <span className="text-ink-300">/</span>
+                                <div className="flex items-center gap-0.5">
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    max={60}
+                                    value={row.duration_nights}
+                                    onChange={(e) =>
+                                      updateRow(index, 'duration_nights', parseInt(e.target.value || '0', 10))
+                                    }
+                                    className="input h-8 w-12 text-center text-xs px-1"
+                                    title="Nights"
+                                    disabled={isPending}
+                                  />
+                                  <span className="text-[11px] font-medium text-ink-400">N</span>
+                                </div>
                               </div>
-                              <span className="text-ink-300">/</span>
-                              <div className="flex items-center gap-0.5">
+                            </td>
+  
+                            {/* Base Price */}
+                            <td className="px-3 py-2">
+                              <div className="relative">
+                                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-400 text-xs font-semibold">
+                                  ₹
+                                </span>
                                 <input
                                   type="number"
                                   min={0}
-                                  max={60}
-                                  value={row.duration_nights}
+                                  step={100}
+                                  value={row.base_price}
                                   onChange={(e) =>
-                                    updateRow(index, 'duration_nights', parseInt(e.target.value || '0', 10))
+                                    updateRow(
+                                      index,
+                                      'base_price',
+                                      e.target.value === '' ? '' : parseFloat(e.target.value)
+                                    )
                                   }
-                                  className="input h-8 w-12 text-center text-xs px-1"
-                                  title="Nights"
+                                  placeholder="0"
+                                  className="input h-8 text-xs pl-6 w-full font-medium"
                                   disabled={isPending}
                                 />
-                                <span className="text-[11px] font-medium text-ink-400">N</span>
                               </div>
-                            </div>
-                          </td>
-
-                          {/* Base Price */}
-                          <td className="px-3 py-2">
-                            <div className="relative">
-                              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-400 text-xs font-semibold">
-                                ₹
-                              </span>
-                              <input
-                                type="number"
-                                min={0}
-                                step={100}
-                                value={row.base_price}
+                            </td>
+  
+                            {/* Status */}
+                            <td className="px-3 py-2">
+                              <select
+                                value={row.status}
                                 onChange={(e) =>
-                                  updateRow(
-                                    index,
-                                    'base_price',
-                                    e.target.value === '' ? '' : parseFloat(e.target.value)
-                                  )
+                                  updateRow(index, 'status', e.target.value as 'draft' | 'published')
                                 }
-                                placeholder="0"
-                                className="input h-8 text-xs pl-6 w-full font-medium"
+                                className={`input h-8 text-xs w-full font-medium cursor-pointer ${
+                                  row.status === 'published' ? 'text-emerald-700 bg-emerald-50/50' : 'text-ink-600'
+                                }`}
                                 disabled={isPending}
-                              />
-                            </div>
-                          </td>
-
-                          {/* Status */}
-                          <td className="px-3 py-2">
-                            <select
-                              value={row.status}
-                              onChange={(e) =>
-                                updateRow(index, 'status', e.target.value as 'draft' | 'published')
-                              }
-                              className={`input h-8 text-xs w-full font-medium cursor-pointer ${
-                                row.status === 'published' ? 'text-emerald-700 bg-emerald-50/50' : 'text-ink-600'
-                              }`}
-                              disabled={isPending}
-                            >
-                              <option value="draft">Draft</option>
-                              <option value="published">Published</option>
-                            </select>
-                          </td>
-
-                          {/* Action Buttons */}
-                          <td className="px-3 py-2 text-center">
-                            <div className="flex items-center justify-center gap-1">
-                              <button
-                                type="button"
-                                onClick={() => duplicateRow(index)}
-                                title="Duplicate row"
-                                disabled={isPending}
-                                className="rounded p-1 text-ink-400 hover:text-brand-600 hover:bg-ink-100 transition cursor-pointer"
                               >
-                                <Copy className="h-3.5 w-3.5" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => removeRow(index)}
-                                title="Delete row"
-                                disabled={isPending}
-                                className="rounded p-1 text-ink-400 hover:text-coral-600 hover:bg-coral-50 transition cursor-pointer"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                                <option value="draft">Draft</option>
+                                <option value="published">Published</option>
+                              </select>
+                            </td>
+  
+                            {/* Action Buttons */}
+                            <td className="px-3 py-2 text-center">
+                              <div className="flex items-center justify-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => duplicateRow(index)}
+                                  title="Duplicate row"
+                                  disabled={isPending}
+                                  className="rounded p-1 text-ink-400 hover:text-brand-600 hover:bg-ink-100 transition cursor-pointer"
+                                >
+                                  <Copy className="h-3.5 w-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => removeRow(index)}
+                                  title="Delete row"
+                                  disabled={isPending}
+                                  className="rounded p-1 text-ink-400 hover:text-coral-600 hover:bg-coral-50 transition cursor-pointer"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+  
+                {/* Table Toolbar / Controls */}
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={addRow}
+                      disabled={isPending}
+                      className="btn-outline inline-flex items-center gap-1.5 h-8 text-xs cursor-pointer"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      <span>Add Row</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => addMultipleRows(3)}
+                      disabled={isPending}
+                      className="btn-outline inline-flex items-center gap-1.5 h-8 text-xs cursor-pointer"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      <span>Add 3 Rows</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={clearEmptyRows}
+                      disabled={isPending}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-ink-500 hover:text-ink-800 transition cursor-pointer"
+                    >
+                      <span>Clear empty rows</span>
+                    </button>
+                  </div>
+  
+                  <div className="flex items-center gap-2 text-xs text-ink-500">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-brand-500" />
+                    <span>Unique slugs &amp; SEO metadata are auto-generated on save.</span>
+                  </div>
                 </div>
               </div>
-
-              {/* Table Toolbar / Controls */}
-              <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-                <div className="flex items-center gap-2">
+            ) : (
+              /* Quick Paste / Import Tab */
+              <div className="space-y-4">
+                <div className="rounded-xl border border-ink-150 bg-ink-50/50 p-4 space-y-2">
+                  <div className="flex items-center gap-2 text-xs font-semibold text-ink-800">
+                    <FileSpreadsheet className="h-4 w-4 text-brand-600" />
+                    <span>Paste From Excel, Google Sheets, or CSV</span>
+                  </div>
+                  <p className="text-xs text-ink-500 leading-relaxed">
+                    Copy rows from your spreadsheet and paste them below. Expected columns in order:
+                    <br />
+                    <code className="text-brand-700 font-mono bg-white px-1.5 py-0.5 rounded border border-ink-200 mt-1 inline-block">
+                      Package Title [Tab] Destination [Tab] Days [Tab] Nights [Tab] Price [Tab] Category
+                    </code>
+                  </p>
+                </div>
+  
+                <textarea
+                  value={pasteText}
+                  onChange={(e) => setPasteText(e.target.value)}
+                  placeholder={`Munnar Honeymoon Special\tKerala\t4\t3\t18500\thoneymoon\nAlleppey Houseboat Cruise\tKerala\t2\t1\t9500\tfamily\nMaldives Luxury Escape\tMaldives\t5\t4\t65000\tluxury`}
+                  rows={10}
+                  className="input font-mono text-xs w-full leading-relaxed p-3"
+                  disabled={isPending}
+                />
+  
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-ink-400">
+                    Destination names will be matched automatically to active destinations.
+                  </p>
                   <button
                     type="button"
-                    onClick={addRow}
-                    disabled={isPending}
-                    className="btn-outline inline-flex items-center gap-1.5 h-8 text-xs cursor-pointer"
+                    onClick={handleParsePaste}
+                    disabled={!pasteText.trim() || isPending}
+                    className="btn-primary inline-flex items-center gap-2 text-xs cursor-pointer disabled:opacity-50"
                   >
-                    <Plus className="h-3.5 w-3.5" />
-                    <span>Add Row</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => addMultipleRows(3)}
-                    disabled={isPending}
-                    className="btn-outline inline-flex items-center gap-1.5 h-8 text-xs cursor-pointer"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    <span>Add 3 Rows</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={clearEmptyRows}
-                    disabled={isPending}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-ink-500 hover:text-ink-800 transition cursor-pointer"
-                  >
-                    <span>Clear empty rows</span>
+                    <CheckCircle2 className="h-4 w-4" />
+                    <span>Parse &amp; Populate Table Grid</span>
                   </button>
                 </div>
-
-                <div className="flex items-center gap-2 text-xs text-ink-500">
-                  <CheckCircle2 className="h-3.5 w-3.5 text-brand-500" />
-                  <span>Unique slugs &amp; SEO metadata are auto-generated on save.</span>
-                </div>
               </div>
-            </div>
-          ) : (
-            /* Quick Paste / Import Tab */
-            <div className="space-y-4">
-              <div className="rounded-xl border border-ink-150 bg-ink-50/50 p-4 space-y-2">
-                <div className="flex items-center gap-2 text-xs font-semibold text-ink-800">
-                  <FileSpreadsheet className="h-4 w-4 text-brand-600" />
-                  <span>Paste From Excel, Google Sheets, or CSV</span>
-                </div>
-                <p className="text-xs text-ink-500 leading-relaxed">
-                  Copy rows from your spreadsheet and paste them below. Expected columns in order:
-                  <br />
-                  <code className="text-brand-700 font-mono bg-white px-1.5 py-0.5 rounded border border-ink-200 mt-1 inline-block">
-                    Package Title [Tab] Destination [Tab] Days [Tab] Nights [Tab] Price [Tab] Category
-                  </code>
-                </p>
-              </div>
-
-              <textarea
-                value={pasteText}
-                onChange={(e) => setPasteText(e.target.value)}
-                placeholder={`Munnar Honeymoon Special\tKerala\t4\t3\t18500\thoneymoon\nAlleppey Houseboat Cruise\tKerala\t2\t1\t9500\tfamily\nMaldives Luxury Escape\tMaldives\t5\t4\t65000\tluxury`}
-                rows={10}
-                className="input font-mono text-xs w-full leading-relaxed p-3"
-                disabled={isPending}
-              />
-
-              <div className="flex items-center justify-between">
-                <p className="text-xs text-ink-400">
-                  Destination names will be matched automatically to active destinations.
-                </p>
-                <button
-                  type="button"
-                  onClick={handleParsePaste}
-                  disabled={!pasteText.trim() || isPending}
-                  className="btn-primary inline-flex items-center gap-2 text-xs cursor-pointer disabled:opacity-50"
-                >
-                  <CheckCircle2 className="h-4 w-4" />
-                  <span>Parse &amp; Populate Table Grid</span>
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Modal Footer */}
-        <div className="flex items-center justify-between border-t border-ink-100 px-5 sm:px-6 py-3.5 bg-ink-50/60">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-medium text-ink-500">
-              Ready to create:
-            </span>
-            <span className="rounded-full bg-brand-50 px-2.5 py-0.5 text-xs font-bold text-brand-700 border border-brand-200">
-              {validCount} package{validCount !== 1 ? 's' : ''}
-            </span>
+            )}
           </div>
-
-          <div className="flex items-center gap-2.5">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={isPending}
-              className="btn-outline h-9 text-xs px-4 cursor-pointer"
-            >
-              Cancel
-            </button>
-
-            <button
-              type="button"
-              onClick={handleBulkSave}
-              disabled={validCount === 0 || isPending}
-              className="btn-primary inline-flex items-center gap-2 h-9 text-xs px-5 shadow-xs cursor-pointer disabled:opacity-50"
-            >
-              {isPending ? (
-                <>
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  <span>Saving {validCount} packages…</span>
-                </>
-              ) : (
-                <>
-                  <Layers className="h-3.5 w-3.5" />
-                  <span>Bulk Save {validCount > 0 ? `(${validCount})` : ''}</span>
-                </>
-              )}
-            </button>
+  
+          {/* Modal Footer */}
+          <div className="flex items-center justify-between border-t border-ink-100 px-5 sm:px-6 py-3.5 bg-ink-50/60">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-ink-500">
+                Ready to create:
+              </span>
+              <span className="rounded-full bg-brand-50 px-2.5 py-0.5 text-xs font-bold text-brand-700 border border-brand-200">
+                {validCount} package{validCount !== 1 ? 's' : ''}
+              </span>
+            </div>
+  
+            <div className="flex items-center gap-2.5">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={isPending}
+                className="btn-outline h-9 text-xs px-4 cursor-pointer"
+              >
+                Cancel
+              </button>
+  
+              <button
+                type="button"
+                onClick={handleBulkSave}
+                disabled={validCount === 0 || isPending}
+                className="btn-primary inline-flex items-center gap-2 h-9 text-xs px-5 shadow-xs cursor-pointer disabled:opacity-50"
+              >
+                {isPending ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <span>Saving {validCount} packages…</span>
+                  </>
+                ) : (
+                  <>
+                    <Layers className="h-3.5 w-3.5" />
+                    <span>Bulk Save {validCount > 0 ? `(${validCount})` : ''}</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </ModalPortal>
   );
 }
 

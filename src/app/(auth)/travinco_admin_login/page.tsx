@@ -9,5 +9,5 @@ export default function RetiredAdminLoginPage({
   if (searchParams.redirectTo) query.set('redirectTo', searchParams.redirectTo);
   if (searchParams.reason) query.set('reason', searchParams.reason);
   const qStr = query.toString();
-  redirect(`/account/login${qStr ? `?${qStr}` : ''}`);
+  redirect(`/app${qStr ? `?${qStr}` : ''}`);
 }

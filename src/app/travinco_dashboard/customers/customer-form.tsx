@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
-import { TextField, TextAreaField, SelectField } from '@/components/ui/form-fields';
+import { HField, CountryInput } from '@/components/admin/horizontal-field';
 import { StringListEditor } from '@/components/admin/string-list-editor';
 import { PhoneInput, COUNTRY_PHONE_CODES } from '@/components/public/phone-input';
 import type { CustomerFormValues } from '@/lib/validations/customer';
@@ -73,123 +73,164 @@ export function CustomerForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      <div className="card space-y-4 p-5">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <TextField
-            label="Full name"
+    <form onSubmit={handleSubmit} className="space-y-5">
+      <div className="card space-y-3.5 p-5">
+        <HField label="Full name" required htmlFor="cust-name" fieldClassName="sm:max-w-sm">
+          <input
+            id="cust-name"
             required
+            className="input"
+            placeholder="Enter full name"
             value={values.full_name ?? ''}
             onChange={(e) => set('full_name', e.target.value)}
           />
-          <div className="sm:col-span-2">
-            <label className="label">Phone</label>
-            <PhoneInput
-              name="phone"
-              required
-              value={phoneValue}
-              onChange={(next) => {
-                setPhoneValue(next);
-                set('phone', `${next.dialCode}${next.number}`);
-                if (whatsappSameAsPhone) {
-                  setWhatsappValue(next);
-                  set('whatsapp_number', `${next.dialCode}${next.number}`);
+        </HField>
+
+        <HField label="Phone" required fieldClassName="sm:max-w-md">
+          <PhoneInput
+            name="phone"
+            required
+            placeholder="Enter number"
+            value={phoneValue}
+            onChange={(next) => {
+              setPhoneValue(next);
+              set('phone', `${next.dialCode}${next.number}`);
+              if (whatsappSameAsPhone) {
+                setWhatsappValue(next);
+                set('whatsapp_number', `${next.dialCode}${next.number}`);
+              }
+            }}
+          />
+        </HField>
+
+        <HField label="WhatsApp" fieldClassName="sm:max-w-md">
+          <label className="flex items-center gap-2 pt-2 text-sm text-ink-600">
+            <input
+              type="checkbox"
+              checked={whatsappSameAsPhone}
+              onChange={(e) => {
+                setWhatsappSameAsPhone(e.target.checked);
+                if (e.target.checked) {
+                  setWhatsappValue(phoneValue);
+                  set('whatsapp_number', `${phoneValue.dialCode}${phoneValue.number}`);
                 }
               }}
+              className="h-4 w-4 rounded border-ink-300 text-brand-600 focus:ring-brand-500"
             />
-          </div>
-          <div>
-            <label className="mb-1.5 flex items-center gap-2 text-sm text-ink-600">
-              <input
-                type="checkbox"
-                checked={whatsappSameAsPhone}
-                onChange={(e) => {
-                  setWhatsappSameAsPhone(e.target.checked);
-                  if (e.target.checked) {
-                    setWhatsappValue(phoneValue);
-                    set('whatsapp_number', `${phoneValue.dialCode}${phoneValue.number}`);
-                  }
-                }}
-                className="h-4 w-4 rounded border-ink-300 text-brand-600 focus:ring-brand-500"
-              />
-              Same number for WhatsApp
-            </label>
-            {!whatsappSameAsPhone && (
+            Same number for WhatsApp
+          </label>
+          {!whatsappSameAsPhone && (
+            <div className="mt-2">
               <PhoneInput
                 name="whatsapp_number"
+                placeholder="Enter number"
                 value={whatsappValue}
                 onChange={(next) => {
                   setWhatsappValue(next);
                   set('whatsapp_number', `${next.dialCode}${next.number}`);
                 }}
               />
-            )}
-          </div>
-          <TextField
-            label="Email"
+            </div>
+          )}
+        </HField>
+
+        <HField label="Email" htmlFor="cust-email" fieldClassName="sm:max-w-sm">
+          <input
+            id="cust-email"
             type="email"
+            className="input"
+            placeholder="Enter email"
             value={values.email ?? ''}
             onChange={(e) => set('email', e.target.value)}
           />
-          <TextField
-            label="City"
-            value={values.city ?? ''}
-            onChange={(e) => set('city', e.target.value)}
-          />
-          <TextField
-            label="State"
-            value={values.state ?? ''}
-            onChange={(e) => set('state', e.target.value)}
-          />
-          <TextField
-            label="Country"
-            value={values.country ?? 'India'}
-            onChange={(e) => set('country', e.target.value)}
-          />
-          <SelectField
-            label="Source"
-            value={values.source ?? 'website'}
-            onChange={(e) => set('source', e.target.value as CustomerFormValues['source'])}
-          >
-            <option value="website">Website</option>
-            <option value="whatsapp">WhatsApp</option>
-            <option value="phone">Phone</option>
-            <option value="walk_in">Walk-in</option>
-            <option value="referral">Referral</option>
-            <option value="social_media">Social media</option>
-            <option value="other">Other</option>
-          </SelectField>
+        </HField>
+
+        <div className="grid gap-3.5 lg:grid-cols-2">
+          <HField label="City" htmlFor="cust-city" fieldClassName="sm:max-w-[14rem]">
+            <input
+              id="cust-city"
+              className="input"
+              value={values.city ?? ''}
+              onChange={(e) => set('city', e.target.value)}
+            />
+          </HField>
+          <HField label="State" htmlFor="cust-state" labelWidth="sm:w-32 lg:w-16" fieldClassName="sm:max-w-[14rem]">
+            <input
+              id="cust-state"
+              className="input"
+              value={values.state ?? ''}
+              onChange={(e) => set('state', e.target.value)}
+            />
+          </HField>
         </div>
-        <TextAreaField
-          label="Address"
-          rows={2}
-          value={values.address ?? ''}
-          onChange={(e) => set('address', e.target.value)}
-        />
-        <label className="flex items-center gap-2 text-sm text-ink-700">
-          <input
-            type="checkbox"
-            checked={values.whatsapp_opt_in ?? false}
-            onChange={(e) => set('whatsapp_opt_in', e.target.checked)}
-            className="rounded border-ink-300"
+
+        <div className="grid gap-3.5 lg:grid-cols-2">
+          <HField label="Country" htmlFor="cust-country" fieldClassName="sm:max-w-[14rem]">
+            <CountryInput
+              id="cust-country"
+              value={values.country ?? 'India'}
+              onChange={(v) => set('country', v)}
+            />
+          </HField>
+          <HField label="Source" htmlFor="cust-source" labelWidth="sm:w-32 lg:w-16" fieldClassName="sm:max-w-[14rem]">
+            <select
+              id="cust-source"
+              className="input"
+              value={values.source ?? 'website'}
+              onChange={(e) => set('source', e.target.value as CustomerFormValues['source'])}
+            >
+              <option value="website">Website</option>
+              <option value="whatsapp">WhatsApp</option>
+              <option value="phone">Phone</option>
+              <option value="walk_in">Walk-in</option>
+              <option value="referral">Referral</option>
+              <option value="social_media">Social media</option>
+              <option value="other">Other</option>
+            </select>
+          </HField>
+        </div>
+
+        <HField label="Address" htmlFor="cust-address">
+          <textarea
+            id="cust-address"
+            rows={2}
+            className="input"
+            value={values.address ?? ''}
+            onChange={(e) => set('address', e.target.value)}
           />
-          Customer has opted in to WhatsApp marketing messages
-        </label>
+        </HField>
+
+        <HField label="Marketing">
+          <label className="flex items-center gap-2 pt-2 text-sm text-ink-700">
+            <input
+              type="checkbox"
+              checked={values.whatsapp_opt_in ?? false}
+              onChange={(e) => set('whatsapp_opt_in', e.target.checked)}
+              className="rounded border-ink-300"
+            />
+            Customer has opted in to WhatsApp marketing messages
+          </label>
+        </HField>
       </div>
 
-      <div className="card space-y-4 p-5">
-        <StringListEditor
-          label="Tags"
-          items={values.tags ?? []}
-          onChange={(tags) => set('tags', tags)}
-          placeholder="e.g. repeat_customer"
-        />
-        <TextAreaField
-          label="Notes"
-          rows={3}
-          value={values.notes ?? ''}
-          onChange={(e) => set('notes', e.target.value)}
-        />
+      <div className="card space-y-3.5 p-5">
+        <HField label="Tags" fieldClassName="sm:max-w-md">
+          <StringListEditor
+            label=""
+            items={values.tags ?? []}
+            onChange={(tags) => set('tags', tags)}
+            placeholder="e.g. repeat_customer"
+          />
+        </HField>
+        <HField label="Notes" htmlFor="cust-notes">
+          <textarea
+            id="cust-notes"
+            rows={3}
+            className="input"
+            value={values.notes ?? ''}
+            onChange={(e) => set('notes', e.target.value)}
+          />
+        </HField>
       </div>
 
       <div className="flex items-center justify-between gap-3 pt-2">

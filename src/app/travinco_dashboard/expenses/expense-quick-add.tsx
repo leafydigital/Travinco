@@ -5,8 +5,10 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Plus } from 'lucide-react';
 import { createExpense } from '../finance-actions';
+import { blockNonNumericKeys, parseNonNegative } from '@/components/admin/package-fields';
+import { PaymentMethodField } from './payment-method-field';
 
-export function ExpenseQuickAdd({ categories }: { categories: { id: string; name: string }[] }) {
+export function ExpenseQuickAdd(_props: { categories: { id: string; name: string }[] }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -16,13 +18,22 @@ export function ExpenseQuickAdd({ categories }: { categories: { id: string; name
     supplier: '',
     description: '',
     amount: '',
-    payment_method: 'bank_transfer' as const,
+    payment_method: 'bank_transfer',
     reference_number: '',
   });
 
   function submit() {
     if (!form.category_id.trim()) {
       toast.error('Please enter an expense category.');
+      return;
+    }
+    const amount = Number(form.amount);
+    if (!form.amount || !Number.isFinite(amount) || amount <= 0) {
+      toast.error('Amount must be greater than 0.');
+      return;
+    }
+    if (!form.payment_method.trim()) {
+      toast.error('Please enter a payment method.');
       return;
     }
     startTransition(async () => {
@@ -55,28 +66,27 @@ export function ExpenseQuickAdd({ categories }: { categories: { id: string; name
           onChange={(e) => setForm((f) => ({ ...f, expense_date: e.target.value }))}
           className="input"
         />
-        <div className="relative">
-          <input
-            type="text"
-            list="expense-category-suggestions"
-            value={form.category_id}
-            onChange={(e) => setForm((f) => ({ ...f, category_id: e.target.value }))}
-            placeholder="Category (e.g. Hotel, Transport)..."
-            className="input w-full"
-            required
-          />
-          <datalist id="expense-category-suggestions">
-            {categories.map((c) => (
-              <option key={c.id} value={c.name} />
-            ))}
-          </datalist>
-        </div>
+        <input
+          type="text"
+          value={form.category_id}
+          onChange={(e) => setForm((f) => ({ ...f, category_id: e.target.value }))}
+          placeholder="Category (e.g. Hotel, Transport)"
+          autoComplete="off"
+          className="input w-full"
+          required
+        />
         <input
           type="number"
           min={0.01}
           step="0.01"
+          inputMode="decimal"
           value={form.amount}
-          onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
+          onKeyDown={(e) => blockNonNumericKeys(e)}
+          onChange={(e) => {
+            if (parseNonNegative(e.target.value) !== null) {
+              setForm((f) => ({ ...f, amount: e.target.value }));
+            }
+          }}
           placeholder="Amount"
           className="input"
         />
@@ -86,21 +96,10 @@ export function ExpenseQuickAdd({ categories }: { categories: { id: string; name
           placeholder="Supplier"
           className="input"
         />
-        <select
+        <PaymentMethodField
           value={form.payment_method}
-          onChange={(e) =>
-            setForm((f) => ({ ...f, payment_method: e.target.value as typeof f.payment_method }))
-          }
-          className="input"
-        >
-          <option value="cash">Cash</option>
-          <option value="bank_transfer">Bank transfer</option>
-          <option value="upi">UPI</option>
-          <option value="credit_card">Credit card</option>
-          <option value="debit_card">Debit card</option>
-          <option value="cheque">Cheque</option>
-          <option value="other">Other</option>
-        </select>
+          onChange={(v) => setForm((f) => ({ ...f, payment_method: v }))}
+        />
         <input
           value={form.reference_number}
           onChange={(e) => setForm((f) => ({ ...f, reference_number: e.target.value }))}

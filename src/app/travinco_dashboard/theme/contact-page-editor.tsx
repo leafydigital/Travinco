@@ -494,7 +494,7 @@ export function ContactPageEditor({
         </div>
       </div>
 
-      {/* ── Section 4: Contact Details (Phone & Email) ── */}
+      {/* ── Section 4: Contact Details ── */}
       <div className="rounded-2xl border border-ink-200 bg-white p-6 shadow-sm space-y-6">
         <div className="flex items-center gap-3 border-b border-ink-100 pb-4">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-50 text-brand-600 border border-brand-200">
@@ -502,10 +502,10 @@ export function ContactPageEditor({
           </div>
           <div>
             <h3 className="font-display text-base font-bold text-ink-950">
-              4. Contact Details (Phone &amp; Email)
+              4. Contact Details
             </h3>
             <p className="text-xs text-ink-500">
-              Set the phone number and email address displayed on the Contact page info cards. If left blank, the values from General Settings are used.
+              Phone, WhatsApp, email, office address, working hours and map shown on the Contact page. The WhatsApp number also powers the WhatsApp button in the site header.
             </p>
           </div>
         </div>
@@ -524,9 +524,6 @@ export function ContactPageEditor({
               placeholder="e.g. +91 98765 43210"
               className="input text-xs sm:text-sm"
             />
-            <p className="mt-1 text-[11px] text-ink-500">
-              Leave blank to use the phone from General Settings.
-            </p>
           </div>
 
           <div>
@@ -542,8 +539,71 @@ export function ContactPageEditor({
               placeholder="e.g. hello@travinco.com"
               className="input text-xs sm:text-sm"
             />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-ink-700 mb-1.5">
+              WhatsApp Number
+            </label>
+            <input
+              type="text"
+              value={content.whatsapp || ''}
+              onChange={(e) =>
+                setContent((prev) => ({ ...prev, whatsapp: e.target.value }))
+              }
+              placeholder="e.g. +91 98765 43210"
+              className="input text-xs sm:text-sm"
+            />
             <p className="mt-1 text-[11px] text-ink-500">
-              Leave blank to use the email from General Settings.
+              Used for the header WhatsApp button and the Contact page chat link.
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-ink-700 mb-1.5">
+              Working Hours
+            </label>
+            <input
+              type="text"
+              value={content.working_hours || ''}
+              onChange={(e) =>
+                setContent((prev) => ({ ...prev, working_hours: e.target.value }))
+              }
+              placeholder="e.g. Mon – Sat, 9:30 AM – 6:30 PM"
+              className="input text-xs sm:text-sm"
+            />
+          </div>
+
+          <div className="md:col-span-2">
+            <label className="block text-xs font-bold uppercase tracking-wider text-ink-700 mb-1.5">
+              Office Address
+            </label>
+            <textarea
+              rows={2}
+              value={content.address || ''}
+              onChange={(e) =>
+                setContent((prev) => ({ ...prev, address: e.target.value }))
+              }
+              placeholder="e.g. 2nd Floor, MG Road, Kochi, Kerala 682016"
+              className="input text-xs sm:text-sm"
+            />
+          </div>
+
+          <div className="md:col-span-2">
+            <label className="block text-xs font-bold uppercase tracking-wider text-ink-700 mb-1.5">
+              Google Maps Embed URL
+            </label>
+            <input
+              type="url"
+              value={content.map_embed_url || ''}
+              onChange={(e) =>
+                setContent((prev) => ({ ...prev, map_embed_url: e.target.value }))
+              }
+              placeholder="https://www.google.com/maps/embed?pb=..."
+              className="input text-xs sm:text-sm"
+            />
+            <p className="mt-1 text-[11px] text-ink-500">
+              In Google Maps: Share → Embed a map → copy only the <code>src</code> URL from the iframe code.
             </p>
           </div>
         </div>

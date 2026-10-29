@@ -110,7 +110,7 @@ export function ResetPasswordModal({
 
   const modalDialog = isOpen ? (
     <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-ink-950/60 backdrop-blur-xs animate-in fade-in duration-150"
+      className="fixed inset-0 bg-ink-950/50 z-[9999] flex items-center justify-center p-4 animate-in fade-in duration-150"
       role="dialog"
       aria-modal="true"
       onClick={(e) => {
@@ -121,7 +121,7 @@ export function ResetPasswordModal({
     >
       {/* Card Container */}
       <div
-        className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-ink-100 animate-in zoom-in-95 duration-150"
+        className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-lg shadow-ink-900/5 border border-ink-100 animate-in zoom-in-95 duration-150"
         onClick={(e) => e.stopPropagation()}
       >
             {/* Close Button */}
@@ -134,7 +134,7 @@ export function ResetPasswordModal({
             >
               <X className="h-4 w-4" />
             </button>
-
+  
             {/* Header */}
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-700 ring-4 ring-brand-50/50">
@@ -151,7 +151,7 @@ export function ResetPasswordModal({
                 )}
               </div>
             </div>
-
+  
             {/* Error Message */}
             {errorMessage && (
               <div className="mt-4 flex items-center gap-2 rounded-lg bg-coral-50 border border-coral-200 px-3 py-2 text-xs text-coral-800">
@@ -159,7 +159,7 @@ export function ResetPasswordModal({
                 <span>{errorMessage}</span>
               </div>
             )}
-
+  
             {/* Form */}
             <form onSubmit={handleSubmit} className="mt-5 space-y-4">
               {/* New Password */}
@@ -191,7 +191,7 @@ export function ResetPasswordModal({
                   </button>
                 </div>
               </div>
-
+  
               {/* Confirm Password */}
               <div>
                 <label className="block text-xs font-semibold text-ink-700 mb-1">
@@ -221,7 +221,7 @@ export function ResetPasswordModal({
                   </button>
                 </div>
               </div>
-
+  
               {/* Password Requirements Checklist */}
               <div className="rounded-xl bg-ink-50/70 border border-ink-100 p-3 space-y-1.5">
                 <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-500 mb-1">
@@ -240,7 +240,7 @@ export function ResetPasswordModal({
                     )}
                     <span>7+ characters</span>
                   </div>
-
+  
                   <div
                     className={`flex items-center gap-1.5 transition-colors ${
                       rules.upper ? 'text-emerald-700 font-medium' : 'text-ink-400'
@@ -253,7 +253,7 @@ export function ResetPasswordModal({
                     )}
                     <span>Uppercase (A-Z)</span>
                   </div>
-
+  
                   <div
                     className={`flex items-center gap-1.5 transition-colors ${
                       rules.lower ? 'text-emerald-700 font-medium' : 'text-ink-400'
@@ -266,7 +266,7 @@ export function ResetPasswordModal({
                     )}
                     <span>Lowercase (a-z)</span>
                   </div>
-
+  
                   <div
                     className={`flex items-center gap-1.5 transition-colors ${
                       rules.number ? 'text-emerald-700 font-medium' : 'text-ink-400'
@@ -279,7 +279,7 @@ export function ResetPasswordModal({
                     )}
                     <span>Number (0-9)</span>
                   </div>
-
+  
                   <div
                     className={`flex items-center gap-1.5 transition-colors ${
                       rules.symbol ? 'text-emerald-700 font-medium' : 'text-ink-400'
@@ -292,7 +292,7 @@ export function ResetPasswordModal({
                     )}
                     <span>Symbol (!@#$%)</span>
                   </div>
-
+  
                   <div
                     className={`flex items-center gap-1.5 transition-colors ${
                       rules.matches ? 'text-emerald-700 font-medium' : 'text-ink-400'
@@ -307,7 +307,7 @@ export function ResetPasswordModal({
                   </div>
                 </div>
               </div>
-
+  
               {/* Action Buttons */}
               <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-ink-100">
                 <button

@@ -21,6 +21,7 @@ import {
 import { toast } from 'sonner';
 import { setStaffActive, deleteStaffUser, updateStaffRole } from './actions';
 import type { Tables } from '@/types/database';
+import { ModalPortal } from '@/components/ui/modal-portal';
 
 interface UsersTableProps {
   initialUsers: Tables<'profiles'>[];
@@ -479,58 +480,60 @@ export function UsersTable({
 
       {/* ── Confirmation Modal for Deletion ── */}
       {deleteModalUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
-          <div className="card max-w-md w-full p-6 space-y-4 shadow-xl border-red-100 animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-600">
-                <AlertTriangle className="h-6 w-6" />
+        <ModalPortal>
+          <div className="fixed inset-0 bg-ink-950/50 z-50 flex items-center justify-center p-4">
+            <div className="card max-w-md w-full p-6 space-y-4 shadow-xl border-red-100 animate-in fade-in zoom-in-95 duration-150">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-600">
+                  <AlertTriangle className="h-6 w-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-ink-900">
+                    Delete Staff Account
+                  </h3>
+                  <p className="text-xs text-ink-500">
+                    This action cannot be undone.
+                  </p>
+                </div>
               </div>
-              <div>
-                <h3 className="text-base font-bold text-ink-900">
-                  Delete Staff Account
-                </h3>
-                <p className="text-xs text-ink-500">
-                  This action cannot be undone.
-                </p>
+  
+              <p className="text-sm text-ink-600 leading-relaxed">
+                Are you sure you want to permanently delete the account for{' '}
+                <strong className="text-ink-900">{deleteModalUser.full_name}</strong>{' '}
+                ({deleteModalUser.email})? All permissions and profile details will be removed.
+              </p>
+  
+              <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-ink-100">
+                <button
+                  type="button"
+                  onClick={() => setDeleteModalUser(null)}
+                  disabled={isDeleting}
+                  className="btn-outline text-xs px-4 py-2"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmDelete}
+                  disabled={isDeleting}
+                  className="btn-danger text-xs px-4 py-2 flex items-center gap-1.5"
+                >
+                  {isDeleting ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      <span>Deleting…</span>
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="h-3.5 w-3.5" />
+                      <span>Confirm Delete</span>
+                    </>
+                  )}
+                </button>
               </div>
-            </div>
-
-            <p className="text-sm text-ink-600 leading-relaxed">
-              Are you sure you want to permanently delete the account for{' '}
-              <strong className="text-ink-900">{deleteModalUser.full_name}</strong>{' '}
-              ({deleteModalUser.email})? All permissions and profile details will be removed.
-            </p>
-
-            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-ink-100">
-              <button
-                type="button"
-                onClick={() => setDeleteModalUser(null)}
-                disabled={isDeleting}
-                className="btn-outline text-xs px-4 py-2"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmDelete}
-                disabled={isDeleting}
-                className="btn-danger text-xs px-4 py-2 flex items-center gap-1.5"
-              >
-                {isDeleting ? (
-                  <>
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    <span>Deleting…</span>
-                  </>
-                ) : (
-                  <>
-                    <Trash2 className="h-3.5 w-3.5" />
-                    <span>Confirm Delete</span>
-                  </>
-                )}
-              </button>
             </div>
           </div>
-        </div>
+        </ModalPortal>
       )}
     </div>
   );

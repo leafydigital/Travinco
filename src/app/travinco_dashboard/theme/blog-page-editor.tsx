@@ -26,6 +26,7 @@ import {
   saveBlogPageContentAction,
   uploadBlogHeroImageAction,
 } from './actions';
+import { ModalPortal } from '@/components/ui/modal-portal';
 
 interface BlogPageEditorProps {
   initialContent?: BlogPageContent;
@@ -628,7 +629,7 @@ export function BlogPageEditor({
       </section>
 
       {/* ── Bottom Save Sticky Bar ── */}
-      <div className="sticky bottom-4 z-30 flex items-center justify-between rounded-2xl bg-navy-950/90 backdrop-blur-md p-4 text-white shadow-2xl border border-white/10">
+      <div className="sticky bottom-4 z-30 flex items-center justify-between rounded-2xl bg-navy-950/90 backdrop-blur-md p-4 text-white shadow-lg shadow-ink-900/5 border border-white/10">
         <div className="flex items-center gap-2 text-xs">
           <Info className="h-4 w-4 text-sand-300" />
           <span className="font-medium text-white/90">
@@ -648,64 +649,66 @@ export function BlogPageEditor({
 
       {/* ── Save Confirmation Modal (Small width modal) ── */}
       {showConfirmModal && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-navy-950/75 backdrop-blur-xs select-none animate-in fade-in duration-150"
-          onClick={() => setShowConfirmModal(false)}
-          role="dialog"
-          aria-modal="true"
-        >
+        <ModalPortal>
           <div
-            className="card p-6 border-brand-200 bg-white shadow-2xl space-y-4 rounded-3xl w-full max-w-md animate-in zoom-in-95 duration-150"
-            onClick={(e) => e.stopPropagation()}
+            className="fixed inset-0 bg-ink-950/50 z-50 flex items-center justify-center p-4 select-none animate-in fade-in duration-150"
+            onClick={() => setShowConfirmModal(false)}
+            role="dialog"
+            aria-modal="true"
           >
-            <div className="flex items-center justify-between border-b border-ink-100 pb-3">
-              <div className="flex items-center gap-2.5">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
-                  <Save className="h-5 w-5" />
+            <div
+              className="card p-6 border-brand-200 bg-white shadow-lg shadow-ink-900/5 space-y-4 rounded-3xl w-full max-w-md animate-in zoom-in-95 duration-150"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between border-b border-ink-100 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
+                    <Save className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-ink-900">
+                      Publish Blog Page Changes?
+                    </h3>
+                    <p className="text-xs text-ink-500">
+                      Confirm your updates
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-sm font-bold text-ink-900">
-                    Publish Blog Page Changes?
-                  </h3>
-                  <p className="text-xs text-ink-500">
-                    Confirm your updates
-                  </p>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmModal(false)}
+                  className="flex h-8 w-8 items-center justify-center rounded-full bg-ink-100 text-ink-600 hover:bg-ink-200 transition cursor-pointer"
+                >
+                  <X className="h-4 w-4" />
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowConfirmModal(false)}
-                className="flex h-8 w-8 items-center justify-center rounded-full bg-ink-100 text-ink-600 hover:bg-ink-200 transition cursor-pointer"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <p className="text-xs text-ink-600 leading-relaxed">
-              Are you sure you want to save these changes? The new hero visuals, background image, typography, and promotional content will be applied immediately to the live customer Blog page.
-            </p>
-
-            <div className="flex items-center justify-end gap-2.5 pt-2">
-              <button
-                type="button"
-                onClick={() => setShowConfirmModal(false)}
-                disabled={isSaving}
-                className="btn-ghost text-xs px-4 py-2 font-medium"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={executeSave}
-                disabled={isSaving}
-                className="btn-primary inline-flex items-center gap-2 text-xs font-bold px-5 py-2.5 rounded-xl cursor-pointer"
-              >
-                <Save className="h-4 w-4" />
-                <span>{isSaving ? 'Saving…' : 'Yes, Save Changes'}</span>
-              </button>
+  
+              <p className="text-xs text-ink-600 leading-relaxed">
+                Are you sure you want to save these changes? The new hero visuals, background image, typography, and promotional content will be applied immediately to the live customer Blog page.
+              </p>
+  
+              <div className="flex items-center justify-end gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmModal(false)}
+                  disabled={isSaving}
+                  className="btn-ghost text-xs px-4 py-2 font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={executeSave}
+                  disabled={isSaving}
+                  className="btn-primary inline-flex items-center gap-2 text-xs font-bold px-5 py-2.5 rounded-xl cursor-pointer"
+                >
+                  <Save className="h-4 w-4" />
+                  <span>{isSaving ? 'Saving…' : 'Yes, Save Changes'}</span>
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        </ModalPortal>
       )}
     </div>
   );

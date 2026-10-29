@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
+import { toast } from 'sonner';
 import { cn } from '@/lib/utils/cn';
 import type { NavSection, IconName } from '@/lib/admin-nav';
 import {
@@ -12,8 +14,6 @@ import {
   ShieldCheck, ClipboardList, Menu, X, Loader2, Palette, PanelLeftClose, Blocks,
   type LucideIcon,
 } from 'lucide-react';
-import { signOut } from '@/app/travinco_dashboard/actions';
-import { createClient } from '@/lib/supabase/client';
 import { ResetPasswordModal } from '@/components/admin/reset-password-modal';
 
 const iconMap: Record<IconName, LucideIcon> = {
@@ -42,38 +42,28 @@ export function AdminSidebar({
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
 
-  const handleFastSignOut = async () => {
+  // Sign out in ONE request: the server clears the httpOnly session cookies and
+  // redirects straight to /app (no flash of the dashboard in between).
+  const handleFastSignOut = () => {
     if (isSigningOut) return;
     setIsSigningOut(true);
-
-    try {
-      // 1. Immediately wipe local auth tokens in browser memory & storage
-      const supabase = createClient();
-      await supabase.auth.signOut({ scope: 'local' });
-    } catch {}
-
-    // 2. Clear Supabase admin auth cookies directly in the browser
-    if (typeof document !== 'undefined') {
-      const cookies = document.cookie.split(';');
-      for (const cookie of cookies) {
-        const eqPos = cookie.indexOf('=');
-        const name = eqPos > -1 ? cookie.substring(0, eqPos).trim() : cookie.trim();
-        if (
-          name === 'sb-admin-auth-token' ||
-          name.startsWith('sb-admin-auth-token.') ||
-          name.startsWith('sb-admin-')
-        ) {
-          document.cookie = `${name}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; max-age=0`;
-        }
-      }
-    }
-
-    // 3. Trigger server signOut without waiting for its response
-    signOut().catch(() => {});
-
-    // 4. Instantly navigate to login page
-    window.location.href = '/account/login';
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/api/auth/staff-signout';
+    form.style.display = 'none';
+    document.body.appendChild(form);
+    form.submit();
   };
+
+  // "Signed in" toast after arriving from the /app sign-in page
+  useEffect(() => {
+    try {
+      if (sessionStorage.getItem('tv_staff_login_success')) {
+        sessionStorage.removeItem('tv_staff_login_success');
+        toast.success('Signed in successfully');
+      }
+    } catch {}
+  }, []);
 
   useEffect(() => {
     setPendingHref(null);
@@ -186,6 +176,16 @@ export function AdminSidebar({
 
   return (
     <>
+      {/* Instant feedback while the sign-out request redirects to /app */}
+      {isSigningOut && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-white/90 backdrop-blur-sm print:hidden">
+          <div className="flex items-center gap-2 text-sm font-medium text-ink-700">
+            <Loader2 className="h-5 w-5 animate-spin text-brand-600" />
+            <span>Signing out…</span>
+          </div>
+        </div>
+      )}
+
       {/* 1. Mobile & Tablet Top Bar (< lg) with Toggle Button */}
       <header className="sticky top-0 z-40 flex h-14 sm:h-16 w-full items-center justify-between border-b border-navy-800 bg-navy-900/95 backdrop-blur-md px-3 sm:px-5 text-white lg:hidden print:hidden">
         <div className="flex items-center gap-2.5 sm:gap-3">
@@ -203,18 +203,18 @@ export function AdminSidebar({
             </span>
           </button>
 
-          <Link href="/travinco_dashboard" className="flex items-center gap-2 hover:opacity-90 transition">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-500 text-white font-bold text-sm shadow-xs">
-              T
-            </div>
-            <div className="flex flex-col">
-              <span className="font-display text-base font-bold text-white tracking-tight leading-none">
-                Travinco
-              </span>
-              <span className="text-[9px] uppercase tracking-wider font-semibold text-brand-300 leading-tight">
-                Admin
-              </span>
-            </div>
+          <Link
+            href="/travinco_dashboard"
+            className="flex items-center rounded-lg bg-white px-2.5 py-1.5 hover:opacity-90 transition"
+          >
+            <Image
+              src="/images/green_logo.png"
+              alt="Travinco"
+              width={2879}
+              height={768}
+              priority
+              className="h-6 w-auto"
+            />
           </Link>
         </div>
 
@@ -262,24 +262,21 @@ export function AdminSidebar({
           {/* Slide-out Panel */}
           <div className="relative flex w-[85vw] max-w-xs sm:w-80 h-[100dvh] max-h-[100dvh] flex-col bg-white shadow-2xl transition duration-200 ease-out animate-in slide-in-from-left z-10 overflow-hidden">
             {/* Drawer Header */}
-            <div className="flex h-14 sm:h-16 items-center justify-between border-b border-navy-800 bg-navy-900 px-4 shrink-0">
-              <div className="flex items-center gap-2.5">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-500 text-white font-bold text-sm shadow-xs">
-                  T
-                </div>
-                <div>
-                  <span className="font-display text-base font-bold text-white tracking-tight block leading-tight">
-                    Travinco
-                  </span>
-                  <span className="text-[10px] uppercase tracking-wider font-semibold text-brand-300">
-                    Admin Portal
-                  </span>
-                </div>
-              </div>
+            <div className="flex h-14 sm:h-16 items-center justify-between border-b border-ink-100 bg-white px-4 shrink-0">
+              <Link href="/travinco_dashboard" onClick={() => setIsMobileOpen(false)} className="flex items-center">
+                <Image
+              src="/images/green_logo.png"
+              alt="Travinco"
+              width={2879}
+              height={768}
+              priority
+              className="h-8 w-auto"
+            />
+              </Link>
               <button
                 type="button"
                 onClick={() => setIsMobileOpen(false)}
-                className="flex h-9 w-9 items-center justify-center rounded-xl bg-navy-800 text-navy-200 hover:bg-navy-700 hover:text-white active:scale-95 transition cursor-pointer border border-navy-700"
+                className="flex h-9 w-9 items-center justify-center rounded-xl border border-ink-200 bg-white text-ink-500 hover:bg-ink-50 hover:text-ink-800 active:scale-95 transition cursor-pointer"
                 aria-label="Close navigation menu"
               >
                 <X className="h-5 w-5" />
@@ -301,19 +298,16 @@ export function AdminSidebar({
             : 'w-64 translate-x-0 opacity-100'
         )}
       >
-        <div className="flex h-16 items-center justify-between border-b border-navy-800 bg-navy-900 px-4 shrink-0">
-          <Link href="/travinco_dashboard" className="flex items-center gap-2.5 min-w-0 hover:opacity-90 transition">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-500 text-white font-bold text-sm shadow-xs shrink-0">
-              T
-            </div>
-            <div className="min-w-0">
-              <span className="font-display text-base font-bold text-white tracking-tight block leading-tight truncate">
-                Travinco
-              </span>
-              <span className="text-[10px] uppercase tracking-wider font-semibold text-brand-300 block truncate">
-                Admin Portal
-              </span>
-            </div>
+        <div className="flex h-16 items-center justify-between border-b border-ink-100 bg-white px-4 shrink-0">
+          <Link href="/travinco_dashboard" className="flex items-center min-w-0 hover:opacity-90 transition">
+            <Image
+              src="/images/green_logo.png"
+              alt="Travinco"
+              width={2879}
+              height={768}
+              priority
+              className="h-9 w-auto"
+            />
           </Link>
 
           {/* Desktop Sidebar Collapse Toggle Button */}
@@ -321,7 +315,7 @@ export function AdminSidebar({
             <button
               type="button"
               onClick={onToggleCollapse}
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-navy-300 hover:bg-navy-800 hover:text-white transition cursor-pointer shrink-0"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-400 hover:bg-ink-100 hover:text-ink-700 transition cursor-pointer shrink-0"
               title="Collapse sidebar (Ctrl+B)"
               aria-label="Collapse sidebar"
             >

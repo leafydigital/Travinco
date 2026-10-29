@@ -6,6 +6,8 @@ import { toast } from 'sonner';
 import { Pencil, X } from 'lucide-react';
 import { updateEnquiryDetails } from '../actions';
 import { PhoneInput, COUNTRY_PHONE_CODES } from '@/components/public/phone-input';
+import { AdminDateField, blockNonNumericKeys, parseNonNegative } from '@/components/admin/package-fields';
+import { addYearsIso, todayIso } from '@/lib/utils/iso-date';
 import type { Tables } from '@/types/database';
 
 function splitPhone(stored?: string | null): { dialCode: string; number: string } {
@@ -51,11 +53,58 @@ export function EnquiryDetailsEditForm({
     message: enquiry.message ?? '',
   });
 
+  const [phoneValid, setPhoneValid] = useState(true);
+  const [whatsappValid, setWhatsappValid] = useState(true);
+
+  const today = todayIso();
+  const maxTravelDate = addYearsIso(today, 1);
+  const returnMin = values.travel_date || today;
+  const maxReturnDate = addYearsIso(returnMin, 1);
+
   function set<K extends keyof typeof values>(key: K, value: (typeof values)[K]) {
     setValues((v) => ({ ...v, [key]: value }));
   }
 
+  function handleTravelDateChange(iso: string) {
+    setValues((v) => {
+      const next = { ...v, travel_date: iso };
+      // Drop a return date that no longer fits the new travel date.
+      if (iso && v.return_date && (v.return_date < iso || v.return_date > addYearsIso(iso, 1))) {
+        next.return_date = '';
+      }
+      return next;
+    });
+  }
+
+  function validate(): string | null {
+    const phoneDigits = phoneValue.number.replace(/\D/g, '');
+    if (!phoneDigits) return 'Please enter a phone number.';
+    if (/^0+$/.test(phoneDigits)) return 'Phone number cannot be all zeros.';
+    if (!phoneValid) return 'Please enter a valid phone number.';
+    if (!whatsappSameAsPhone && whatsappValue.number) {
+      const waDigits = whatsappValue.number.replace(/\D/g, '');
+      if (/^0+$/.test(waDigits)) return 'WhatsApp number cannot be all zeros.';
+      if (!whatsappValid) return 'Please enter a valid WhatsApp number.';
+    }
+    if (values.travel_date && values.travel_date > maxTravelDate) {
+      return 'Travel date must be within 1 year from today.';
+    }
+    if (values.travel_date && values.return_date) {
+      if (values.return_date < values.travel_date) return 'Return date cannot be before the travel date.';
+      if (values.return_date > addYearsIso(values.travel_date, 1)) {
+        return 'Return date must be within 1 year of the travel date.';
+      }
+    }
+    if (values.budget !== '' && Number(values.budget) < 0) return 'Budget cannot be negative.';
+    return null;
+  }
+
   function handleSave() {
+    const error = validate();
+    if (error) {
+      toast.error(error);
+      return;
+    }
     startTransition(async () => {
       const result = await updateEnquiryDetails(enquiry.id, values);
       if (result.error) {
@@ -108,6 +157,7 @@ export function EnquiryDetailsEditForm({
             name="phone"
             required
             value={phoneValue}
+            onValidityChange={setPhoneValid}
             onChange={(next) => {
               setPhoneValue(next);
               set('phone', `${next.dialCode}${next.number}`);
@@ -138,6 +188,7 @@ export function EnquiryDetailsEditForm({
             <PhoneInput
               name="whatsapp_number"
               value={whatsappValue}
+              onValidityChange={setWhatsappValid}
               onChange={(next) => {
                 setWhatsappValue(next);
                 set('whatsapp_number', `${next.dialCode}${next.number}`);
@@ -164,29 +215,34 @@ export function EnquiryDetailsEditForm({
         </div>
         <div>
           <label className="label">Travel date</label>
-          <input
-            type="date"
+          <AdminDateField
             value={values.travel_date}
-            onChange={(e) => set('travel_date', e.target.value)}
-            className="input"
+            onChange={handleTravelDateChange}
+            min={today}
+            max={maxTravelDate}
           />
         </div>
         <div>
           <label className="label">Return date</label>
-          <input
-            type="date"
+          <AdminDateField
             value={values.return_date}
-            onChange={(e) => set('return_date', e.target.value)}
-            className="input"
+            onChange={(iso) => set('return_date', iso)}
+            min={returnMin}
+            max={maxReturnDate}
           />
         </div>
         <div>
-          <label className="label">Budget</label>
+          <label className="label">Budget (per person)</label>
           <input
             type="number"
             min={0}
+            inputMode="decimal"
             value={values.budget}
-            onChange={(e) => set('budget', e.target.value)}
+            onKeyDown={(e) => blockNonNumericKeys(e)}
+            onChange={(e) => {
+              const parsed = parseNonNegative(e.target.value);
+              if (parsed !== null) set('budget', parsed);
+            }}
             className="input"
           />
         </div>

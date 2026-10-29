@@ -115,7 +115,7 @@ export default async function EnquiryDetailPage({
                 </dd>
               </div>
               <div>
-                <dt className="text-ink-400">Budget</dt>
+                <dt className="text-ink-400">Budget (per person)</dt>
                 <dd className="text-ink-700">
                   {enquiry.budget ? formatCurrency(enquiry.budget) : '—'}
                 </dd>

@@ -1,5 +1,4 @@
 import type { Metadata } from 'next';
-import { getGeneralSettings } from '@/lib/settings';
 import { getPageTitlesContent } from '@/lib/page-titles-content';
 import { getContactPageContent } from '@/lib/contact-page-content';
 import { ContactForm } from './contact-form';
@@ -46,16 +45,13 @@ const PILLAR_ICON_MAP = {
 };
 
 export default async function ContactPage() {
-  const [settings, contactContent] = await Promise.all([
-    getGeneralSettings(),
-    getContactPageContent(),
-  ]);
+  const contactContent = await getContactPageContent();
+  // Contact details are edited in Theme → Contact (falls back to legacy settings values).
 
   const { hero } = contactContent;
 
-  // Admin-configured contact details with fallback to general settings
-  const displayPhone = contactContent.phone?.trim() || settings.phone;
-  const displayEmail = contactContent.email?.trim() || settings.email;
+  const displayPhone = contactContent.phone;
+  const displayEmail = contactContent.email;
 
   return (
     <div className="min-h-screen bg-sand-50/40">
@@ -160,9 +156,9 @@ export default async function ContactPage() {
               )}
 
               {/* WhatsApp Card */}
-              {settings.whatsapp && (
+              {contactContent.whatsapp && (
                 <a
-                  href={`https://wa.me/${settings.whatsapp.replace(/\D/g, '')}`}
+                  href={`https://wa.me/${contactContent.whatsapp.replace(/\D/g, '')}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="group flex items-start gap-4 p-4 sm:p-5 rounded-2xl bg-white border border-ink-150/80 shadow-sm hover:border-emerald-500 hover:shadow-md transition-all"
@@ -180,7 +176,7 @@ export default async function ContactPage() {
                       </span>
                     </div>
                     <p className="mt-1 text-base sm:text-lg font-bold text-ink-950 truncate">
-                      {settings.whatsapp}
+                      {contactContent.whatsapp}
                     </p>
                     <p className="text-xs text-ink-500 mt-0.5">
                       Instant messaging &amp; fast itinerary replies
@@ -210,7 +206,7 @@ export default async function ContactPage() {
               )}
 
               {/* Office Address Card */}
-              {settings.address && (
+              {contactContent.address && (
                 <div className="flex items-start gap-4 p-4 sm:p-5 rounded-2xl bg-white border border-ink-150/80 shadow-sm">
                   <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-700 border border-amber-100">
                     <MapPin className="h-5 w-5" />
@@ -220,14 +216,14 @@ export default async function ContactPage() {
                       Concierge Office
                     </span>
                     <p className="mt-1 text-sm font-semibold text-ink-900 leading-relaxed">
-                      {settings.address}
+                      {contactContent.address}
                     </p>
                   </div>
                 </div>
               )}
 
               {/* Working Hours Card */}
-              {settings.working_hours && (
+              {contactContent.working_hours && (
                 <div className="flex items-start gap-4 p-4 sm:p-5 rounded-2xl bg-white border border-ink-150/80 shadow-sm">
                   <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-purple-50 text-purple-700 border border-purple-100">
                     <Clock className="h-5 w-5" />
@@ -237,14 +233,14 @@ export default async function ContactPage() {
                       Working Hours
                     </span>
                     <p className="mt-1 text-sm font-semibold text-ink-900">
-                      {settings.working_hours}
+                      {contactContent.working_hours}
                     </p>
                   </div>
                 </div>
               )}
 
               {/* Interactive Google Map Card */}
-              {settings.map_embed_url && (
+              {contactContent.map_embed_url && (
                 <div className="overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-sm">
                   <div className="px-4 py-3 bg-ink-50/80 border-b border-ink-100 flex items-center justify-between">
                     <span className="text-xs font-bold text-ink-700 uppercase tracking-wider flex items-center gap-1.5">
@@ -254,7 +250,7 @@ export default async function ContactPage() {
                     <span className="text-[11px] text-ink-400">Interactive Location</span>
                   </div>
                   <iframe
-                    src={settings.map_embed_url}
+                    src={contactContent.map_embed_url}
                     width="100%"
                     height="240"
                     style={{ border: 0 }}

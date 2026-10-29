@@ -6,6 +6,9 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { X, Loader2, Receipt } from 'lucide-react';
 import { updateExpense } from '../finance-actions';
+import { blockNonNumericKeys, parseNonNegative } from '@/components/admin/package-fields';
+import { decodePaymentMethod } from '@/lib/payment-methods';
+import { PaymentMethodField } from './payment-method-field';
 
 interface ExpenseEditModalProps {
   isOpen: boolean;
@@ -21,6 +24,7 @@ interface ExpenseEditModalProps {
     amount: number | string;
     payment_method: string;
     reference_number?: string | null;
+    notes?: string | null;
     expense_categories?: { name: string } | { name: string }[] | null;
   };
 }
@@ -54,7 +58,7 @@ export function ExpenseEditModal({
     supplier: expense.supplier || '',
     description: expense.description || '',
     amount: String(expense.amount || ''),
-    payment_method: expense.payment_method || 'bank_transfer',
+    payment_method: decodePaymentMethod(expense.payment_method, expense.notes),
     reference_number: expense.reference_number || '',
   });
 
@@ -72,7 +76,7 @@ export function ExpenseEditModal({
         supplier: expense.supplier || '',
         description: expense.description || '',
         amount: String(expense.amount || ''),
-        payment_method: expense.payment_method || 'bank_transfer',
+        payment_method: decodePaymentMethod(expense.payment_method, expense.notes),
         reference_number: expense.reference_number || '',
       });
     }
@@ -105,6 +109,10 @@ export function ExpenseEditModal({
       toast.error('Amount must be greater than 0.');
       return;
     }
+    if (!form.payment_method.trim()) {
+      toast.error('Please enter a payment method.');
+      return;
+    }
 
     startTransition(async () => {
       const result = await updateExpense(expense.id, {
@@ -130,13 +138,13 @@ export function ExpenseEditModal({
 
   const modalContent = (
     <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs transition-opacity animate-in fade-in duration-150"
+      className="fixed inset-0 bg-ink-950/50 z-[9999] flex items-center justify-center p-4 transition-opacity animate-in fade-in duration-150"
       onClick={() => {
         if (!isPending) onClose();
       }}
     >
       <div
-        className="relative w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl transition-all animate-in zoom-in-95 duration-200 border border-ink-100"
+        className="relative w-full max-w-lg rounded-2xl bg-white p-6 shadow-lg shadow-ink-900/5 transition-all animate-in zoom-in-95 duration-200 border border-ink-100"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -159,7 +167,7 @@ export function ExpenseEditModal({
             <X className="h-5 w-5" />
           </button>
         </div>
-
+  
         {/* Form Body */}
         <form onSubmit={handleSubmit} className="mt-4 space-y-4">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -177,18 +185,13 @@ export function ExpenseEditModal({
               <label className="label">Category *</label>
               <input
                 type="text"
-                list="edit-expense-categories"
                 required
+                autoComplete="off"
                 value={form.category_id}
                 onChange={(e) => setForm((f) => ({ ...f, category_id: e.target.value }))}
                 placeholder="e.g. Hotel, Transport, Marketing"
                 className="input"
               />
-              <datalist id="edit-expense-categories">
-                {categories.map((c) => (
-                  <option key={c.id} value={c.name} />
-                ))}
-              </datalist>
             </div>
             <div>
               <label className="label">Amount (₹) *</label>
@@ -197,8 +200,14 @@ export function ExpenseEditModal({
                 required
                 min={0.01}
                 step="0.01"
+                inputMode="decimal"
                 value={form.amount}
-                onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
+                onKeyDown={(e) => blockNonNumericKeys(e)}
+                onChange={(e) => {
+                  if (parseNonNegative(e.target.value) !== null) {
+                    setForm((f) => ({ ...f, amount: e.target.value }));
+                  }
+                }}
                 placeholder="0.00"
                 className="input"
               />
@@ -215,19 +224,11 @@ export function ExpenseEditModal({
             </div>
             <div>
               <label className="label">Payment Method *</label>
-              <select
+              <PaymentMethodField
+                key={`${expense.id}-${isOpen}`}
                 value={form.payment_method}
-                onChange={(e) => setForm((f) => ({ ...f, payment_method: e.target.value }))}
-                className="input"
-              >
-                <option value="bank_transfer">Bank transfer</option>
-                <option value="cash">Cash</option>
-                <option value="upi">UPI</option>
-                <option value="credit_card">Credit card</option>
-                <option value="debit_card">Debit card</option>
-                <option value="cheque">Cheque</option>
-                <option value="other">Other</option>
-              </select>
+                onChange={(v) => setForm((f) => ({ ...f, payment_method: v }))}
+              />
             </div>
             <div>
               <label className="label">Reference / Voucher #</label>
@@ -250,7 +251,7 @@ export function ExpenseEditModal({
               />
             </div>
           </div>
-
+  
           {/* Footer Actions */}
           <div className="flex items-center justify-end gap-2.5 border-t border-ink-100 pt-4">
             <button

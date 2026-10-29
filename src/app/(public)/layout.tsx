@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { SiteHeader } from '@/components/public/site-header';
 import { SiteFooter } from '@/components/public/site-footer';
 import { getGeneralSettings } from '@/lib/settings';
+import { getContactPageContent } from '@/lib/contact-page-content';
 import { getNavbarFooterContent } from '@/lib/navbar-footer-content';
 import { getPageTitlesContent } from '@/lib/page-titles-content';
 import { createPublicClient } from '@/lib/supabase/public';
@@ -31,12 +32,14 @@ export default async function PublicLayout({ children }: { children: React.React
 
   const [
     settings,
+    contactContent,
     navbarFooterContent,
     pageTitlesContent,
     destinationsRes,
     deletedSettingsRes,
   ] = await Promise.all([
     getGeneralSettings(),
+    getContactPageContent(),
     getNavbarFooterContent(),
     getPageTitlesContent(),
     supabase
@@ -69,7 +72,7 @@ export default async function PublicLayout({ children }: { children: React.React
         <link rel="icon" href={pageTitlesContent.favicon_url} />
       )}
       <SiteHeader
-        whatsappNumber={settings.whatsapp}
+        whatsappNumber={contactContent.whatsapp}
         destinations={activeDestinations}
         navbarContent={navbarFooterContent.navbar}
       />

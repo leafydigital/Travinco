@@ -1,3 +1,4 @@
+import { escapeLike } from '@/lib/auth/signup-rules';
 import { createServiceClient } from '@/lib/supabase/service';
 import { sendGmail } from '@/lib/email/gmail';
 import { clearLoginAttempts } from '@/lib/auth/login-limiter';
@@ -91,7 +92,7 @@ export async function checkCustomerEmailExists(
       const { data: accountRow } = await serviceSupabase
         .from('customer_accounts')
         .select('id, full_name, email, username')
-        .ilike('username', trimmed)
+        .ilike('username', escapeLike(trimmed))
         .maybeSingle();
 
       if (accountRow?.email) {

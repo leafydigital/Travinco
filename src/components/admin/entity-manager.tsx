@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { Plus, Search, Pencil, Trash2, X } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { ConfirmDeleteDialog } from '@/components/admin/confirm-delete-dialog';
+import { ModalPortal } from '@/components/ui/modal-portal';
 
 /**
  * Generic table + dialog form for simple master-data tables
@@ -432,22 +433,24 @@ function EntityForm({
 
 export function Dialog({ title, onClose, children, wide }: { title: string; onClose: () => void; children: React.ReactNode; wide?: boolean }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink-900/40 p-4 sm:p-8 print:hidden" onClick={onClose}>
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        className={cn('card w-full bg-white p-5 shadow-xl', wide ? 'max-w-4xl' : 'max-w-2xl')}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-ink-900">{title}</h2>
-          <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-ink-400 hover:bg-ink-50" aria-label="Close">
-            <X className="h-5 w-5" />
-          </button>
+    <ModalPortal>
+      <div className="fixed inset-0 bg-ink-950/50 z-50 flex items-start justify-center overflow-y-auto p-4 sm:p-8 print:hidden" onClick={onClose}>
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={title}
+          className={cn('card w-full bg-white p-5 shadow-xl', wide ? 'max-w-4xl' : 'max-w-2xl')}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-ink-900">{title}</h2>
+            <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-ink-400 hover:bg-ink-50" aria-label="Close">
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          {children}
         </div>
-        {children}
       </div>
-    </div>
+    </ModalPortal>
   );
 }

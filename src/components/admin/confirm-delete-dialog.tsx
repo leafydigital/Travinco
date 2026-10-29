@@ -70,7 +70,7 @@ export function ConfirmDeleteDialog({
 
   const dialogContent = (
     <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center overflow-y-auto overflow-x-hidden bg-ink-950/60 p-4 backdrop-blur-xs transition-opacity animate-in fade-in duration-150 print:hidden"
+      className="fixed inset-0 bg-ink-950/50 z-[9999] flex items-center justify-center overflow-y-auto overflow-x-hidden p-4 transition-opacity animate-in fade-in duration-150 print:hidden"
       onClick={() => {
         if (!isPending) onClose();
       }}
@@ -80,7 +80,7 @@ export function ConfirmDeleteDialog({
         aria-modal="true"
         aria-label={title}
         style={{ maxWidth: resolvedMaxWidth }}
-        className="relative w-full mx-auto overflow-hidden rounded-2xl border border-ink-100 bg-white p-5 sm:p-6 shadow-2xl transition-all animate-in zoom-in-95 duration-150 box-border"
+        className="relative w-full mx-auto overflow-hidden rounded-2xl border border-ink-100 bg-white p-5 sm:p-6 shadow-lg shadow-ink-900/5 transition-all animate-in zoom-in-95 duration-150 box-border"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header with Danger Badge Icon, Title, and Close Button */}
@@ -106,12 +106,12 @@ export function ConfirmDeleteDialog({
             <X className="h-4 w-4" />
           </button>
         </div>
-
+  
         {/* Formatted Description Body */}
         <div className="py-4 text-sm text-ink-700 leading-relaxed text-left break-words">
           {description}
         </div>
-
+  
         {/* Responsive Footer Action Buttons */}
         <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2.5 border-t border-ink-100 pt-4">
           <button

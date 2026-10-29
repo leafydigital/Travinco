@@ -20,13 +20,15 @@ import {
   ShieldCheck,
   ArrowLeft,
   RefreshCw,
-  AtSign,
 } from 'lucide-react';
 import {
   initiateCustomerSignup,
   resendCustomerSignupOtp,
   verifyCustomerSignupOtp,
+  checkSignupAvailability,
 } from '../actions';
+import { PhoneInput } from '@/components/public/phone-input';
+import { validateEmailFormat, validateUsernameFormat } from '@/lib/auth/signup-rules';
 
 function PasswordRule({ met, label }: { met: boolean; label: string }) {
   return (
@@ -150,18 +152,39 @@ export default function SignupPage() {
   const [signupError, setSignupError] = useState<string | null>(null);
 
   function validateUsername(val: string): string | null {
-    const trimmed = val.trim();
-    if (!trimmed) return 'Username is required';
-    if (trimmed.length < 3) return 'Username must be at least 3 characters';
-    if (trimmed.length > 30) return 'Username must be at most 30 characters';
-    if (!/^[a-zA-Z0-9_.-]+$/.test(trimmed)) {
-      return 'Username can only contain letters, numbers, dots, and underscores';
+    return validateUsernameFormat(val);
+  }
+
+  // ── Live "already exists" checks (run when a field loses focus) ──────────
+  const [emailTouched, setEmailTouched] = useState(false);
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [phoneValue, setPhoneValue] = useState({ dialCode: '+91', number: '' });
+  const [phoneValid, setPhoneValid] = useState(false);
+  const [phoneTakenError, setPhoneTakenError] = useState<string | null>(null);
+  const [checking, setChecking] = useState<{ username?: boolean; email?: boolean; phone?: boolean }>({});
+  const checkSeq = useRef({ username: 0, email: 0, phone: 0 });
+
+  async function runAvailabilityCheck(field: 'username' | 'email' | 'phone', value: string) {
+    const seq = ++checkSeq.current[field];
+    setChecking((c) => ({ ...c, [field]: true }));
+    try {
+      const res = await checkSignupAvailability({ [field]: value });
+      if (seq !== checkSeq.current[field]) return; // a newer check superseded this one
+      const message = res[field] ?? null;
+      if (field === 'username') setUsernameError(message);
+      if (field === 'email') setEmailError(message);
+      if (field === 'phone') setPhoneTakenError(message);
+    } catch {
+      // Network hiccup: the server re-checks everything on submit anyway
+    } finally {
+      if (seq === checkSeq.current[field]) setChecking((c) => ({ ...c, [field]: false }));
     }
-    return null;
   }
 
   function handleUsernameChange(val: string) {
     setUsername(val);
+    checkSeq.current.username++; // cancel any pending "taken" result for the old value
+    setChecking((c) => ({ ...c, username: false }));
     if (usernameTouched) {
       setUsernameError(validateUsername(val));
     } else {
@@ -171,8 +194,37 @@ export default function SignupPage() {
 
   function handleUsernameBlur() {
     setUsernameTouched(true);
-    setUsernameError(validateUsername(username));
+    const formatError = validateUsername(username);
+    setUsernameError(formatError);
+    if (!formatError) runAvailabilityCheck('username', username.trim());
   }
+
+  function handleEmailChange(val: string) {
+    setEmail(val);
+    checkSeq.current.email++;
+    setChecking((c) => ({ ...c, email: false }));
+    setEmailError(emailTouched ? validateEmailFormat(val) : null);
+  }
+
+  function handleEmailBlur() {
+    setEmailTouched(true);
+    const formatError = validateEmailFormat(email);
+    setEmailError(formatError);
+    if (!formatError) runAvailabilityCheck('email', email.trim());
+  }
+
+  const phoneE164 = phoneValue.number ? `${phoneValue.dialCode}${phoneValue.number}` : '';
+
+  // Check the mobile number once it is a complete, valid number
+  useEffect(() => {
+    checkSeq.current.phone++;
+    setPhoneTakenError(null);
+    setChecking((c) => ({ ...c, phone: false }));
+    if (!phoneValid || !phoneE164) return;
+    const timer = setTimeout(() => runAvailabilityCheck('phone', phoneE164), 400);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phoneE164, phoneValid]);
 
   // OTP step states
   const [signupTicket, setSignupTicket] = useState('');
@@ -197,7 +249,8 @@ export default function SignupPage() {
 
   const allRulesMet = Object.values(rules).every(Boolean);
   const emailLower = email.trim().toLowerCase();
-  const emailIsValidDomain = emailLower.endsWith('@gmail.com') || emailLower.endsWith('.in');
+  // Standard email pattern (any domain); shared with the server
+  const emailIsValidDomain = !validateEmailFormat(emailLower);
   const passwordsMatch =
     password.length > 0 && confirmPassword.length > 0 && password === confirmPassword;
 
@@ -220,15 +273,28 @@ export default function SignupPage() {
       return;
     }
 
+    const eErr = validateEmailFormat(email);
+    if (eErr) {
+      setEmailTouched(true);
+      setEmailError(eErr);
+      return;
+    }
+    if (!phoneValid || !phoneE164) {
+      setSignupError('Enter a valid mobile number');
+      return;
+    }
+
     if (isLoading || !allRulesMet || !emailIsValidDomain || !passwordsMatch) return;
+    if (emailError || phoneTakenError || usernameError) return;
 
     setIsLoading(true);
     setSignupError(null);
     try {
       const result = await initiateCustomerSignup({
         full_name: fullName,
-        username: username.trim().toLowerCase(),
+        username: username.trim(),
         email,
+        phone: phoneE164,
         password,
         confirm_password: confirmPassword,
       });
@@ -258,7 +324,7 @@ export default function SignupPage() {
     }
   }
 
-  // Stage 2: Verify OTP -> Complete user account creation -> Redirect to login
+  // Stage 2: Verify OTP -> Complete user account creation -> Sign in -> Redirect to My Bookings
   async function handleVerifyOtp(codeToVerify?: string) {
     const code = (codeToVerify || otpDigits.join('')).trim();
     if (code.length !== 6) {
@@ -279,9 +345,12 @@ export default function SignupPage() {
         return;
       }
 
-      // Successful verification! Redirect to login page with signup=success query param
-      // AuthToastNotifier will show the single success snackbar on the login page
-      window.location.href = '/account/login?signup=success';
+      // Account created and (normally) signed in: go straight to My Bookings.
+      // Falls back to the login page if the automatic sign-in didn't succeed.
+      // AuthToastNotifier shows the matching success snackbar (?signup=success).
+      window.location.href = result.signedIn
+        ? '/account/bookings?signup=success'
+        : '/account/login?signup=success';
     } catch (err: any) {
       setOtpError(err?.message || 'Could not verify code. Please try again.');
       setIsVerifyingOtp(false);
@@ -455,16 +524,17 @@ export default function SignupPage() {
                         value={username}
                         onChange={(e) => handleUsernameChange(e.target.value)}
                         onBlur={handleUsernameBlur}
-                        className={`input pl-10 pr-4 py-2.5 text-sm rounded-xl border-ink-200 focus:border-emerald-600 focus:ring-emerald-600 disabled:opacity-60 transition ${
+                        className={`input px-4 py-2.5 text-sm rounded-xl border-ink-200 focus:border-emerald-600 focus:ring-emerald-600 disabled:opacity-60 transition ${
                           usernameError ? 'border-coral-400 focus:ring-coral-400 bg-coral-50/20' : ''
                         }`}
                         autoComplete="username"
                       />
-                      <AtSign className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-400" />
                     </div>
-                    {usernameError && (
+                    {usernameError ? (
                       <p className="mt-1 text-xs text-coral-600 font-medium">{usernameError}</p>
-                    )}
+                    ) : checking.username ? (
+                      <p className="mt-1 text-xs text-ink-400">Checking availability…</p>
+                    ) : null}
                     <p className="mt-1 text-[11px] text-ink-400 leading-snug">
                       Your unique handle to log in to your account.
                     </p>
@@ -479,23 +549,50 @@ export default function SignupPage() {
                         type="email"
                         required
                         disabled={isLoading}
-                        placeholder="you@gmail.com or you@example.in"
+                        placeholder="you@example.com"
                         value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        className="input pl-10 pr-4 py-2.5 text-sm rounded-xl border-ink-200 focus:border-emerald-600 focus:ring-emerald-600 disabled:opacity-60 transition"
+                        onChange={(e) => handleEmailChange(e.target.value)}
+                        onBlur={handleEmailBlur}
+                        className={`input pl-10 pr-4 py-2.5 text-sm rounded-xl border-ink-200 focus:border-emerald-600 focus:ring-emerald-600 disabled:opacity-60 transition ${
+                          emailError ? 'border-coral-400 focus:ring-coral-400 bg-coral-50/20' : ''
+                        }`}
                         autoComplete="email"
                       />
                       <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-400" />
                     </div>
-                    {email.length > 0 && !emailIsValidDomain && (
+                    {emailError ? (
                       <p className="mt-1.5 flex items-center gap-1 text-xs text-coral-600">
                         <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-                        <span>Only @gmail.com and .in email addresses are accepted.</span>
+                        <span>{emailError}</span>
                       </p>
-                    )}
+                    ) : checking.email ? (
+                      <p className="mt-1 text-xs text-ink-400">Checking availability…</p>
+                    ) : null}
                     <p className="mt-1 text-[11px] text-ink-400 leading-snug">
                       We will send a 6-digit verification code to this address.
                     </p>
+                  </div>
+
+                  <div>
+                    <label className="label">
+                      Mobile number <span className="text-red-500">*</span>
+                    </label>
+                    <PhoneInput
+                      name="phone"
+                      required
+                      placeholder="Mobile number"
+                      value={phoneValue}
+                      onChange={setPhoneValue}
+                      onValidityChange={setPhoneValid}
+                    />
+                    {phoneTakenError ? (
+                      <p className="mt-1.5 flex items-center gap-1 text-xs text-coral-600">
+                        <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                        <span>{phoneTakenError}</span>
+                      </p>
+                    ) : checking.phone ? (
+                      <p className="mt-1 text-xs text-ink-400">Checking availability…</p>
+                    ) : null}
                   </div>
 
                   <div>
@@ -600,6 +697,9 @@ export default function SignupPage() {
                       !fullName.trim() ||
                       !username.trim() ||
                       Boolean(usernameError) ||
+                      Boolean(emailError) ||
+                      !phoneValid ||
+                      Boolean(phoneTakenError) ||
                       !allRulesMet ||
                       !emailIsValidDomain ||
                       !passwordsMatch

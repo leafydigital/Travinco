@@ -22,6 +22,7 @@ import {
 import { saveQuotationLogos, uploadQuotationLogo } from '@/lib/tour/master-actions';
 import type { QuotationLogosConfig, QuotationLogoItem } from '@/lib/tour/types';
 import { DEFAULT_QUOTATION_LOGOS } from '@/lib/tour/types';
+import { ModalPortal } from '@/components/ui/modal-portal';
 
 function Dialog({
   title,
@@ -33,31 +34,33 @@ function Dialog({
   children: React.ReactNode;
 }) {
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink-900/40 p-4 sm:p-8 print:hidden"
-      onClick={onClose}
-    >
+    <ModalPortal>
       <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        className="card w-full max-w-lg bg-white p-5 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
+        className="fixed inset-0 bg-ink-950/50 z-50 flex items-start justify-center overflow-y-auto p-4 sm:p-8 print:hidden"
+        onClick={onClose}
       >
-        <div className="mb-4 flex items-center justify-between border-b border-ink-100 pb-3">
-          <h2 className="text-base font-bold text-ink-900">{title}</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg p-1 text-ink-400 hover:bg-sand-100 hover:text-ink-700"
-            aria-label="Close"
-          >
-            <X className="h-5 w-5" />
-          </button>
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={title}
+          className="card w-full max-w-lg bg-white p-5 shadow-xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="mb-4 flex items-center justify-between border-b border-ink-100 pb-3">
+            <h2 className="text-base font-bold text-ink-900">{title}</h2>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg p-1 text-ink-400 hover:bg-sand-100 hover:text-ink-700"
+              aria-label="Close"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          {children}
         </div>
-        {children}
       </div>
-    </div>
+    </ModalPortal>
   );
 }
 

@@ -16,10 +16,10 @@ export default async function EditBlogPostPage({ params }: { params: { id: strin
   if (!post || post.is_deleted) notFound();
 
   return (
-    <div className="max-w-2xl space-y-5 pb-16">
+    <div className="max-w-5xl space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <h1 className="text-xl font-semibold text-ink-900">{post.title}</h1>
+          <h1 className="text-lg font-semibold text-ink-900 line-clamp-1">{post.title}</h1>
           <StatusBadge status={post.status} />
         </div>
         <div className="flex items-center gap-2">

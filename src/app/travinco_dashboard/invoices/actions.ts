@@ -150,7 +150,7 @@ export async function convertQuotationToInvoice(quotationId: string, option: 1 |
   await supabase.from('website_settings').upsert({
     key: `invoice_markup_${inv.id}`,
     value: { markup_pct: markupPct, markup_amount: markupAmount },
-  });
+  }, { onConflict: 'key' });
 
   await supabase.from('quotations').update({ status: 'invoiced', customer_id: customerId }).eq('id', q.id);
   if (q.enquiry_id) await supabase.from('enquiries').update({ status: 'confirmed' }).eq('id', q.enquiry_id);
@@ -261,7 +261,7 @@ export async function updateInvoice(id: string, raw: unknown): Promise<{ error?:
   await s.supabase.from('website_settings').upsert({
     key: `invoice_markup_${id}`,
     value: { markup_pct: markupPct, markup_amount: markupAmount },
-  });
+  }, { onConflict: 'key' });
 
   revalidatePath(`/admin/invoices/${id}`);
   revalidatePath(`/travinco_dashboard/invoices/${id}`);
@@ -489,7 +489,7 @@ export async function deleteInvoice(id: string): Promise<{ error?: string }> {
     await supabase.from('website_settings').upsert({
       key: `deleted_invoice_${id}`,
       value: { is_deleted: true, deleted_at: new Date().toISOString() },
-    });
+    }, { onConflict: 'key' });
   } catch (err) {
     console.warn('Failed to record deleted_invoice marker:', err);
   }

@@ -51,6 +51,7 @@ import {
   type ThemeImageItem,
 } from './actions';
 import { formatDate } from '@/lib/utils/format';
+import { ModalPortal } from '@/components/ui/modal-portal';
 
 interface DestinationItem {
   id: string;
@@ -2548,70 +2549,72 @@ export function HomePageEditor({
 
       {/* ── In-Editor Delete Confirmation Dialog ── */}
       {itemToDelete && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-ink-950/60 p-4 backdrop-blur-xs animate-in fade-in duration-150"
-          onClick={() => !isDeleting && setItemToDelete(null)}
-          role="dialog"
-          aria-modal="true"
-        >
+        <ModalPortal>
           <div
-            className="card w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl border border-ink-200 p-6 space-y-4 animate-in zoom-in-95 duration-150"
-            onClick={(e) => e.stopPropagation()}
+            className="fixed inset-0 bg-ink-950/50 z-50 flex items-center justify-center p-4 animate-in fade-in duration-150"
+            onClick={() => !isDeleting && setItemToDelete(null)}
+            role="dialog"
+            aria-modal="true"
           >
-            <div className="flex items-start gap-3.5">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-100 text-red-600">
-                <Trash2 className="h-6 w-6" />
+            <div
+              className="card w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-lg shadow-ink-900/5 border border-ink-200 p-6 space-y-4 animate-in zoom-in-95 duration-150"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-start gap-3.5">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-100 text-red-600">
+                  <Trash2 className="h-6 w-6" />
+                </div>
+                <div className="space-y-1.5 flex-1">
+                  <h3 className="text-base font-bold text-ink-950">
+                    Delete {itemToDelete.placement === 'hero' ? 'Hero Slide' : itemToDelete.placement === 'captured_road' ? 'Road Moment' : 'Ayurveda Image'}?
+                  </h3>
+                  <p className="text-xs text-ink-600 leading-relaxed">
+                    Are you sure you want to permanently delete this visual asset? It will be removed immediately from both this editor and customer-facing pages.
+                  </p>
+                </div>
               </div>
-              <div className="space-y-1.5 flex-1">
-                <h3 className="text-base font-bold text-ink-950">
-                  Delete {itemToDelete.placement === 'hero' ? 'Hero Slide' : itemToDelete.placement === 'captured_road' ? 'Road Moment' : 'Ayurveda Image'}?
-                </h3>
-                <p className="text-xs text-ink-600 leading-relaxed">
-                  Are you sure you want to permanently delete this visual asset? It will be removed immediately from both this editor and customer-facing pages.
-                </p>
+  
+              {/* Thumbnail Preview */}
+              <div className="relative h-36 w-full overflow-hidden rounded-xl border border-ink-200 bg-ink-50">
+                <Image
+                  src={itemToDelete.image_url}
+                  alt="Image to delete"
+                  fill
+                  className="object-cover"
+                />
               </div>
-            </div>
-
-            {/* Thumbnail Preview */}
-            <div className="relative h-36 w-full overflow-hidden rounded-xl border border-ink-200 bg-ink-50">
-              <Image
-                src={itemToDelete.image_url}
-                alt="Image to delete"
-                fill
-                className="object-cover"
-              />
-            </div>
-
-            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-ink-100">
-              <button
-                type="button"
-                onClick={() => setItemToDelete(null)}
-                disabled={isDeleting}
-                className="btn-ghost text-xs px-3.5 py-2 font-medium"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmDelete}
-                disabled={isDeleting}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-red-600 px-4 py-2 text-xs font-semibold text-white hover:bg-red-700 transition shadow-xs cursor-pointer disabled:opacity-50"
-              >
-                {isDeleting ? (
-                  <>
-                    <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                    <span>Deleting…</span>
-                  </>
-                ) : (
-                  <>
-                    <Trash2 className="h-3.5 w-3.5" />
-                    <span>Yes, Permanently Delete</span>
-                  </>
-                )}
-              </button>
+  
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-ink-100">
+                <button
+                  type="button"
+                  onClick={() => setItemToDelete(null)}
+                  disabled={isDeleting}
+                  className="btn-ghost text-xs px-3.5 py-2 font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmDelete}
+                  disabled={isDeleting}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-red-600 px-4 py-2 text-xs font-semibold text-white hover:bg-red-700 transition shadow-xs cursor-pointer disabled:opacity-50"
+                >
+                  {isDeleting ? (
+                    <>
+                      <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                      <span>Deleting…</span>
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="h-3.5 w-3.5" />
+                      <span>Yes, Permanently Delete</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        </ModalPortal>
       )}
     </div>
   );

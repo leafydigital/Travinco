@@ -14,6 +14,16 @@ type PackageWithDestination = Tables<'travel_packages'> & {
   destinations: Pick<Tables<'destinations'>, 'id' | 'name' | 'slug' | 'country'> | null;
 };
 
+/** Published packages for the "Send Enquiry" modal's package dropdown (cached public read). */
+async function getEnquiryPackageOptions(): Promise<{ id: string; title: string }[]> {
+  const { data } = await createPublicClient()
+    .from('travel_packages')
+    .select('id, title')
+    .eq('status', 'published')
+    .order('title');
+  return (data ?? []) as { id: string; title: string }[];
+}
+
 async function getPackage(slug: string) {
   const supabase = createPublicClient();
 
@@ -121,7 +131,10 @@ export default async function PackageDetailPage({ params }: { params: { slug: st
     ...videos.map((v) => getVideoEmbedUrl(v.video_url)),
   ].filter((url): url is string => Boolean(url));
 
-  const termsSettings = await getTermsSettings();
+  const [termsSettings, enquiryPackages] = await Promise.all([
+    getTermsSettings(),
+    getEnquiryPackageOptions(),
+  ]);
   const destinationRaw = pkg.destinations as
     | { name: string; country: string | null }
     | { name: string; country: string | null }[]
@@ -195,6 +208,7 @@ export default async function PackageDetailPage({ params }: { params: { slug: st
         faqs={faqs}
         activeOffer={activeOffer}
         termsAndConditions={termsSettings.terms_and_conditions}
+        enquiryPackages={enquiryPackages}
       />
     </div>
   );

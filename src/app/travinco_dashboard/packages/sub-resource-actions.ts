@@ -23,7 +23,7 @@ export async function replaceItineraryDay(
   const permCheck = await checkEditPermission();
   if (permCheck.error) return { error: permCheck.error };
   const parsed = itineraryDaySchema.safeParse(raw);
-  if (!parsed.success) return { error: 'Please check the itinerary day fields.' };
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message || 'Please check the itinerary day fields.' };
 
   const supabase = await createClient();
   const payload = { ...parsed.data, package_id: packageId };
@@ -53,7 +53,7 @@ export async function deleteItineraryDay(packageId: string, dayId: string) {
   return {};
 }
 
-const itemSchema = z.object({ item: z.string().min(1).max(255) });
+const itemSchema = z.object({ item: z.string().trim().min(1, 'Cannot be empty').max(255) });
 
 export async function addInclusion(packageId: string, raw: unknown) {
   const permCheck = await checkEditPermission();
@@ -358,8 +358,8 @@ export async function reorderPackageVideo(
 }
 
 const faqSchema = z.object({
-  question: z.string().min(1, 'Question cannot be empty').max(300),
-  answer: z.string().min(1, 'Answer cannot be empty'),
+  question: z.string().trim().min(1, 'Question cannot be empty').max(300),
+  answer: z.string().trim().min(1, 'Answer cannot be empty'),
 });
 
 export async function addFaq(

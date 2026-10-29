@@ -7,6 +7,8 @@ import { hasActiveRows, fetchAllActiveRows, softDeleteRows } from '@/lib/archive
 import { appendRowsToSheet } from '@/lib/google-sheets';
 import { createServiceClient } from '@/lib/supabase/service';
 import { z } from 'zod';
+import { parsePhoneNumberFromString } from 'libphonenumber-js';
+import { addYearsIso, toIsoDate } from '@/lib/utils/iso-date';
 import type { EnquiryStatus, FollowupType } from '@/types/database';
 
 async function checkEnquiryEditPermission() {
@@ -128,10 +130,24 @@ export async function assignEnquiry(enquiryId: string, staffId: string | null) {
   return {};
 }
 
-const editEnquirySchema = z.object({
+/** Rejects numbers whose national part is only zeros (e.g. +91 0000000000). */
+function isAllZeroPhone(value: string): boolean {
+  const national = parsePhoneNumberFromString(value)?.nationalNumber ?? value.replace(/^\+\d{1,3}/, '');
+  const digits = national.replace(/\D/g, '');
+  return digits.length > 0 && /^0+$/.test(digits);
+}
+
+const phoneField = z
+  .string()
+  .min(4, 'Enter a valid phone number')
+  .max(20)
+  .refine((v) => !isAllZeroPhone(v), 'Phone number cannot be all zeros');
+
+const editEnquirySchema = z
+  .object({
   customer_name: z.string().min(2, 'Please enter a name').max(120),
-  phone: z.string().min(4).max(20),
-  whatsapp_number: z.string().max(20).optional().or(z.literal('')),
+  phone: phoneField,
+  whatsapp_number: phoneField.optional().or(z.literal('')),
   email: z.string().email('Enter a valid email'),
   destination: z.string().max(120).optional().or(z.literal('')),
   travel_date: z.string().optional().or(z.literal('')),
@@ -139,9 +155,25 @@ const editEnquirySchema = z.object({
   number_of_adults: z.coerce.number().int().min(1),
   number_of_children: z.coerce.number().int().min(0),
   number_of_infants: z.coerce.number().int().min(0),
-  budget: z.coerce.number().min(0).optional(),
+  budget: z.coerce.number().min(0, 'Budget cannot be negative').optional(),
   message: z.string().max(2000).optional().or(z.literal('')),
-});
+})
+  .superRefine((v, ctx) => {
+    // One day of slack for client/server timezone differences.
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const maxDate = addYearsIso(toIsoDate(tomorrow), 1);
+    if (v.travel_date && v.travel_date > maxDate) {
+      ctx.addIssue({ code: 'custom', path: ['travel_date'], message: 'Travel date must be within 1 year from today' });
+    }
+    if (v.travel_date && v.return_date) {
+      if (v.return_date < v.travel_date) {
+        ctx.addIssue({ code: 'custom', path: ['return_date'], message: 'Return date cannot be before the travel date' });
+      } else if (v.return_date > addYearsIso(v.travel_date, 1)) {
+        ctx.addIssue({ code: 'custom', path: ['return_date'], message: 'Return date must be within 1 year of the travel date' });
+      }
+    }
+  });
 
 /**
  * Lets staff correct/update the customer-submitted details on an
@@ -212,8 +244,14 @@ export async function updateEnquiryFollowupDate(
 
   if (followupDate) {
     const todayStr = new Date().toISOString().slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(followupDate)) {
+      return { error: 'Enter a valid follow-up date.' };
+    }
     if (followupDate < todayStr) {
       return { error: 'Next follow-up date cannot be in the past.' };
+    }
+    if (followupDate > addYearsIso(todayStr, 1)) {
+      return { error: 'Next follow-up date must be within 1 year from today.' };
     }
   }
 

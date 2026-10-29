@@ -64,6 +64,10 @@ export function ItineraryManager({
   }
 
   function save() {
+    if (!draft.title.trim()) {
+      toast.error('Day title cannot be empty.');
+      return;
+    }
     startTransition(async () => {
       const result = await replaceItineraryDay(packageId, editingId, {
         ...draft,
@@ -182,7 +186,7 @@ export function ItineraryManager({
             <button
               type="button"
               onClick={save}
-              disabled={isPending || !draft.title}
+              disabled={isPending || !draft.title.trim()}
               className="btn-primary"
             >
               {isPending ? 'Saving…' : 'Save day'}

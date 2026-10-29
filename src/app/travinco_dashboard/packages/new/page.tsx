@@ -16,7 +16,7 @@ export default async function NewPackagePage() {
     .order('name');
 
   return (
-    <div className="max-w-3xl space-y-5">
+    <div className="space-y-3">
       <div>
         <Link
           href="/travinco_dashboard/packages"

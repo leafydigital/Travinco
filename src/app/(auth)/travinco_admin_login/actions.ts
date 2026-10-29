@@ -270,6 +270,20 @@ export async function resetStaffPasswordDirectAction(data: {
     return { error: parsed.error.issues[0]?.message ?? 'Invalid password format.' };
   }
 
+  // SECURITY: this used to reset ANY staff password from just an email address (no
+  // verification). It is now limited to a signed-in staff member changing their OWN
+  // password. Forgotten passwords go through the email-code reset flow instead
+  // (/account/login?action=forgot_password).
+  const sessionClient = await createAdminClient();
+  const {
+    data: { user: sessionUser },
+  } = await sessionClient.auth.getUser();
+  if (!sessionUser?.email || sessionUser.email.toLowerCase() !== normalizedEmail) {
+    return {
+      error: 'For security, please use "Forgot password?" on the sign-in page to reset your password.',
+    };
+  }
+
   const supabase = await createClient();
 
   // 1. Attempt direct update via reset_staff_password RPC function (security definer)

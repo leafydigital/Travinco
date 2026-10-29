@@ -15,7 +15,7 @@ export default async function EditDestinationPage({ params }: { params: { id: st
   if (!destination) notFound();
 
   return (
-    <div className="max-w-2xl space-y-5">
+    <div className="max-w-4xl space-y-5">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <h1 className="text-xl font-semibold text-ink-900">{destination.name}</h1>

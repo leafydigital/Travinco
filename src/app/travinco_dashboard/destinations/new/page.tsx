@@ -7,7 +7,7 @@ export default async function NewDestinationPage() {
   const profile = await requireProfile();
   await assertModulePermission(profile, 'destinations', 'edit');
   return (
-    <div className="max-w-2xl space-y-5">
+    <div className="max-w-4xl space-y-5">
       <div>
         <Link
           href="/travinco_dashboard/destinations"

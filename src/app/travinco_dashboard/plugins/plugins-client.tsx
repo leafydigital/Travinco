@@ -41,6 +41,7 @@ import {
   type PluginTableItem,
 } from './actions';
 import type { Plugin, PluginSlot } from '@/types/database';
+import { ModalPortal } from '@/components/ui/modal-portal';
 
 interface PluginsClientProps {
   initialPlugins?: PluginTableItem[];
@@ -616,7 +617,6 @@ function PluginFormModal({
   // Tab: 'editor' vs 'preview'
   const [activeTab, setActiveTab] = useState<'editor' | 'preview'>('editor');
   const [previewKey, setPreviewKey] = useState<number>(0);
-  const [previewMode, setPreviewMode] = useState<'widget' | 'isolated'>('widget');
   const [formError, setFormError] = useState<string | null>(null);
 
   // Real-time duplicate check across existing plugins
@@ -761,243 +761,223 @@ function PluginFormModal({
 </html>`;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink-950/50 p-4 sm:p-6 backdrop-blur-xs animate-in fade-in duration-150"
-      onClick={onClose}
-    >
+    <ModalPortal>
       <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={isEditing ? 'Edit Plugin' : 'Add New Plugin'}
-        className="w-full max-w-4xl rounded-2xl border border-ink-200 bg-white p-6 shadow-2xl transition-all my-8"
-        onClick={(e) => e.stopPropagation()}
+        className="fixed inset-0 bg-ink-950/50 z-50 flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150"
+        onClick={onClose}
       >
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-ink-100 pb-4">
-          <div>
-            <h2 className="text-xl font-bold text-ink-900">
-              {plugin ? `Edit Plugin: ${plugin.name}` : 'Add New Plugin'}
-            </h2>
-            <p className="text-xs text-ink-500 mt-0.5">
-              Paste widget HTML/scripts (e.g. Travelpayouts, Emerald, Trip.com) or upload a widget code file.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg p-2 text-ink-400 hover:bg-ink-100 hover:text-ink-700 transition cursor-pointer"
-            aria-label="Close"
-          >
-            ✕
-          </button>
-        </div>
-
-        {/* Error Alert */}
-        {formError && (
-          <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3.5 text-xs text-red-800 flex items-start gap-2.5">
-            <AlertTriangle className="h-4 w-4 text-red-600 shrink-0 mt-0.5" />
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={isEditing ? 'Edit Plugin' : 'Add New Plugin'}
+          className="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-ink-200 bg-white px-5 py-4 shadow-lg shadow-ink-900/5 transition-all"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="flex shrink-0 items-center justify-between border-b border-ink-100 pb-3">
             <div>
-              <span className="font-semibold">Validation Error: </span>
-              {formError}
+              <h2 className="text-lg font-bold text-ink-900">
+                {plugin ? `Edit Plugin: ${plugin.name}` : 'Add New Plugin'}
+              </h2>
+              <p className="text-xs text-ink-500 mt-0.5">
+                Paste widget HTML/scripts (e.g. Travelpayouts, Emerald, Trip.com) or upload a widget code file.
+              </p>
             </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg p-2 text-ink-400 hover:bg-ink-100 hover:text-ink-700 transition cursor-pointer"
+              aria-label="Close"
+            >
+              ✕
+            </button>
           </div>
-        )}
-
-        {/* Duplicate Warning Alert */}
-        {duplicateInfo.isDuplicate && (
-          <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-3.5 text-xs text-amber-900 flex items-start gap-2.5 animate-in fade-in">
-            <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
-            <div>
-              <span className="font-semibold text-amber-950">Duplicate Plugin Detected: </span>
-              {duplicateInfo.message}
-              <div className="mt-1 text-[11px] text-amber-800">
-                To prevent duplicated widgets or conflicting scripts on your site, please choose a distinct name or edit the existing plugin.
+  
+          {/* Error Alert */}
+          {formError && (
+            <div className="mt-3 shrink-0 rounded-xl border border-red-200 bg-red-50 p-2.5 text-xs text-red-800 flex items-start gap-2.5">
+              <AlertTriangle className="h-4 w-4 text-red-600 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-semibold">Validation Error: </span>
+                {formError}
               </div>
             </div>
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="mt-5 space-y-5">
-          {/* Row 1: Name and Slot */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div>
-              <label className="label">
-                Plugin Name <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                required
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Travelpayouts Flight Search"
-                className="input"
-              />
-            </div>
-
-            <div>
-              <label className="label">
-                Slot Location <span className="text-red-500">*</span>
-              </label>
-              <select
-                value={slot}
-                onChange={(e) => setSlot(e.target.value as PluginSlot)}
-                className="input bg-white"
-              >
-                <option value="home-top">Home Top (Below Hero Banner)</option>
-                <option value="home-middle">Home Middle (Between Content Sections)</option>
-                <option value="home-bottom">Home Bottom (Above Final CTA)</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Row 2: Description, Position, Active */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 items-end">
-            <div className="sm:col-span-2">
-              <label className="label">Description (Optional)</label>
-              <input
-                type="text"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Brief notes about affiliate campaigns, widget ID, or placement..."
-                className="input"
-              />
-            </div>
-
-            <div>
-              <label className="label">Display Position Order</label>
-              <input
-                type="number"
-                value={position}
-                onChange={(e) => setPosition(parseInt(e.target.value, 10) || 0)}
-                className="input"
-                min={0}
-                step={1}
-                title="Lower numbers appear first within the slot"
-              />
-            </div>
-          </div>
-
-          {/* Active Checkbox */}
-          <div className="flex items-center gap-3 p-3 rounded-xl border border-ink-100 bg-sand-50/50">
-            <input
-              type="checkbox"
-              id="plugin-active-checkbox"
-              checked={active}
-              onChange={(e) => setActive(e.target.checked)}
-              className="h-4 w-4 rounded border-ink-300 text-brand-600 focus:ring-brand-500"
-            />
-            <label htmlFor="plugin-active-checkbox" className="text-sm font-medium text-ink-800 cursor-pointer select-none">
-              Active on customer website
-            </label>
-            <span className="text-xs text-ink-400">
-              (Uncheck to save as draft without displaying publicly)
-            </span>
-          </div>
-
-          {/* Code Section & Editor / Preview Controls */}
-          <div>
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
-              <div className="flex items-center gap-2">
-                <label className="label mb-0">
-                  Widget Code (HTML / Script) <span className="text-red-500">*</span>
-                </label>
-                <span
-                  className={`text-[11px] font-mono px-2 py-0.5 rounded ${
-                    isOverSize ? 'bg-red-100 text-red-700 font-bold' : 'bg-ink-100 text-ink-600'
-                  }`}
-                >
-                  {(codeSizeBytes / 1024).toFixed(1)} / 100 KB
-                </span>
-              </div>
-
-              {/* Upload file + Tab switch */}
-              <div className="flex items-center gap-2">
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  accept=".html,.htm,.txt"
-                  className="hidden"
-                  onChange={handleFileUpload}
-                />
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-ink-200 bg-white px-2.5 py-1 text-xs font-medium text-ink-700 hover:bg-ink-50 transition cursor-pointer"
-                  title="Load HTML or text file into editor"
-                >
-                  <Upload className="h-3.5 w-3.5 text-ink-500" />
-                  <span>Upload .html / .txt</span>
-                </button>
-
-                <div className="inline-flex rounded-lg border border-ink-200 bg-ink-100 p-0.5 text-xs">
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('editor')}
-                    className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 font-medium transition cursor-pointer ${
-                      activeTab === 'editor'
-                        ? 'bg-white text-ink-900 shadow-2xs'
-                        : 'text-ink-600 hover:text-ink-900'
-                    }`}
-                  >
-                    <CodeIcon className="h-3.5 w-3.5" />
-                    <span>Code</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveTab('preview');
-                      setPreviewKey((k) => k + 1);
-                    }}
-                    className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 font-medium transition cursor-pointer ${
-                      activeTab === 'preview'
-                        ? 'bg-white text-brand-700 shadow-2xs font-semibold'
-                        : 'text-ink-600 hover:text-ink-900'
-                    }`}
-                  >
-                    <Eye className="h-3.5 w-3.5" />
-                    <span>Preview</span>
-                  </button>
+          )}
+  
+          {/* Duplicate Warning Alert */}
+          {duplicateInfo.isDuplicate && (
+            <div className="mt-3 shrink-0 rounded-xl border border-amber-300 bg-amber-50 p-2.5 text-xs text-amber-900 flex items-start gap-2.5 animate-in fade-in">
+              <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-semibold text-amber-950">Duplicate Plugin Detected: </span>
+                {duplicateInfo.message}
+                <div className="mt-1 text-[11px] text-amber-800">
+                  To prevent duplicated widgets or conflicting scripts on your site, please choose a distinct name or edit the existing plugin.
                 </div>
               </div>
             </div>
-
-            {/* Active Tab View */}
-            {activeTab === 'editor' ? (
-              <textarea
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                rows={12}
-                required
-                placeholder={`<!-- Example Travelpayouts widget code -->\n<script async src="https://tp.media/content?currency=usd&trs=..." charset="utf-8"></script>`}
-                className="input font-mono text-xs sm:text-sm bg-ink-950 text-emerald-400 focus:bg-ink-950 border-ink-800 focus:border-brand-500 focus:ring-brand-500 rounded-xl leading-relaxed"
-                spellCheck={false}
-              />
-            ) : (
-              <div className="space-y-2">
-                <div className="rounded-xl border border-ink-200 overflow-hidden bg-white shadow-inner">
-                  <div className="bg-ink-100/90 px-3 py-2 border-b border-ink-200 flex flex-wrap items-center justify-between gap-2 text-[11px] text-ink-700">
-                    <div className="flex items-center gap-2">
-                      <span className="flex items-center gap-1 font-semibold text-ink-800">
-                        <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
-                        Sandboxed Preview
-                      </span>
-                      <span className="text-ink-300">|</span>
-                      <label className="flex items-center gap-1.5 text-[11px] cursor-pointer select-none">
-                        <input
-                          type="checkbox"
-                          checked={previewMode === 'widget'}
-                          onChange={(e) => {
-                            setPreviewMode(e.target.checked ? 'widget' : 'isolated');
-                            setPreviewKey((k) => k + 1);
-                          }}
-                          className="h-3.5 w-3.5 rounded border-ink-300 text-brand-600 focus:ring-brand-500"
-                        />
-                        <span className="text-ink-700 font-medium">
-                          Widget Mode (enables storage/forms for interactive widgets)
-                        </span>
-                      </label>
-                    </div>
-
+          )}
+  
+          <form onSubmit={handleSubmit} className="mt-3 flex min-h-0 flex-1 flex-col gap-3">
+            {/* Row 1: Name, Slot, Position */}
+            <div className="grid shrink-0 grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_9rem]">
+              <div>
+                <label className="label">
+                  Plugin Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g. Travelpayouts Flight Search"
+                  className="input"
+                />
+              </div>
+  
+              <div>
+                <label className="label">
+                  Slot Location <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={slot}
+                  onChange={(e) => setSlot(e.target.value as PluginSlot)}
+                  className="input bg-white"
+                >
+                  <option value="home-top">Home Top (Below Hero Banner)</option>
+                  <option value="home-middle">Home Middle (Between Content Sections)</option>
+                  <option value="home-bottom">Home Bottom (Above Final CTA)</option>
+                </select>
+              </div>
+  
+              <div>
+                <label className="label">Position Order</label>
+                <input
+                  type="number"
+                  value={position}
+                  onChange={(e) => setPosition(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                  className="input"
+                  min={0}
+                  step={1}
+                  title="Lower numbers appear first within the slot"
+                />
+              </div>
+            </div>
+  
+            {/* Row 2: Description + Active */}
+            <div className="grid shrink-0 grid-cols-1 items-end gap-3 sm:grid-cols-[1fr_auto]">
+              <div>
+                <label className="label">Description (Optional)</label>
+                <input
+                  type="text"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Brief notes about affiliate campaigns, widget ID, or placement..."
+                  className="input"
+                />
+              </div>
+              <div className="flex h-[38px] items-center gap-2 rounded-lg border border-ink-100 bg-sand-50/50 px-3">
+                <input
+                  type="checkbox"
+                  id="plugin-active-checkbox"
+                  checked={active}
+                  onChange={(e) => setActive(e.target.checked)}
+                  className="h-4 w-4 rounded border-ink-300 text-brand-600 focus:ring-brand-500"
+                />
+                <label
+                  htmlFor="plugin-active-checkbox"
+                  className="cursor-pointer select-none text-sm font-medium text-ink-800"
+                  title="Uncheck to save as draft without displaying publicly"
+                >
+                  Active on customer website
+                </label>
+              </div>
+            </div>
+  
+            {/* Code Section & Editor / Preview Controls */}
+            <div className="flex min-h-0 flex-1 flex-col">
+              <div className="mb-2 flex shrink-0 flex-col justify-between gap-2 sm:flex-row sm:items-center">
+                <div className="flex items-center gap-2">
+                  <label className="label mb-0">
+                    Widget Code (HTML / Script) <span className="text-red-500">*</span>
+                  </label>
+                  <span
+                    className={`text-[11px] font-mono px-2 py-0.5 rounded ${
+                      isOverSize ? 'bg-red-100 text-red-700 font-bold' : 'bg-ink-100 text-ink-600'
+                    }`}
+                  >
+                    {(codeSizeBytes / 1024).toFixed(1)} / 100 KB
+                  </span>
+                </div>
+  
+                {/* Upload file + Tab switch */}
+                <div className="flex items-center gap-2">
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    accept=".html,.htm,.txt"
+                    className="hidden"
+                    onChange={handleFileUpload}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-ink-200 bg-white px-2.5 py-1 text-xs font-medium text-ink-700 hover:bg-ink-50 transition cursor-pointer"
+                    title="Load HTML or text file into editor"
+                  >
+                    <Upload className="h-3.5 w-3.5 text-ink-500" />
+                    <span>Upload .html / .txt</span>
+                  </button>
+  
+                  <div className="inline-flex rounded-lg border border-ink-200 bg-ink-100 p-0.5 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('editor')}
+                      className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 font-medium transition cursor-pointer ${
+                        activeTab === 'editor'
+                          ? 'bg-white text-ink-900 shadow-2xs'
+                          : 'text-ink-600 hover:text-ink-900'
+                      }`}
+                    >
+                      <CodeIcon className="h-3.5 w-3.5" />
+                      <span>Code</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveTab('preview');
+                        setPreviewKey((k) => k + 1);
+                      }}
+                      className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 font-medium transition cursor-pointer ${
+                        activeTab === 'preview'
+                          ? 'bg-white text-brand-700 shadow-2xs font-semibold'
+                          : 'text-ink-600 hover:text-ink-900'
+                      }`}
+                    >
+                      <Eye className="h-3.5 w-3.5" />
+                      <span>Preview</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+  
+              {/* Active Tab View */}
+              {activeTab === 'editor' ? (
+                <textarea
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                  required
+                  placeholder={`<!-- Example Travelpayouts widget code -->\n<script async src="https://tp.media/content?currency=usd&trs=..." charset="utf-8"></script>`}
+                  className="input min-h-[140px] flex-1 basis-[38vh] resize-none font-mono text-xs sm:text-sm bg-ink-950 text-emerald-400 focus:bg-ink-950 border-ink-800 focus:border-brand-500 focus:ring-brand-500 rounded-xl leading-relaxed"
+                  spellCheck={false}
+                />
+              ) : (
+                <div className="flex min-h-[140px] flex-1 basis-[38vh] flex-col overflow-hidden rounded-xl border border-ink-200 bg-white shadow-inner">
+                  <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-ink-200 bg-ink-100/90 px-3 py-1.5 text-[11px] text-ink-700">
+                    <span className="flex items-center gap-1 font-semibold text-ink-800">
+                      <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
+                      Sandboxed Preview
+                    </span>
                     <button
                       type="button"
                       onClick={() => setPreviewKey((k) => k + 1)}
@@ -1008,56 +988,48 @@ function PluginFormModal({
                       <span>Reload</span>
                     </button>
                   </div>
-
+  
                   {code.trim() ? (
                     <iframe
                       key={previewKey}
                       title="Widget Sandbox Preview"
                       srcDoc={previewHtml}
-                      sandbox={
-                        previewMode === 'widget'
-                          ? 'allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox'
-                          : 'allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox'
-                      }
-                      className="w-full h-80 bg-white border-0"
+                      // Widget mode: storage/forms enabled so interactive affiliate widgets render realistically.
+                      sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
+                      className="min-h-0 w-full flex-1 border-0 bg-white"
                     />
                   ) : (
-                    <div className="h-80 flex items-center justify-center text-xs text-ink-400 italic">
+                    <div className="flex flex-1 items-center justify-center text-xs italic text-ink-400">
                       No code to preview yet. Switch back to the Code tab and paste your widget HTML.
                     </div>
                   )}
                 </div>
-                <p className="text-[11px] text-ink-500">
-                  {previewMode === 'widget'
-                    ? 'Widget Mode is enabled: scripts, stylesheets, and affiliate widgets execute with isolated frame origin for realistic rendering.'
-                    : 'Strict Isolated Sandbox: scripts run with origin="null" without same-origin storage access.'}
-                </p>
-              </div>
-            )}
-          </div>
-
-          {/* Form Actions Footer */}
-          <div className="flex items-center justify-end gap-3 border-t border-ink-100 pt-4">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={isPending}
-              className="btn-outline cursor-pointer"
-            >
-              Cancel
-            </button>
-
-            <button
-              type="submit"
-              disabled={isPending || isOverSize || duplicateInfo.isDuplicate}
-              className="btn-primary inline-flex items-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-              <span>{duplicateInfo.isDuplicate ? 'Duplicate Plugin' : isEditing ? 'Save Changes' : 'Create Plugin'}</span>
-            </button>
-          </div>
-        </form>
+              )}
+            </div>
+  
+            {/* Form Actions Footer */}
+            <div className="flex shrink-0 items-center justify-end gap-3 border-t border-ink-100 pt-3">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={isPending}
+                className="btn-outline cursor-pointer"
+              >
+                Cancel
+              </button>
+  
+              <button
+                type="submit"
+                disabled={isPending || isOverSize || duplicateInfo.isDuplicate}
+                className="btn-primary inline-flex items-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                <span>{duplicateInfo.isDuplicate ? 'Duplicate Plugin' : isEditing ? 'Save Changes' : 'Create Plugin'}</span>
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
-    </div>
+    </ModalPortal>
   );
 }

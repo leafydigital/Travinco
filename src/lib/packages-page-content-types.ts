@@ -34,6 +34,11 @@ export interface PackagesPageContent {
   search: PackagesSearchContent;
   empty_state: PackagesEmptyStateContent;
   bottom_cta: PackagesBottomCtaContent;
+  /**
+   * Shared terms & conditions shown on every package detail page. Edited in the
+   * Theme → Packages tab but stored under its own 'terms' setting (see getTermsSettings).
+   */
+  terms_and_conditions?: string;
 }
 
 export const DEFAULT_PACKAGES_PAGE_CONTENT: PackagesPageContent = {

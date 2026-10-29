@@ -5,6 +5,7 @@ import { X, Loader2, Save } from 'lucide-react';
 import { updateLead, type LeadStatus } from './actions';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
+import { ModalPortal } from '@/components/ui/modal-portal';
 
 export interface LeadRecord {
   id: string;
@@ -86,158 +87,160 @@ export function LeadEditModal({ lead, onClose }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
-      <div className="card w-full max-w-lg max-h-[90vh] flex flex-col shadow-xl">
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-ink-100 px-6 py-4">
-          <h2 className="text-base font-semibold text-ink-900">Edit Lead Details</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg p-1.5 text-ink-400 hover:bg-ink-100 hover:text-ink-700"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        {/* Form Body */}
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-ink-700 mb-1">
-                Contact Name <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                value={contactName}
-                onChange={(e) => setContactName(e.target.value)}
-                required
-                className="input text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-ink-700 mb-1">
-                Contact Number <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                value={contactNumber}
-                onChange={(e) => setContactNumber(e.target.value)}
-                required
-                className="input text-sm"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-ink-700 mb-1">Email</label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="input text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-ink-700 mb-1">Package</label>
-              <input
-                type="text"
-                value={pkg}
-                onChange={(e) => setPkg(e.target.value)}
-                className="input text-sm"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-ink-700 mb-1">Number of Days</label>
-              <input
-                type="number"
-                min="0"
-                value={days}
-                onChange={(e) => setDays(e.target.value)}
-                className="input text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-ink-700 mb-1">Budget (₹)</label>
-              <input
-                type="number"
-                min="0"
-                step="any"
-                value={budget}
-                onChange={(e) => setBudget(e.target.value)}
-                className="input text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-ink-700 mb-1">People</label>
-              <input
-                type="number"
-                min="0"
-                value={people}
-                onChange={(e) => setPeople(e.target.value)}
-                className="input text-sm"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-ink-700 mb-1">From Date</label>
-              <input
-                type="date"
-                value={fromDate}
-                onChange={(e) => setFromDate(e.target.value)}
-                className="input text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-ink-700 mb-1">To Date</label>
-              <input
-                type="date"
-                value={toDate}
-                onChange={(e) => setToDate(e.target.value)}
-                className="input text-sm"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-ink-700 mb-1">Status</label>
-            <select
-              value={status}
-              onChange={(e) => setStatus(e.target.value as LeadStatus)}
-              className="input text-sm"
-            >
-              {STATUS_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex items-center justify-end gap-3 pt-3 border-t border-ink-100">
+    <ModalPortal>
+      <div className="fixed inset-0 bg-ink-950/50 z-50 flex items-center justify-center p-4">
+        <div className="card w-full max-w-lg max-h-[90vh] flex flex-col shadow-xl">
+          {/* Header */}
+          <div className="flex items-center justify-between border-b border-ink-100 px-6 py-4">
+            <h2 className="text-base font-semibold text-ink-900">Edit Lead Details</h2>
             <button
               type="button"
               onClick={onClose}
-              disabled={isPending}
-              className="btn-outline text-sm"
+              className="rounded-lg p-1.5 text-ink-400 hover:bg-ink-100 hover:text-ink-700"
             >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isPending}
-              className="btn-primary text-sm flex items-center gap-2"
-            >
-              {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              Save Changes
+              <X className="h-4 w-4" />
             </button>
           </div>
-        </form>
+  
+          {/* Form Body */}
+          <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-ink-700 mb-1">
+                  Contact Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={contactName}
+                  onChange={(e) => setContactName(e.target.value)}
+                  required
+                  className="input text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-ink-700 mb-1">
+                  Contact Number <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={contactNumber}
+                  onChange={(e) => setContactNumber(e.target.value)}
+                  required
+                  className="input text-sm"
+                />
+              </div>
+            </div>
+  
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-ink-700 mb-1">Email</label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="input text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-ink-700 mb-1">Package</label>
+                <input
+                  type="text"
+                  value={pkg}
+                  onChange={(e) => setPkg(e.target.value)}
+                  className="input text-sm"
+                />
+              </div>
+            </div>
+  
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-ink-700 mb-1">Number of Days</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={days}
+                  onChange={(e) => setDays(e.target.value)}
+                  className="input text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-ink-700 mb-1">Budget (₹)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={budget}
+                  onChange={(e) => setBudget(e.target.value)}
+                  className="input text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-ink-700 mb-1">People</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={people}
+                  onChange={(e) => setPeople(e.target.value)}
+                  className="input text-sm"
+                />
+              </div>
+            </div>
+  
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-ink-700 mb-1">From Date</label>
+                <input
+                  type="date"
+                  value={fromDate}
+                  onChange={(e) => setFromDate(e.target.value)}
+                  className="input text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-ink-700 mb-1">To Date</label>
+                <input
+                  type="date"
+                  value={toDate}
+                  onChange={(e) => setToDate(e.target.value)}
+                  className="input text-sm"
+                />
+              </div>
+            </div>
+  
+            <div>
+              <label className="block text-xs font-medium text-ink-700 mb-1">Status</label>
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value as LeadStatus)}
+                className="input text-sm"
+              >
+                {STATUS_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+  
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-ink-100">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={isPending}
+                className="btn-outline text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isPending}
+                className="btn-primary text-sm flex items-center gap-2"
+              >
+                {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                Save Changes
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
-    </div>
+    </ModalPortal>
   );
 }

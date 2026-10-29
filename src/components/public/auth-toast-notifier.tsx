@@ -10,12 +10,17 @@ function AuthToastNotifierInner() {
   const hasFiredRef = useRef<string | null>(null);
 
   useEffect(() => {
-    // 1. Handle ?signup=success (shown when arriving at /account/login after signup)
+    // 1. Handle ?signup=success: normally lands on My Bookings (auto signed in);
+    //    falls back to /account/login if the automatic sign-in failed.
     if (searchParams.get('signup') === 'success') {
       const currentKey = `${pathname}?signup=success`;
       if (hasFiredRef.current !== currentKey) {
         hasFiredRef.current = currentKey;
-        toast.success('Account created successfully! Please sign in with your email and password.');
+        toast.success(
+          pathname === '/account/login'
+            ? 'Account created successfully! Please sign in with your email and password.'
+            : 'Welcome to Travinco! Your account has been created successfully.'
+        );
 
         try {
           const url = new URL(window.location.href);

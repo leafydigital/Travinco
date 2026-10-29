@@ -8,6 +8,53 @@ import { revalidatePath } from '@/lib/public-cache'; // also purges cached publi
 import type { ContentStatus } from '@/types/database';
 import { invalidateTourMastersCache } from '@/lib/tour/data';
 
+const MAX_FEATURED_DESTINATIONS = 3;
+
+type FeaturedDestination = { id: string; name: string };
+
+async function fetchFeaturedDestinations(
+  supabase: Awaited<ReturnType<typeof createClient>>
+): Promise<FeaturedDestination[]> {
+  const [featuredRes, deletedRes] = await Promise.all([
+    supabase.from('destinations').select('id, name, is_deleted').eq('is_featured', true),
+    supabase.from('website_settings').select('key').like('key', 'deleted_destination_%'),
+  ]);
+  const deleted = new Set(
+    (deletedRes.data || []).map((s: { key: string }) => s.key.replace('deleted_destination_', ''))
+  );
+  return (featuredRes.data || [])
+    .filter((d: any) => d.is_deleted !== true && !deleted.has(d.id))
+    .map((d: any) => ({ id: d.id, name: d.name }));
+}
+
+function featuredLimitError() {
+  return `Only ${MAX_FEATURED_DESTINATIONS} destinations can be featured at a time. Un-feature one before featuring another.`;
+}
+
+/** Currently featured destinations — used by the forms to enforce the featured limit. */
+export async function getFeaturedDestinations(): Promise<FeaturedDestination[]> {
+  const profile = await requireProfile();
+  await checkModulePermission(profile, 'destinations', 'view');
+  const supabase = await createClient();
+  return fetchFeaturedDestinations(supabase);
+}
+
+export async function unfeatureDestination(id: string) {
+  const profile = await requireProfile();
+  const perm = await checkModulePermission(profile, 'destinations', 'edit');
+  if (!perm.allowed) return { error: perm.error || 'You do not have permission to edit destinations.' };
+
+  const supabase = await createClient();
+  const { error } = await supabase.from('destinations').update({ is_featured: false }).eq('id', id);
+  if (error) return { error: 'Could not un-feature destination.' };
+
+  revalidatePath('/travinco_dashboard/destinations');
+  revalidatePath('/destinations');
+  revalidatePath('/');
+  invalidateTourMastersCache();
+  return {};
+}
+
 export async function createDestination(raw: unknown) {
   const profile = await requireProfile();
   const perm = await checkModulePermission(profile, 'destinations', 'edit');
@@ -17,6 +64,10 @@ export async function createDestination(raw: unknown) {
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Please check the form.' };
 
   const supabase = await createClient();
+  if (parsed.data.is_featured) {
+    const featured = await fetchFeaturedDestinations(supabase);
+    if (featured.length >= MAX_FEATURED_DESTINATIONS) return { error: featuredLimitError() };
+  }
   const { data, error } = await supabase
     .from('destinations')
     .insert({ ...parsed.data, cover_image_url: parsed.data.cover_image_url || null, status: 'draft' })
@@ -42,6 +93,12 @@ export async function updateDestination(id: string, raw: unknown) {
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Please check the form.' };
 
   const supabase = await createClient();
+  if (parsed.data.is_featured) {
+    const featured = await fetchFeaturedDestinations(supabase);
+    if (featured.filter((d) => d.id !== id).length >= MAX_FEATURED_DESTINATIONS) {
+      return { error: featuredLimitError() };
+    }
+  }
   const { error } = await supabase
     .from('destinations')
     .update({ ...parsed.data, cover_image_url: parsed.data.cover_image_url || null })
@@ -191,6 +248,12 @@ export async function bulkCreateDestinations(
   }
 
   const supabase = await createClient();
+
+  const newFeatured = candidates.filter((d) => d.is_featured).length;
+  if (newFeatured > 0) {
+    const featured = await fetchFeaturedDestinations(supabase);
+    if (featured.length + newFeatured > MAX_FEATURED_DESTINATIONS) return { error: featuredLimitError() };
+  }
 
   // Fetch all existing destination slugs to avoid collision
   const { data: existingDestinations } = await supabase.from('destinations').select('slug');

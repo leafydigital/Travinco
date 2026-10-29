@@ -5,6 +5,7 @@ import { X, Upload, FileSpreadsheet, AlertCircle, CheckCircle2, Loader2, Downloa
 import { toast } from 'sonner';
 import type { LeadImportRow } from './actions';
 import { importLeads } from './actions';
+import { ModalPortal } from '@/components/ui/modal-portal';
 
 function cleanHeader(key: string): string {
   return String(key).toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -217,208 +218,210 @@ export function ExcelUploadModal({ onClose, onSuccess }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
-      <div className="card w-full max-w-3xl max-h-[90vh] flex flex-col shadow-xl">
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-ink-100 px-6 py-4">
-          <div className="flex items-center gap-2">
-            <FileSpreadsheet className="h-5 w-5 text-brand-600" />
-            <h2 className="text-base font-semibold text-ink-900">Upload Leads from Excel</h2>
-          </div>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-ink-400 hover:bg-ink-100 hover:text-ink-700 cursor-pointer">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-6 py-5">
-          {/* -- STEP 1: Upload -- */}
-          {step === 'upload' && (
-            <div className="space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-sm text-ink-500">
-                  Upload an Excel file (<code>.xlsx</code> or <code>.xls</code>) with lead details.
-                </p>
-                <button
-                  type="button"
-                  onClick={downloadSampleTemplate}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-brand-200 bg-brand-50/70 px-3 py-1.5 text-xs font-semibold text-brand-800 hover:bg-brand-100 transition cursor-pointer"
-                >
-                  <Download className="h-3.5 w-3.5 text-brand-700" />
-                  Download Sample Template
-                </button>
-              </div>
-
-              <div className="rounded-xl border border-ink-100 bg-ink-50/60 p-3.5 text-xs text-ink-600 space-y-1.5">
-                <p className="font-semibold text-ink-800">Supported Column Headers:</p>
-                <p className="leading-relaxed">
-                  <span className="font-semibold text-brand-900">• Required:</span> Contact Name, Contact Number<br />
-                  <span className="font-semibold text-ink-700">• Optional:</span> Email, Package, Number of Days, Budget, From Date, To Date, Number of People
-                </p>
-                <p className="text-[11px] text-ink-400 italic">
-                  Note: Common variations like &quot;Name&quot;, &quot;Phone&quot;, &quot;Mobile&quot;, or &quot;Days&quot; are automatically recognized.
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2 rounded-lg bg-blue-50/80 border border-blue-200 px-3.5 py-2 text-xs text-blue-800">
-                <span className="font-semibold">Default Status:</span>
-                <span>All imported leads will automatically be assigned the status</span>
-                <span className="font-semibold text-blue-900 bg-blue-100 px-1.5 py-0.5 rounded border border-blue-200">
-                  Fresh Lead
-                </span>
-              </div>
-
-              <div
-                onDrop={handleDrop}
-                onDragOver={(e) => e.preventDefault()}
-                onClick={() => fileRef.current?.click()}
-                className="flex cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-ink-200 bg-ink-50 p-10 text-center transition hover:border-brand-400 hover:bg-brand-50/40"
-              >
-                <Upload className="h-8 w-8 text-ink-300" />
-                <div>
-                  <p className="text-sm font-medium text-ink-700">Click or drag & drop your Excel file here</p>
-                  <p className="mt-0.5 text-xs text-ink-400">.xlsx or .xls only</p>
-                </div>
-                <input
-                  ref={fileRef}
-                  type="file"
-                  accept=".xlsx,.xls"
-                  className="sr-only"
-                  onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
-                />
-              </div>
-
-              {parseError && (
-                <div className="flex items-start gap-2.5 rounded-xl border border-red-200 bg-red-50 p-4 text-xs text-red-800">
-                  <AlertCircle className="h-4 w-4 shrink-0 text-red-600 mt-0.5" />
-                  <div className="space-y-1">
-                    <p className="font-semibold">Could not proceed with upload</p>
-                    <p className="leading-relaxed">{parseError}</p>
-                  </div>
-                </div>
-              )}
+    <ModalPortal>
+      <div className="fixed inset-0 bg-ink-950/50 z-50 flex items-center justify-center p-4">
+        <div className="card w-full max-w-3xl max-h-[90vh] flex flex-col shadow-xl">
+          {/* Header */}
+          <div className="flex items-center justify-between border-b border-ink-100 px-6 py-4">
+            <div className="flex items-center gap-2">
+              <FileSpreadsheet className="h-5 w-5 text-brand-600" />
+              <h2 className="text-base font-semibold text-ink-900">Upload Leads from Excel</h2>
             </div>
-          )}
-
-          {/* -- STEP 2: Preview -- */}
-          {step === 'preview' && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <p className="text-sm text-ink-500">
-                  Found <span className="font-semibold text-ink-800">{preview.length}</span> records in{' '}
-                  <span className="font-medium">{fileName}</span>. Review before importing.
-                </p>
-                <button onClick={() => setStep('upload')} className="btn-outline text-xs px-3 py-1.5 cursor-pointer">
-                  Change file
-                </button>
-              </div>
-              <div className="overflow-x-auto rounded-lg border border-ink-100">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-b border-ink-100 bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-400">
-                      {['Contact Name','Contact Number','Email','Package','Days','Budget','From','To','People','Status'].map((h) => (
-                        <th key={h} className="px-3 py-2 whitespace-nowrap">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-ink-50">
-                    {preview.slice(0, 50).map((row, i) => (
-                      <tr key={i} className="hover:bg-ink-50/50">
-                        <td className="px-3 py-2 font-medium text-ink-800">{row.contact_name || <span className="text-red-500">-</span>}</td>
-                        <td className="px-3 py-2 text-ink-600">{row.contact_number || <span className="text-red-500">-</span>}</td>
-                        <td className="px-3 py-2 text-ink-500">{row.email || '-'}</td>
-                        <td className="px-3 py-2 text-ink-500">{row.package || '-'}</td>
-                        <td className="px-3 py-2 text-ink-500">{row.number_of_days ?? '-'}</td>
-                        <td className="px-3 py-2 text-ink-500">{row.budget ? ('₹' + Number(row.budget).toLocaleString('en-IN')) : '-'}</td>
-                        <td className="px-3 py-2 text-ink-500">{row.from_date || '-'}</td>
-                        <td className="px-3 py-2 text-ink-500">{row.to_date || '-'}</td>
-                        <td className="px-3 py-2 text-ink-500">{row.number_of_people ?? '-'}</td>
-                        <td className="px-3 py-2">
-                          <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700 border border-blue-200">
-                            Fresh Lead
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {preview.length > 50 && (
-                  <p className="px-3 py-2 text-xs text-ink-400 border-t border-ink-100">
-                    Showing first 50 of {preview.length} rows. All rows will be imported.
+            <button onClick={onClose} className="rounded-lg p-1.5 text-ink-400 hover:bg-ink-100 hover:text-ink-700 cursor-pointer">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+  
+          <div className="flex-1 overflow-y-auto px-6 py-5">
+            {/* -- STEP 1: Upload -- */}
+            {step === 'upload' && (
+              <div className="space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm text-ink-500">
+                    Upload an Excel file (<code>.xlsx</code> or <code>.xls</code>) with lead details.
                   </p>
+                  <button
+                    type="button"
+                    onClick={downloadSampleTemplate}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-brand-200 bg-brand-50/70 px-3 py-1.5 text-xs font-semibold text-brand-800 hover:bg-brand-100 transition cursor-pointer"
+                  >
+                    <Download className="h-3.5 w-3.5 text-brand-700" />
+                    Download Sample Template
+                  </button>
+                </div>
+  
+                <div className="rounded-xl border border-ink-100 bg-ink-50/60 p-3.5 text-xs text-ink-600 space-y-1.5">
+                  <p className="font-semibold text-ink-800">Supported Column Headers:</p>
+                  <p className="leading-relaxed">
+                    <span className="font-semibold text-brand-900">• Required:</span> Contact Name, Contact Number<br />
+                    <span className="font-semibold text-ink-700">• Optional:</span> Email, Package, Number of Days, Budget, From Date, To Date, Number of People
+                  </p>
+                  <p className="text-[11px] text-ink-400 italic">
+                    Note: Common variations like &quot;Name&quot;, &quot;Phone&quot;, &quot;Mobile&quot;, or &quot;Days&quot; are automatically recognized.
+                  </p>
+                </div>
+  
+                <div className="flex items-center gap-2 rounded-lg bg-blue-50/80 border border-blue-200 px-3.5 py-2 text-xs text-blue-800">
+                  <span className="font-semibold">Default Status:</span>
+                  <span>All imported leads will automatically be assigned the status</span>
+                  <span className="font-semibold text-blue-900 bg-blue-100 px-1.5 py-0.5 rounded border border-blue-200">
+                    Fresh Lead
+                  </span>
+                </div>
+  
+                <div
+                  onDrop={handleDrop}
+                  onDragOver={(e) => e.preventDefault()}
+                  onClick={() => fileRef.current?.click()}
+                  className="flex cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-ink-200 bg-ink-50 p-10 text-center transition hover:border-brand-400 hover:bg-brand-50/40"
+                >
+                  <Upload className="h-8 w-8 text-ink-300" />
+                  <div>
+                    <p className="text-sm font-medium text-ink-700">Click or drag & drop your Excel file here</p>
+                    <p className="mt-0.5 text-xs text-ink-400">.xlsx or .xls only</p>
+                  </div>
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    accept=".xlsx,.xls"
+                    className="sr-only"
+                    onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
+                  />
+                </div>
+  
+                {parseError && (
+                  <div className="flex items-start gap-2.5 rounded-xl border border-red-200 bg-red-50 p-4 text-xs text-red-800">
+                    <AlertCircle className="h-4 w-4 shrink-0 text-red-600 mt-0.5" />
+                    <div className="space-y-1">
+                      <p className="font-semibold">Could not proceed with upload</p>
+                      <p className="leading-relaxed">{parseError}</p>
+                    </div>
+                  </div>
                 )}
               </div>
-            </div>
-          )}
-
-          {/* -- STEP 3: Result -- */}
-          {step === 'result' && result && (
-            <div className="space-y-4">
-              {result.error ? (
-                <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
-                  <AlertCircle className="h-5 w-5 shrink-0 text-red-600 mt-0.5" />
-                  <div className="space-y-1">
-                    <p className="font-semibold">Import Unsuccessful</p>
-                    <p className="text-xs leading-relaxed text-red-700">{result.error}</p>
-                  </div>
+            )}
+  
+            {/* -- STEP 2: Preview -- */}
+            {step === 'preview' && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-ink-500">
+                    Found <span className="font-semibold text-ink-800">{preview.length}</span> records in{' '}
+                    <span className="font-medium">{fileName}</span>. Review before importing.
+                  </p>
+                  <button onClick={() => setStep('upload')} className="btn-outline text-xs px-3 py-1.5 cursor-pointer">
+                    Change file
+                  </button>
                 </div>
-              ) : (
-                <div className="flex items-center gap-3 rounded-xl border border-green-200 bg-green-50 p-4 text-sm text-green-900">
-                  <CheckCircle2 className="h-5 w-5 shrink-0 text-green-600" />
-                  <div>
-                    <p className="font-semibold">Import complete!</p>
-                    <p className="text-xs text-green-800 mt-0.5">
-                      {result.imported} lead{result.imported !== 1 ? 's' : ''} successfully imported
-                      {result.duplicates ? `, ${result.duplicates} duplicate${result.duplicates !== 1 ? 's' : ''} skipped` : ''}.
-                    </p>
-                  </div>
-                </div>
-              )}
-              {result.errors && result.errors.length > 0 && (
-                <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-xs font-bold uppercase tracking-wide text-amber-900">
-                      Row Validation Notices ({result.errors.length})
-                    </p>
-                    <span className="text-[11px] text-amber-700">Please review row numbers below</span>
-                  </div>
-                  <ul className="space-y-1.5 text-xs text-amber-950 max-h-48 overflow-y-auto pr-1">
-                    {result.errors.slice(0, 50).map((e, i) => (
-                      <li key={i} className="flex items-start gap-1.5">
-                        <span className="text-amber-500 mt-0.5">•</span>
-                        <span>{e}</span>
-                      </li>
-                    ))}
-                  </ul>
-                  {result.errors.length > 50 && (
-                    <p className="mt-2 text-[11px] text-amber-800 border-t border-amber-200/80 pt-1.5">
-                      Showing first 50 notices. All {result.errors.length} skipped rows should be verified.
+                <div className="overflow-x-auto rounded-lg border border-ink-100">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-ink-100 bg-ink-50 text-left text-xs uppercase tracking-wide text-ink-400">
+                        {['Contact Name','Contact Number','Email','Package','Days','Budget','From','To','People','Status'].map((h) => (
+                          <th key={h} className="px-3 py-2 whitespace-nowrap">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-ink-50">
+                      {preview.slice(0, 50).map((row, i) => (
+                        <tr key={i} className="hover:bg-ink-50/50">
+                          <td className="px-3 py-2 font-medium text-ink-800">{row.contact_name || <span className="text-red-500">-</span>}</td>
+                          <td className="px-3 py-2 text-ink-600">{row.contact_number || <span className="text-red-500">-</span>}</td>
+                          <td className="px-3 py-2 text-ink-500">{row.email || '-'}</td>
+                          <td className="px-3 py-2 text-ink-500">{row.package || '-'}</td>
+                          <td className="px-3 py-2 text-ink-500">{row.number_of_days ?? '-'}</td>
+                          <td className="px-3 py-2 text-ink-500">{row.budget ? ('₹' + Number(row.budget).toLocaleString('en-IN')) : '-'}</td>
+                          <td className="px-3 py-2 text-ink-500">{row.from_date || '-'}</td>
+                          <td className="px-3 py-2 text-ink-500">{row.to_date || '-'}</td>
+                          <td className="px-3 py-2 text-ink-500">{row.number_of_people ?? '-'}</td>
+                          <td className="px-3 py-2">
+                            <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700 border border-blue-200">
+                              Fresh Lead
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {preview.length > 50 && (
+                    <p className="px-3 py-2 text-xs text-ink-400 border-t border-ink-100">
+                      Showing first 50 of {preview.length} rows. All rows will be imported.
                     </p>
                   )}
                 </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-end gap-3 border-t border-ink-100 px-6 py-4">
-          {step === 'upload' && (
-            <button onClick={onClose} className="btn-outline cursor-pointer">Cancel</button>
-          )}
-          {step === 'preview' && (
-            <>
+              </div>
+            )}
+  
+            {/* -- STEP 3: Result -- */}
+            {step === 'result' && result && (
+              <div className="space-y-4">
+                {result.error ? (
+                  <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+                    <AlertCircle className="h-5 w-5 shrink-0 text-red-600 mt-0.5" />
+                    <div className="space-y-1">
+                      <p className="font-semibold">Import Unsuccessful</p>
+                      <p className="text-xs leading-relaxed text-red-700">{result.error}</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-3 rounded-xl border border-green-200 bg-green-50 p-4 text-sm text-green-900">
+                    <CheckCircle2 className="h-5 w-5 shrink-0 text-green-600" />
+                    <div>
+                      <p className="font-semibold">Import complete!</p>
+                      <p className="text-xs text-green-800 mt-0.5">
+                        {result.imported} lead{result.imported !== 1 ? 's' : ''} successfully imported
+                        {result.duplicates ? `, ${result.duplicates} duplicate${result.duplicates !== 1 ? 's' : ''} skipped` : ''}.
+                      </p>
+                    </div>
+                  </div>
+                )}
+                {result.errors && result.errors.length > 0 && (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-xs font-bold uppercase tracking-wide text-amber-900">
+                        Row Validation Notices ({result.errors.length})
+                      </p>
+                      <span className="text-[11px] text-amber-700">Please review row numbers below</span>
+                    </div>
+                    <ul className="space-y-1.5 text-xs text-amber-950 max-h-48 overflow-y-auto pr-1">
+                      {result.errors.slice(0, 50).map((e, i) => (
+                        <li key={i} className="flex items-start gap-1.5">
+                          <span className="text-amber-500 mt-0.5">•</span>
+                          <span>{e}</span>
+                        </li>
+                      ))}
+                    </ul>
+                    {result.errors.length > 50 && (
+                      <p className="mt-2 text-[11px] text-amber-800 border-t border-amber-200/80 pt-1.5">
+                        Showing first 50 notices. All {result.errors.length} skipped rows should be verified.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+  
+          {/* Footer */}
+          <div className="flex items-center justify-end gap-3 border-t border-ink-100 px-6 py-4">
+            {step === 'upload' && (
               <button onClick={onClose} className="btn-outline cursor-pointer">Cancel</button>
-              <button onClick={handleImport} disabled={isPending} className="btn-primary flex items-center gap-2 cursor-pointer">
-                {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-                Import {preview.length} leads
-              </button>
-            </>
-          )}
-          {step === 'result' && (
-            <button onClick={onClose} className="btn-primary cursor-pointer">Done</button>
-          )}
+            )}
+            {step === 'preview' && (
+              <>
+                <button onClick={onClose} className="btn-outline cursor-pointer">Cancel</button>
+                <button onClick={handleImport} disabled={isPending} className="btn-primary flex items-center gap-2 cursor-pointer">
+                  {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                  Import {preview.length} leads
+                </button>
+              </>
+            )}
+            {step === 'result' && (
+              <button onClick={onClose} className="btn-primary cursor-pointer">Done</button>
+            )}
+          </div>
         </div>
       </div>
-    </div>
+    </ModalPortal>
   );
 }

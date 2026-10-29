@@ -1,12 +1,17 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { TextField, TextAreaField } from '@/components/ui/form-fields';
+import { HField, CountryInput } from '@/components/admin/horizontal-field';
 import { slugify } from '@/lib/validations/package';
 import type { DestinationFormValues } from '@/lib/validations/settings';
-import { createDestination, updateDestination } from './actions';
+import { createDestination, updateDestination, getFeaturedDestinations } from './actions';
+import {
+  FeaturedLimitDialog,
+  MAX_FEATURED_DESTINATIONS,
+  type FeaturedDestination,
+} from './featured-limit-dialog';
 import { uploadDestinationImage } from './upload-actions';
 
 export function DestinationForm({
@@ -25,6 +30,31 @@ export function DestinationForm({
     is_featured: false,
     ...initialValues,
   });
+
+  const [featured, setFeatured] = useState<FeaturedDestination[] | null>(null);
+  const [showFeaturedLimit, setShowFeaturedLimit] = useState(false);
+
+  useEffect(() => {
+    getFeaturedDestinations()
+      .then(setFeatured)
+      .catch(() => setFeatured([]));
+  }, []);
+
+  const otherFeatured = (featured ?? []).filter((d) => d.id !== destinationId);
+
+  async function handleFeaturedChange(checked: boolean) {
+    if (!checked) {
+      set('is_featured', false);
+      return;
+    }
+    const list = featured ?? (await getFeaturedDestinations().catch(() => []));
+    if (!featured) setFeatured(list);
+    if (list.filter((d) => d.id !== destinationId).length >= MAX_FEATURED_DESTINATIONS) {
+      setShowFeaturedLimit(true);
+      return;
+    }
+    set('is_featured', true);
+  }
 
   function set<K extends keyof DestinationFormValues>(key: K, value: DestinationFormValues[K]) {
     setValues((v) => ({ ...v, [key]: value }));
@@ -67,40 +97,49 @@ export function DestinationForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="card space-y-4 p-5">
-      <div className="grid gap-4 sm:grid-cols-2">
-        <TextField
-          label="Name"
+    <form onSubmit={handleSubmit} className="card space-y-3.5 p-5">
+      <HField label="Name" required htmlFor="dest-name" fieldClassName="sm:max-w-md">
+        <input
+          id="dest-name"
           required
+          className="input"
           value={values.name ?? ''}
           onChange={(e) => {
             set('name', e.target.value);
             if (!slugTouched) set('slug', slugify(e.target.value));
           }}
         />
-        <TextField label="Country" value={values.country ?? ''} onChange={(e) => set('country', e.target.value)} />
-      </div>
+      </HField>
 
-      <div>
-        <label className="label">Cover image</label>
-        {values.cover_image_url && (
-          <div className="mb-2 h-32 w-full max-w-xs overflow-hidden rounded-lg border border-ink-100">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={values.cover_image_url} alt="" className="h-full w-full object-cover" />
-          </div>
-        )}
-        <input
-          type="file"
-          accept="image/jpeg,image/png,image/webp"
-          onChange={handleCoverImageSelect}
-          disabled={isUploading}
-          className="block w-full text-sm text-ink-600 file:mr-3 file:rounded-full file:border-0 file:bg-brand-50 file:px-4 file:py-2 file:text-sm file:font-medium file:text-brand-700 hover:file:bg-brand-100"
+      <HField label="Country" htmlFor="dest-country" fieldClassName="sm:max-w-xs">
+        <CountryInput
+          id="dest-country"
+          value={values.country ?? ''}
+          onChange={(v) => set('country', v)}
         />
-        {isUploading && <p className="mt-1.5 text-xs text-brand-600">Uploading…</p>}
-      </div>
+      </HField>
 
-      <div>
-        {!showSlugField ? (
+      <HField label="Cover image">
+        <div className="flex flex-wrap items-center gap-3">
+          {values.cover_image_url && (
+            <div className="h-16 w-24 overflow-hidden rounded-lg border border-ink-100">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={values.cover_image_url} alt="" className="h-full w-full object-cover" />
+            </div>
+          )}
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            onChange={handleCoverImageSelect}
+            disabled={isUploading}
+            className="block text-sm text-ink-600 file:mr-3 file:rounded-full file:border-0 file:bg-brand-50 file:px-4 file:py-2 file:text-sm file:font-medium file:text-brand-700 hover:file:bg-brand-100"
+          />
+          {isUploading && <p className="text-xs text-brand-600">Uploading…</p>}
+        </div>
+      </HField>
+
+      {!showSlugField ? (
+        <div className="sm:pl-[8.75rem]">
           <button
             type="button"
             onClick={() => setShowSlugField(true)}
@@ -108,52 +147,86 @@ export function DestinationForm({
           >
             Customize page URL
           </button>
-        ) : (
-          <TextField
-            label="Slug (URL)"
+        </div>
+      ) : (
+        <HField
+          label="Slug (URL)"
+          required
+          htmlFor="dest-slug"
+          fieldClassName="sm:max-w-md"
+          hint="Used in the public URL, e.g. /destinations/munnar. Filled in automatically from the name — only change this if you specifically need a different URL."
+        >
+          <input
+            id="dest-slug"
             required
+            className="input"
             value={values.slug ?? ''}
             onChange={(e) => {
               setSlugTouched(true);
               set('slug', e.target.value);
             }}
-            hint="Used in the public URL, e.g. /destinations/munnar. Filled in automatically from the name — only change this if you specifically need a different URL."
           />
-        )}
-      </div>
+        </HField>
+      )}
 
-      <TextAreaField
-        label="Description"
-        rows={4}
-        value={values.description ?? ''}
-        onChange={(e) => set('description', e.target.value)}
-      />
-      <label className="flex items-center gap-2 text-sm text-ink-700">
-        <input
-          type="checkbox"
-          checked={values.is_featured ?? false}
-          onChange={(e) => set('is_featured', e.target.checked)}
-          className="rounded border-ink-300"
+      <HField label="Description" htmlFor="dest-description">
+        <textarea
+          id="dest-description"
+          rows={3}
+          className="input"
+          value={values.description ?? ''}
+          onChange={(e) => set('description', e.target.value)}
         />
-        Show in homepage &quot;Popular destinations&quot;
-      </label>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <TextField
-          label="Meta title"
+      </HField>
+
+      <HField label="Featured">
+        <label className="flex items-center gap-2 pt-2 text-sm text-ink-700">
+          <input
+            type="checkbox"
+            checked={values.is_featured ?? false}
+            onChange={(e) => handleFeaturedChange(e.target.checked)}
+            className="rounded border-ink-300"
+          />
+          Show in homepage &quot;Popular destinations&quot;
+          <span className="text-xs text-ink-400">(max {MAX_FEATURED_DESTINATIONS})</span>
+        </label>
+      </HField>
+
+      <HField label="Meta title" htmlFor="dest-meta-title" fieldClassName="sm:max-w-xl">
+        <input
+          id="dest-meta-title"
+          className="input"
           value={values.meta_title ?? ''}
           onChange={(e) => set('meta_title', e.target.value)}
         />
-        <TextField
-          label="Meta description"
+      </HField>
+
+      <HField label="Meta description" htmlFor="dest-meta-description">
+        <textarea
+          id="dest-meta-description"
+          rows={2}
+          className="input"
           value={values.meta_description ?? ''}
           onChange={(e) => set('meta_description', e.target.value)}
         />
-      </div>
+      </HField>
+
       <div className="flex justify-end">
         <button type="submit" disabled={isPending} className="btn-primary">
           {isPending ? 'Saving…' : destinationId ? 'Save changes' : 'Create destination'}
         </button>
       </div>
+
+      <FeaturedLimitDialog
+        open={showFeaturedLimit}
+        featured={otherFeatured}
+        onUnfeatured={(id) => {
+          setFeatured((list) => (list ?? []).filter((d) => d.id !== id));
+          set('is_featured', true);
+          setShowFeaturedLimit(false);
+        }}
+        onClose={() => setShowFeaturedLimit(false)}
+      />
     </form>
   );
 }

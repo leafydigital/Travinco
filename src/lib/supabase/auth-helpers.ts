@@ -87,14 +87,14 @@ export const getProfile = cache(async (): Promise<CurrentProfile | null> => {
 
 /**
  * Fetches the logged-in staff member's profile row (id, role, is_active, etc).
- * Redirects to /travinco_admin_login if unauthenticated or not an active staff member.
+ * Redirects to /app (staff sign-in) if unauthenticated or not an active staff member.
  * Customer sessions attempting to access staff routes are rejected.
  */
 export const requireProfile = cache(async (): Promise<CurrentProfile> => {
   const profile = await getProfile();
 
   if (!profile) {
-    redirect('/account/login');
+    redirect('/app');
   }
 
   return profile;
@@ -158,7 +158,7 @@ export async function assertRole(
   allowed: UserRole[]
 ) {
   if (!allowed.includes(profile.role)) {
-    redirect('/account/login?reason=forbidden');
+    redirect('/app?reason=forbidden');
   }
 }
 

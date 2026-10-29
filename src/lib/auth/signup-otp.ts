@@ -8,6 +8,22 @@ import {
   decryptTicket,
   maskEmail,
 } from '@/lib/auth/otp-crypto';
+import {
+  escapeLike,
+  validateEmailFormat,
+  validateUsernameFormat,
+} from '@/lib/auth/signup-rules';
+import { isValidPhoneNumber, parsePhoneNumberFromString } from 'libphonenumber-js/mobile';
+
+/** Escapes user-supplied text placed into email HTML (usernames may contain any non-space chars). */
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
 const SIGNUP_OTP_TTL_MINUTES = 10;
 const MAX_OTP_ATTEMPTS = 5;
@@ -30,80 +46,152 @@ export type InitiateSignupResult = {
 export type VerifySignupResult = {
   error?: string;
   success?: boolean;
+  /** True when the new customer was signed in automatically (session cookie set). */
+  signedIn?: boolean;
 };
 
 /**
- * Checks whether a username is already taken in customer_accounts or auth.users metadata.
+ * Checks whether a username is already taken (case-insensitive, matched literally).
+ * customer_accounts is the source of truth for customer usernames (kept in sync on
+ * signup), so the old full auth.users scan (listUsers) is no longer needed: it
+ * downloaded every user on each check and was the main cause of slow signups.
  */
 export async function isUsernameAlreadyTaken(username: string): Promise<boolean> {
-  const trimmed = username.trim().toLowerCase();
+  const trimmed = username.trim();
   if (!trimmed) return false;
 
   try {
     const serviceSupabase = createServiceClient();
-    const { data: accountData } = await serviceSupabase
+    const { data } = await serviceSupabase
       .from('customer_accounts')
       .select('id')
-      .ilike('username', trimmed)
-      .maybeSingle();
-
-    if (accountData) return true;
-
-    // Fallback check against auth users metadata
-    const { data: usersData } = await serviceSupabase.auth.admin.listUsers();
-    const match = usersData?.users?.some(
-      (u) => (u.user_metadata?.username as string)?.toLowerCase() === trimmed
-    );
-    if (match) return true;
+      .ilike('username', escapeLike(trimmed))
+      .limit(1);
+    return Boolean(data && data.length > 0);
   } catch (err) {
     console.warn('isUsernameAlreadyTaken check notice:', err);
+    return false;
   }
-
-  return false;
 }
 
 /**
- * Checks whether an email is already registered in customer_accounts, customers, or profiles.
+ * Checks whether an email already belongs to an ACCOUNT (customer account or staff profile).
+ * Rows in `customers` alone are NOT accounts: they are also created by website enquiries,
+ * so checking them blocked anyone who had ever enquired from signing up.
  */
 async function isEmailAlreadyTaken(email: string): Promise<boolean> {
   const trimmedEmail = email.trim().toLowerCase();
   try {
     const serviceSupabase = createServiceClient();
-    const [accountRes, customerRes, profileRes] = await Promise.all([
-      serviceSupabase
-        .from('customer_accounts')
-        .select('id')
-        .eq('email', trimmedEmail)
-        .maybeSingle(),
-      serviceSupabase
-        .from('customers')
-        .select('id')
-        .eq('email', trimmedEmail)
-        .maybeSingle(),
-      serviceSupabase
-        .from('profiles')
-        .select('id')
-        .eq('email', trimmedEmail)
-        .maybeSingle(),
+    const [accountRes, profileRes] = await Promise.all([
+      serviceSupabase.from('customer_accounts').select('id').ilike('email', escapeLike(trimmedEmail)).limit(1),
+      serviceSupabase.from('profiles').select('id').ilike('email', escapeLike(trimmedEmail)).limit(1),
     ]);
-
-    if (accountRes.data || customerRes.data || profileRes.data) {
-      return true;
-    }
+    return Boolean(accountRes.data?.length || profileRes.data?.length);
   } catch (checkErr) {
-    console.warn('isEmailAlreadyTaken service check warning:', checkErr);
-    try {
-      const customerSupabase = await createCustomerClient();
-      const { data: custData } = await customerSupabase
-        .from('customers')
-        .select('id')
-        .eq('email', trimmedEmail)
-        .maybeSingle();
-      if (custData) return true;
-    } catch {}
+    console.warn('isEmailAlreadyTaken check notice:', checkErr);
+    return false;
+  }
+}
+
+/** Formats a stored phone may be in (E.164, digits with/without +, national, 0-prefixed). */
+function phoneVariants(e164: string): string[] {
+  const parsed = parsePhoneNumberFromString(e164);
+  const variants = new Set<string>([e164, e164.replace(/^\+/, '')]);
+  if (parsed) {
+    variants.add(parsed.nationalNumber);
+    variants.add(`0${parsed.nationalNumber}`);
+    variants.add(`${parsed.countryCallingCode}${parsed.nationalNumber}`);
+  }
+  return Array.from(variants);
+}
+
+/**
+ * Checks whether a mobile number already belongs to an ACCOUNT: a staff profile, or a
+ * `customers` row whose email has a customer account (enquiry-only rows don't count).
+ */
+export async function isPhoneAlreadyTaken(e164Phone: string): Promise<boolean> {
+  if (!e164Phone) return false;
+  try {
+    const serviceSupabase = createServiceClient();
+    const variants = phoneVariants(e164Phone);
+    const [customersRes, profilesRes] = await Promise.all([
+      serviceSupabase.from('customers').select('email').in('phone', variants).limit(50),
+      serviceSupabase.from('profiles').select('id').in('phone', variants).limit(1),
+    ]);
+    if (profilesRes.data?.length) return true;
+
+    const emails = Array.from(
+      new Set(
+        (customersRes.data ?? [])
+          .map((c: { email: string | null }) => c.email?.toLowerCase())
+          .filter(Boolean)
+      )
+    ) as string[];
+    if (emails.length === 0) return false;
+
+    const { data: accounts } = await serviceSupabase
+      .from('customer_accounts')
+      .select('id')
+      .in('email', emails)
+      .limit(1);
+    return Boolean(accounts && accounts.length > 0);
+  } catch (err) {
+    console.warn('isPhoneAlreadyTaken check notice:', err);
+    return false;
+  }
+}
+
+export type SignupAvailability = {
+  username?: string | null;
+  email?: string | null;
+  phone?: string | null;
+};
+
+/**
+ * Live availability check for the signup form (called on field blur), so visitors
+ * learn "already exists" immediately instead of after submitting. Runs checks in parallel.
+ */
+export async function checkSignupAvailabilityFlow(input: {
+  username?: string;
+  email?: string;
+  phone?: string;
+}): Promise<SignupAvailability> {
+  const result: SignupAvailability = {};
+  const tasks: Promise<void>[] = [];
+
+  if (input.username !== undefined) {
+    const fmt = validateUsernameFormat(input.username);
+    if (fmt) result.username = fmt;
+    else
+      tasks.push(
+        isUsernameAlreadyTaken(input.username).then((taken) => {
+          result.username = taken ? 'Username is already taken' : null;
+        })
+      );
+  }
+  if (input.email !== undefined) {
+    const fmt = validateEmailFormat(input.email);
+    if (fmt) result.email = fmt;
+    else
+      tasks.push(
+        isEmailAlreadyTaken(input.email).then((taken) => {
+          result.email = taken ? 'An account with this email already exists' : null;
+        })
+      );
+  }
+  if (input.phone !== undefined) {
+    if (!input.phone || !isValidPhoneNumber(input.phone)) result.phone = 'Enter a valid mobile number';
+    else
+      tasks.push(
+        isPhoneAlreadyTaken(input.phone).then((taken) => {
+          result.phone = taken ? 'An account with this mobile number already exists' : null;
+        })
+      );
   }
 
-  return false;
+  await Promise.all(tasks);
+  return result;
 }
 
 /**
@@ -113,12 +201,15 @@ export async function initiateCustomerSignupFlow(params: {
   fullName: string;
   username: string;
   email: string;
+  phone: string;
   password: string;
   confirmPassword: string;
 }): Promise<InitiateSignupResult> {
   const fullName = params.fullName.trim();
-  const username = (params.username || '').trim().toLowerCase();
+  const username = (params.username || '').trim();
   const email = params.email.trim().toLowerCase();
+  const phoneParsed = parsePhoneNumberFromString((params.phone || '').trim());
+  const phone = phoneParsed?.number ?? '';
   const password = params.password.trim();
   const confirmPassword = params.confirmPassword.trim();
 
@@ -126,35 +217,18 @@ export async function initiateCustomerSignupFlow(params: {
     return { error: 'Please enter your full name.' };
   }
 
-  if (!username) {
-    return { error: 'Please choose a username.' };
+  const usernameFormatError = validateUsernameFormat(params.username || '');
+  if (usernameFormatError) {
+    return { error: `${usernameFormatError}.` };
   }
 
-  if (username.length < 3) {
-    return { error: 'Username must be at least 3 characters.' };
+  const emailFormatError = validateEmailFormat(email);
+  if (emailFormatError) {
+    return { error: `${emailFormatError}.` };
   }
 
-  if (username.length > 30) {
-    return { error: 'Username must be at most 30 characters.' };
-  }
-
-  if (!/^[a-zA-Z0-9_.-]+$/.test(username)) {
-    return { error: 'Username can only contain letters, numbers, dots, and underscores.' };
-  }
-
-  // Check username uniqueness
-  const usernameTaken = await isUsernameAlreadyTaken(username);
-  if (usernameTaken) {
-    return { error: 'Username is already taken' };
-  }
-
-  if (!email || !email.includes('@')) {
-    return { error: 'Please enter a valid email address.' };
-  }
-
-  const isAcceptedDomain = email.endsWith('@gmail.com') || email.endsWith('.in');
-  if (!isAcceptedDomain) {
-    return { error: 'Only @gmail.com and .in email addresses are accepted.' };
+  if (!phone || !isValidPhoneNumber(phone)) {
+    return { error: 'Enter a valid mobile number.' };
   }
 
   if (password.length < 7) {
@@ -181,11 +255,15 @@ export async function initiateCustomerSignupFlow(params: {
     return { error: 'Passwords do not match.' };
   }
 
-  // Duplicate email check
-  const alreadyTaken = await isEmailAlreadyTaken(email);
-  if (alreadyTaken) {
-    return { error: 'Email is already taken' };
-  }
+  // Duplicate checks (username, email, mobile) in parallel
+  const [usernameTaken, emailTaken, phoneTaken] = await Promise.all([
+    isUsernameAlreadyTaken(username),
+    isEmailAlreadyTaken(email),
+    isPhoneAlreadyTaken(phone),
+  ]);
+  if (usernameTaken) return { error: 'Username is already taken' };
+  if (emailTaken) return { error: 'An account with this email already exists' };
+  if (phoneTaken) return { error: 'An account with this mobile number already exists' };
 
   if (!isGmailConfigured()) {
     return {
@@ -214,24 +292,27 @@ export async function initiateCustomerSignupFlow(params: {
     createdAt: Date.now(),
   });
 
-  // Store in database with fallback
-  try {
-    const serviceSupabase = createServiceClient();
-    await serviceSupabase.from('enquiry_email_otps').insert({
-      email: `signup:${email}`,
-      code_hash: hashedCode,
-      expires_at: expiresAtIso,
-      attempts: 0,
-    });
-  } catch (dbErr: any) {
-    console.warn('Signup OTP database insert notice (memory store active):', dbErr?.message);
-  }
+  // Store in database (fallback store), in parallel with sending the email below
+  const otpInsert = (async () => {
+    try {
+      const serviceSupabase = createServiceClient();
+      await serviceSupabase.from('enquiry_email_otps').insert({
+        email: `signup:${email}`,
+        code_hash: hashedCode,
+        expires_at: expiresAtIso,
+        attempts: 0,
+      });
+    } catch (dbErr: any) {
+      console.warn('Signup OTP database insert notice (memory store active):', dbErr?.message);
+    }
+  })();
 
   // Encrypt the signup ticket (AES-256-GCM) with validated registration details including username
   const signupTicket = encryptTicket({
     fullName,
     username,
     email,
+    phone,
     password,
     codeHash: hashedCode,
     exp: expiresAtMs,
@@ -251,9 +332,9 @@ export async function initiateCustomerSignupFlow(params: {
             <p style="color: #a7f3d0; font-size: 13px; margin: 6px 0 0; text-transform: uppercase; letter-spacing: 1.5px;">Curated Holidays &amp; Travel Concierge</p>
           </div>
           <div style="padding: 32px 28px;">
-            <p style="font-size: 15px; color: #1e293b; margin: 0 0 16px; font-weight: 600;">Hi ${fullName},</p>
+            <p style="font-size: 15px; color: #1e293b; margin: 0 0 16px; font-weight: 600;">Hi ${escapeHtml(fullName)},</p>
             <p style="font-size: 14px; color: #475569; line-height: 1.6; margin: 0 0 24px;">
-              Thank you for creating your account with Travinco. Your chosen username is <strong>@${username}</strong>. Please enter the verification code below to verify your email and activate your account:
+              Thank you for creating your account with Travinco. Your chosen username is <strong>@${escapeHtml(username)}</strong>. Please enter the verification code below to verify your email and activate your account:
             </p>
             <div style="background-color: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 12px; padding: 20px; text-align: center; margin: 0 0 24px;">
               <span style="font-family: 'Courier New', Courier, monospace; font-size: 34px; font-weight: 800; letter-spacing: 8px; color: #065f46; display: inline-block;">
@@ -273,11 +354,14 @@ export async function initiateCustomerSignupFlow(params: {
     </html>
   `;
 
-  const emailResult = await sendGmail({
-    to: email,
-    subject: `${otpCode} is your Travinco sign-up verification code`,
-    html,
-  });
+  const [emailResult] = await Promise.all([
+    sendGmail({
+      to: email,
+      subject: `${otpCode} is your Travinco sign-up verification code`,
+      html,
+    }),
+    otpInsert,
+  ]);
 
   if (emailResult.error) {
     console.error('Failed to send verification code email:', emailResult.error);
@@ -302,6 +386,7 @@ export async function resendCustomerSignupOtpFlow(
     fullName: string;
     username: string;
     email: string;
+    phone?: string;
     password: string;
     codeHash: string;
     exp: number;
@@ -382,6 +467,7 @@ export async function verifyCustomerSignupOtpFlow(
     fullName: string;
     username: string;
     email: string;
+    phone?: string;
     password: string;
     codeHash: string;
     exp: number;
@@ -458,6 +544,7 @@ export async function verifyCustomerSignupOtpFlow(
     user_metadata: {
       full_name: payload.fullName,
       username: payload.username,
+      phone: payload.phone || null,
       role: 'customer',
       is_customer_signup: 'true',
     },
@@ -490,28 +577,49 @@ export async function verifyCustomerSignupOtpFlow(
       { onConflict: 'id' }
     );
 
-    const { data: existingCust } = await serviceSupabase
+    const { data: existingRows } = await serviceSupabase
       .from('customers')
-      .select('id')
+      .select('id, phone')
       .eq('email', trimmedEmail)
-      .maybeSingle();
+      .limit(1);
+    const existingCust = existingRows?.[0];
 
     if (!existingCust) {
       await serviceSupabase.from('customers').insert({
         full_name: payload.fullName,
         email: trimmedEmail,
-        phone: '',
+        phone: payload.phone || '',
         source: 'website',
         is_active: true,
         is_deleted: false,
       } as any);
+    } else if (payload.phone && !existingCust.phone) {
+      // Customer record from an earlier enquiry: store the verified mobile number
+      await serviceSupabase.from('customers').update({ phone: payload.phone }).eq('id', existingCust.id);
     }
   } catch (syncErr) {
     console.warn('Customer account sync notice:', syncErr);
   }
 
+  // 4b. Sign the new customer in straight away (sets the customer session cookie),
+  // so they land on My Bookings instead of having to log in again.
+  let signedIn = false;
+  try {
+    const customerSupabase = await createCustomerClient();
+    const { data: signInData, error: signInErr } = await customerSupabase.auth.signInWithPassword({
+      email: trimmedEmail,
+      password: payload.password,
+    });
+    signedIn = !signInErr && Boolean(signInData?.session);
+    if (signInErr) console.warn('Post-signup auto sign-in notice:', signInErr.message);
+  } catch (signInEx) {
+    console.warn('Post-signup auto sign-in notice:', signInEx);
+  }
+
   // 5. Send rich "Account Created" welcome confirmation email to user's inbox
   try {
+    const baseUrl = (process.env.NEXT_PUBLIC_SITE_URL || 'https://travinco.in').replace(/\/+$/, '');
+    const loginUrl = `${baseUrl}/account/login`;
     const welcomeHtml = `
       <!DOCTYPE html>
       <html>
@@ -520,32 +628,37 @@ export async function verifyCustomerSignupOtpFlow(
           <title>Welcome to Travinco</title>
         </head>
         <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; padding: 24px; margin: 0;">
-          <div style="max-width: 520px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+          <div style="max-width: 560px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; overflow: hidden;">
             <div style="background-color: #022c22; padding: 28px 24px; text-align: center;">
               <h1 style="color: #ffffff; font-size: 24px; margin: 0; font-weight: 700; letter-spacing: 1px;">TRAVINCO</h1>
-              <p style="color: #a7f3d0; font-size: 13px; margin: 6px 0 0; text-transform: uppercase; letter-spacing: 1.5px;">Welcome to Your Travel Portal</p>
+              <p style="color: #a7f3d0; font-size: 13px; margin: 6px 0 0; text-transform: uppercase; letter-spacing: 1.5px;">Travel Solutions</p>
             </div>
-            <div style="padding: 32px 28px;">
-              <p style="font-size: 15px; color: #1e293b; margin: 0 0 16px; font-weight: 600;">Welcome, ${payload.fullName}!</p>
-              <p style="font-size: 14px; color: #475569; line-height: 1.6; margin: 0 0 16px;">
-                Your Travinco customer account has been created successfully. Your username is <strong>@${payload.username}</strong>.
+            <div style="padding: 32px 28px; color: #334155; font-size: 14px; line-height: 1.7;">
+              <p style="margin: 0 0 16px; font-size: 15px; color: #0f172a; font-weight: 600;">Dear ${escapeHtml(payload.fullName)},</p>
+              <p style="margin: 0 0 16px;">
+                You've successfully registered on <strong>Travinco - Travel Solutions</strong>.
               </p>
-              <p style="font-size: 14px; color: #475569; line-height: 1.6; margin: 0 0 24px;">
-                You can now sign in at any time with either your <strong>email (${trimmedEmail})</strong> or your <strong>username (@${payload.username})</strong> to access your tailored holiday proposals, track your bookings, and view official invoices.
+              <p style="margin: 0 0 8px;">With your account you can:</p>
+              <ul style="margin: 0 0 20px; padding-left: 20px;">
+                <li>Explore our holiday packages</li>
+                <li>See the enquiries you've made</li>
+                <li>View and download your invoices</li>
+              </ul>
+              <p style="margin: 0 0 12px;">You can access your account using the link below:</p>
+              <p style="margin: 0 0 20px; text-align: center;">
+                <a href="${loginUrl}" style="display: inline-block; background-color: #047857; color: #ffffff; text-decoration: none; font-weight: 600; padding: 12px 28px; border-radius: 10px;">Sign in to your account</a>
               </p>
-              <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 18px 20px; margin: 0 0 24px;">
-                <p style="font-size: 13px; color: #15803d; margin: 0; font-weight: 600;">
-                  ✔ Direct Quotations &amp; Tailored Packages<br>
-                  ✔ Trip Booking History &amp; Official Invoices<br>
-                  ✔ 24/7 Dedicated Destination Specialists
-                </p>
+              <p style="margin: 0 0 20px; font-size: 13px; color: #64748b; word-break: break-all;">
+                ${loginUrl}
+              </p>
+              <div style="background-color: #f1f5f9; border-radius: 12px; padding: 16px 18px; margin: 0 0 24px;">
+                <p style="margin: 0 0 4px; font-size: 13px; color: #475569;">Sign in with your registered <strong>username</strong> or <strong>email</strong> and your password:</p>
+                <p style="margin: 0; font-size: 13px; color: #0f172a;">Username: <strong>${escapeHtml(payload.username)}</strong><br>Email: <strong>${trimmedEmail}</strong></p>
               </div>
-              <p style="font-size: 13px; color: #64748b; line-height: 1.5; margin: 0;">
-                If you have any questions or are ready to plan your next journey, our destination specialists are here to help.
-              </p>
+              <p style="margin: 0;">Thanks,<br><strong>Team Travinco</strong></p>
             </div>
             <div style="background-color: #f8fafc; border-top: 1px solid #f1f5f9; padding: 16px 24px; text-align: center;">
-              <p style="font-size: 11px; color: #94a3b8; margin: 0;">&copy; ${new Date().getFullYear()} Travinco Tours. All rights reserved.</p>
+              <p style="font-size: 11px; color: #94a3b8; margin: 0;">&copy; ${new Date().getFullYear()} Travinco - Travel Solutions. All rights reserved.</p>
             </div>
           </div>
         </body>
@@ -554,12 +667,12 @@ export async function verifyCustomerSignupOtpFlow(
 
     await sendGmail({
       to: trimmedEmail,
-      subject: `Welcome to Travinco, ${payload.fullName}! Your account is ready`,
+      subject: `Welcome to Travinco - Travel Solutions, ${payload.fullName}!`,
       html: welcomeHtml,
     });
   } catch (emailErr) {
     console.warn('Welcome email delivery notice:', emailErr);
   }
 
-  return { success: true };
+  return { success: true, signedIn };
 }

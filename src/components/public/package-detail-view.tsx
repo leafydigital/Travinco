@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import {
   Clock,
@@ -24,6 +24,7 @@ import {
 import { formatCurrency } from '@/lib/utils/format';
 import { ImageLightbox } from '@/components/public/image-lightbox';
 import { ExpandableText } from '@/components/public/expandable-text';
+import { EnquiryModal } from '@/components/public/enquiry-modal';
 
 export interface PackageDetailViewProps {
   pkg: {
@@ -63,6 +64,8 @@ export interface PackageDetailViewProps {
   } | null;
   termsAndConditions?: string | null;
   isDashboardPreview?: boolean;
+  /** Published packages for the enquiry form's package dropdown (modal). */
+  enquiryPackages?: { id: string; title: string }[];
 }
 
 type TabKey = 'overview' | 'highlights' | 'itinerary' | 'inclusions_exclusions' | 'faqs';
@@ -79,8 +82,31 @@ export function PackageDetailView({
   activeOffer,
   termsAndConditions,
   isDashboardPreview = false,
+  enquiryPackages,
 }: PackageDetailViewProps) {
   const [activeTab, setActiveTab] = useState<TabKey>('overview');
+  const [enquiryOpen, setEnquiryOpen] = useState(false);
+
+  // Switching tabs after scrolling down: bring the new tab's content back to the
+  // top (just below the sticky tab bar) instead of staying at the old scroll position.
+  const tabBarRef = useRef<HTMLDivElement>(null);
+  const tabContentRef = useRef<HTMLDivElement>(null);
+  function selectTab(tab: TabKey) {
+    setActiveTab(tab);
+    requestAnimationFrame(() => {
+      const content = tabContentRef.current;
+      if (!content) return;
+      const stickyBottom = tabBarRef.current?.getBoundingClientRect().bottom ?? 0;
+      const contentTop = content.getBoundingClientRect().top;
+      // Only scroll when the top of the content is hidden above the sticky bar
+      if (contentTop < stickyBottom) {
+        window.scrollTo({
+          top: window.scrollY + contentTop - stickyBottom - 12,
+          behavior: 'smooth',
+        });
+      }
+    });
+  }
   const [termsModalOpen, setTermsModalOpen] = useState(false);
 
   // Accordion state for Day-by-day Itinerary (collision mode: only one open at a time)
@@ -157,7 +183,7 @@ export function PackageDetailView({
   return (
     <div>
       {/* Sticky Tab Navigation Bar */}
-      <div className="sticky top-20 z-30 w-full border-b border-ink-100 bg-white shadow-xs">
+      <div ref={tabBarRef} className="sticky top-20 z-30 w-full border-b border-ink-100 bg-white shadow-xs">
         <div className="container-page overflow-hidden">
           <div
             className="flex w-full items-center gap-1.5 sm:gap-2 overflow-x-auto py-2.5 no-scrollbar [&::-webkit-scrollbar]:hidden scroll-smooth overscroll-x-contain"
@@ -169,7 +195,7 @@ export function PackageDetailView({
                 <button
                   key={tab.id}
                   type="button"
-                  onClick={() => setActiveTab(tab.id)}
+                  onClick={() => selectTab(tab.id)}
                   className={`group relative flex shrink-0 items-center gap-2 rounded-full px-3.5 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-medium transition-all duration-200 ${
                     isActive
                       ? 'bg-brand-600 text-white shadow-sm'
@@ -208,7 +234,7 @@ export function PackageDetailView({
       {/* Main Content Layout with 2 Columns */}
       <div className="container-page grid gap-6 sm:gap-8 lg:gap-10 py-6 sm:py-8 lg:py-10 lg:grid-cols-3">
         {/* Left Column: Active Tab Panels */}
-        <div className="space-y-6 sm:space-y-8 lg:space-y-10 lg:col-span-2 min-w-0">
+        <div ref={tabContentRef} className="space-y-6 sm:space-y-8 lg:space-y-10 lg:col-span-2 min-w-0">
           {/* TAB 1: OVERVIEW */}
           {activeTab === 'overview' && (
             <div className="space-y-8 animate-in fade-in duration-200">
@@ -268,7 +294,7 @@ export function PackageDetailView({
                     </h2>
                     <button
                       type="button"
-                      onClick={() => setActiveTab('highlights')}
+                      onClick={() => selectTab('highlights')}
                       className="text-xs font-semibold text-brand-600 hover:text-brand-700 hover:underline"
                     >
                       View all ({pkg.highlights.length}) &rarr;
@@ -699,13 +725,14 @@ export function PackageDetailView({
 
             <div className="mt-5 border-t border-ink-100 pt-5">
               {!isDashboardPreview ? (
-                <Link
-                  href={`/booking?packageId=${encodeURIComponent(pkg.id)}`}
+                <button
+                  type="button"
+                  onClick={() => setEnquiryOpen(true)}
                   className="btn-primary flex w-full items-center justify-center gap-2 py-3.5 text-center text-sm font-semibold shadow-md transition-all hover:shadow-lg"
                 >
                   <span>Send Enquiry</span>
                   <ArrowRight className="h-4 w-4" />
-                </Link>
+                </button>
               ) : (
                 <button
                   type="button"
@@ -801,6 +828,17 @@ export function PackageDetailView({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Send Enquiry: same form as Book With Us, in a modal on this page */}
+      {!isDashboardPreview && (
+        <EnquiryModal
+          open={enquiryOpen}
+          onClose={() => setEnquiryOpen(false)}
+          packageId={pkg.id}
+          packageTitle={pkg.title}
+          packages={enquiryPackages}
+        />
       )}
     </div>
   );

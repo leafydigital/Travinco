@@ -28,7 +28,8 @@ export const expenseSchema = z.object({
   booking_id: z.string().uuid().optional().nullable().or(z.literal('')),
   package_id: z.string().uuid().optional().nullable().or(z.literal('')),
   amount: z.coerce.number().positive('Amount must be greater than 0'),
-  payment_method: z.enum(paymentMethods),
+  // A standard method or a custom label (see encodePaymentMethod).
+  payment_method: z.string().trim().min(1, 'Payment method is required').max(50),
   reference_number: z.string().max(100).optional().nullable(),
   notes: z.string().optional().nullable(),
 });

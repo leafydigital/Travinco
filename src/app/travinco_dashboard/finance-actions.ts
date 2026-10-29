@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server';
 import { requireProfile, assertRole } from '@/lib/supabase/auth-helpers';
 import { incomeSchema, expenseSchema } from '@/lib/validations/finance';
 import { revalidatePath } from 'next/cache';
+import { encodePaymentMethod } from '@/lib/payment-methods';
 
 const FINANCE_ROLES = ['accounts_staff', 'admin', 'super_admin'] as const;
 
@@ -109,6 +110,7 @@ export async function createExpense(raw: unknown) {
 
   const { error } = await supabase.from('expenses').insert({
     ...parsed.data,
+    ...encodePaymentMethod(parsed.data.payment_method, parsed.data.notes),
     category_id: categoryId,
     booking_id: parsed.data.booking_id || null,
     package_id: parsed.data.package_id || null,
@@ -140,6 +142,14 @@ export async function updateExpense(id: string, raw: unknown) {
     return { error: 'Could not resolve expense category.' };
   }
 
+  // The edit form doesn't send notes — keep the stored ones (minus any old payment label).
+  let existingNotes = parsed.data.notes;
+  if (existingNotes === undefined) {
+    const { data: current } = await supabase.from('expenses').select('notes').eq('id', id).maybeSingle();
+    existingNotes = current?.notes ?? null;
+  }
+  const payment = encodePaymentMethod(parsed.data.payment_method, existingNotes);
+
   const { error } = await supabase
     .from('expenses')
     .update({
@@ -150,9 +160,9 @@ export async function updateExpense(id: string, raw: unknown) {
       booking_id: parsed.data.booking_id || null,
       package_id: parsed.data.package_id || null,
       amount: parsed.data.amount,
-      payment_method: parsed.data.payment_method,
+      payment_method: payment.payment_method,
       reference_number: parsed.data.reference_number || null,
-      notes: parsed.data.notes || null,
+      notes: payment.notes,
     })
     .eq('id', id);
 
@@ -198,7 +208,7 @@ export async function deleteExpense(id: string) {
     await supabase.from('website_settings').upsert({
       key: `deleted_expense_${id}`,
       value: { is_deleted: true, deleted_at: new Date().toISOString() },
-    });
+    }, { onConflict: 'key' });
   } catch (err) {
     console.warn('Failed to record deleted_expense marker:', err);
   }
@@ -206,27 +216,4 @@ export async function deleteExpense(id: string) {
   revalidatePath('/travinco_dashboard/expenses');
   revalidatePath('/travinco_dashboard');
   return {};
-}
-
-export async function createExpenseCategory(name: string) {
-  const profile = await requireProfile();
-  assertRole(profile, [...FINANCE_ROLES]);
-
-  if (!name.trim()) return { error: 'Category name cannot be empty.' };
-
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from('expense_categories')
-    .insert({ name: name.trim() })
-    .select('id, name')
-    .single();
-
-  if (error) {
-    if (error.code === '23505') return { error: 'A category with this name already exists.' };
-    return { error: 'Could not create category.' };
-  }
-
-  revalidatePath('/travinco_dashboard/expenses');
-  revalidatePath('/travinco_dashboard/settings');
-  return { category: data };
 }

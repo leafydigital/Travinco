@@ -77,14 +77,6 @@ export const adminNav: NavSection[] = [
         pageKey: 'plugins',
         roles: ['admin', 'super_admin'],
       },
-      {
-        label: 'Settings',
-        href: '/travinco_dashboard/settings',
-        icon: 'Settings',
-        pageKey: 'settings',
-        module: 'settings',
-        roles: ['admin', 'super_admin'],
-      },
     ],
   },
   {

@@ -10,6 +10,9 @@ import {
   updateEnquiryFollowupDate,
 } from '../actions';
 import type { EnquiryStatus, EnquiryPriority } from '@/types/database';
+import { AdminDateField } from '@/components/admin/package-fields';
+import { formatIsoAsDMY } from '@/components/public/date-picker-dmy';
+import { addYearsIso, todayIso } from '@/lib/utils/iso-date';
 
 const statusDisplayList: { value: EnquiryStatus; label: string }[] = [
   { value: 'new', label: 'Pending' },
@@ -125,19 +128,23 @@ export function EnquiryControls({
 
   function handleFollowupDateChange(newDate: string) {
     if (!canEdit) return;
-    const todayStr = new Date().toISOString().slice(0, 10);
     if (newDate && newDate < todayStr) {
       toast.error('Next follow-up date cannot be in the past.');
+      return;
+    }
+    if (newDate && newDate > maxFollowupDate) {
+      toast.error('Next follow-up date must be within 1 year from today.');
       return;
     }
     setFollowupDate(newDate);
     handle(
       updateEnquiryFollowupDate(enquiryId, newDate || null),
-      newDate ? `Follow-up set to ${newDate}` : 'Follow-up date cleared'
+      newDate ? `Follow-up set to ${formatIsoAsDMY(newDate)}` : 'Follow-up date cleared'
     );
   }
 
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = todayIso();
+  const maxFollowupDate = addYearsIso(todayStr, 1);
 
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -177,14 +184,18 @@ export function EnquiryControls({
       </div>
       <div>
         <label className="label">Next Follow-up Date</label>
-        <input
-          type="date"
-          value={followupDate}
-          min={todayStr}
-          disabled={isPending || !canEdit}
-          onChange={(e) => handleFollowupDateChange(e.target.value)}
-          className="input"
-        />
+        {isPending || !canEdit ? (
+          <div className="input flex items-center bg-ink-50 text-ink-500">
+            {followupDate ? formatIsoAsDMY(followupDate) : 'DD/MM/YYYY'}
+          </div>
+        ) : (
+          <AdminDateField
+            value={followupDate}
+            onChange={handleFollowupDateChange}
+            min={todayStr}
+            max={maxFollowupDate}
+          />
+        )}
       </div>
       <div>
         <label className="label">Assigned to</label>

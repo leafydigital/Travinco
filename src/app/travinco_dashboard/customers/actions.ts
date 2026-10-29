@@ -59,27 +59,24 @@ export async function toggleCustomerStatus(id: string, active: boolean) {
 
   const supabase = await createClient();
 
-  // 1. Direct update to customers table
-  let { error } = await supabase.from('customers').update({ is_active: active } as any).eq('id', id);
-  if (error && error.message?.includes('is_active')) {
-    console.warn('Column is_active missing from customers table. Using website_settings marker.');
-  } else if (error) {
+  // Column update and website_settings marker (fallback for DBs without is_active) run in parallel.
+  const [{ error }] = await Promise.all([
+    supabase.from('customers').update({ is_active: active } as any).eq('id', id),
+    supabase
+      .from('website_settings')
+      .upsert({
+        key: `customer_status_${id}`,
+        value: { is_active: active, updated_at: new Date().toISOString() },
+      }, { onConflict: 'key' })
+      .then(({ error: markerError }) => {
+        if (markerError) console.warn('Failed to record customer_status marker:', markerError);
+      }),
+  ]);
+  if (error && !error.message?.includes('is_active')) {
     return { error: 'Could not change customer status: ' + error.message };
   }
 
-  // 3. Fallback tracking in website_settings
-  try {
-    await supabase.from('website_settings').upsert({
-      key: `customer_status_${id}`,
-      value: { is_active: active, updated_at: new Date().toISOString() },
-    });
-  } catch (err) {
-    console.warn('Failed to record customer_status marker:', err);
-  }
-
   revalidatePath('/travinco_dashboard/customers');
-  revalidatePath('/admin/customers');
-  revalidatePath(`/admin/customers/${id}`);
   return { success: true };
 }
 
@@ -112,7 +109,7 @@ export async function deleteCustomer(id: string) {
     await supabase.from('website_settings').upsert({
       key: `deleted_customer_${id}`,
       value: { is_deleted: true, deleted_at: new Date().toISOString() },
-    });
+    }, { onConflict: 'key' });
   } catch (err) {
     console.warn('Failed to record deleted_customer marker:', err);
   }
@@ -244,9 +241,14 @@ export async function getCustomersTableList({
   );
 
   const items: CustomerTableItem[] = visibleCustomers.map((c: any) => {
-    const isActive = statusOverrides.has(c.id)
-      ? statusOverrides.get(c.id)!
-      : c.is_active !== false && c.is_active !== 'false' && (c as any).status !== 'inactive';
+    // The is_active column is authoritative; the website_settings marker is only a
+    // fallback for databases without that column.
+    const isActive =
+      typeof c.is_active === 'boolean'
+        ? c.is_active
+        : statusOverrides.has(c.id)
+          ? statusOverrides.get(c.id)!
+          : c.is_active !== 'false' && (c as any).status !== 'inactive';
 
     return {
       id: c.id,
@@ -298,7 +300,11 @@ export async function getCustomerById(id: string): Promise<{ data?: FullCustomer
     .maybeSingle();
 
   let isActive = data.is_active !== false && data.is_active !== 'false';
-  if (statusSetting?.value && typeof statusSetting.value.is_active === 'boolean') {
+  if (
+    typeof data.is_active !== 'boolean' &&
+    statusSetting?.value &&
+    typeof statusSetting.value.is_active === 'boolean'
+  ) {
     isActive = statusSetting.value.is_active;
   }
 

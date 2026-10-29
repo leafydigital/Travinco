@@ -23,7 +23,7 @@ export const enquiryFormSchema = z.object({
         return digits.length >= 7 && !/^0+$/.test(digits);
       },
       {
-        message: 'Entered valid mobile number',
+        message: 'Enter a valid mobile number',
       }
     ),
   whatsapp_number: z.string().max(30).optional().or(z.literal('')),
@@ -50,7 +50,22 @@ export const enquiryFormSchema = z.object({
         return selected >= minDate;
       },
       {
-        message: 'Travel date must be at least 2 days in advance (DD/MM/YYYY)',
+        message: 'Please choose a date at least 2 days from today',
+      }
+    )
+    .refine(
+      (val) => {
+        const parts = val.split('-');
+        const selected = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 0, 0, 0, 0);
+        const maxDate = new Date();
+        maxDate.setFullYear(maxDate.getFullYear() + 1); // at most 1 year from today
+        // +1 day leeway: the server clock (UTC) can be a calendar day behind the visitor (IST)
+        maxDate.setDate(maxDate.getDate() + 1);
+        maxDate.setHours(0, 0, 0, 0);
+        return selected <= maxDate;
+      },
+      {
+        message: 'Please choose a date within 1 year from today',
       }
     ),
   number_of_adults: z.coerce.number().int().min(1).default(1),

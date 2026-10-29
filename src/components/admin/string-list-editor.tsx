@@ -8,11 +8,16 @@ export function StringListEditor({
   items,
   onChange,
   placeholder,
+  maxLength,
+  error,
 }: {
   label: string;
   items: string[];
   onChange: (items: string[]) => void;
   placeholder?: string;
+  /** Per-item character limit (enforced on the inputs, shown as a counter). */
+  maxLength?: number;
+  error?: string;
 }) {
   const [draft, setDraft] = useState('');
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -43,7 +48,7 @@ export function StringListEditor({
 
   return (
     <div>
-      <p className="label">{label}</p>
+      {label && <p className="label">{label}</p>}
       <div className="space-y-2">
         {items.map((item, i) =>
           editingIndex === i ? (
@@ -52,6 +57,7 @@ export function StringListEditor({
                 type="text"
                 value={editValue}
                 onChange={(e) => setEditValue(e.target.value)}
+                maxLength={maxLength}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault();
@@ -107,6 +113,7 @@ export function StringListEditor({
             type="text"
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
+            maxLength={maxLength}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 e.preventDefault();
@@ -120,6 +127,12 @@ export function StringListEditor({
             <Plus className="h-4 w-4" /> Add
           </button>
         </div>
+        {maxLength && (
+          <p className="text-right text-[11px] text-ink-400">
+            {(editingIndex !== null ? editValue : draft).length}/{maxLength} characters
+          </p>
+        )}
+        {error && <p className="field-error">{error}</p>}
       </div>
     </div>
   );

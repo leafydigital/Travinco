@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect, useTransition } from 'react';
+import { useState, useEffect, useRef, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { Pencil, Trash2, Loader2 } from 'lucide-react';
+import { Pencil, Trash2 } from 'lucide-react';
 import { ConfirmDeleteDialog } from '@/components/admin/confirm-delete-dialog';
 import { CustomerEditModal } from './customer-edit-modal';
 import { deleteCustomer, toggleCustomerStatus, type CustomerTableItem } from './actions';
@@ -24,7 +24,6 @@ export function CustomerRowActions({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [active, setActive] = useState(isActive);
-  const [isToggling, setIsToggling] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
 
@@ -33,51 +32,60 @@ export function CustomerRowActions({
     setActive(isActive);
   }, [isActive]);
 
-  function handleToggleActive() {
-    if (isPending) return;
-    const nextState = !active;
-    const previousState = active;
+  // Confirmed server state + in-flight guard: the switch flips instantly, and
+  // rapid clicks are coalesced into one follow-up request for the final state.
+  const confirmedRef = useRef(isActive);
+  const desiredRef = useRef(isActive);
+  const inFlightRef = useRef(false);
 
-    // 1. Optimistic UI update immediately on toggle switch
-    setActive(nextState);
+  useEffect(() => {
+    if (!inFlightRef.current) {
+      confirmedRef.current = isActive;
+      desiredRef.current = isActive;
+    }
+  }, [isActive]);
 
-    // 2. Dispatch custom event so the Status badge in column 6 updates at the exact same millisecond
+  function broadcast(nextState: boolean) {
     window.dispatchEvent(
       new CustomEvent('travinco:customer-status-changed', {
         detail: { customerId: customer.id, isActive: nextState },
       })
     );
+  }
 
-    setIsToggling(true);
-    startTransition(async () => {
+  async function syncStatus() {
+    inFlightRef.current = true;
+    while (desiredRef.current !== confirmedRef.current) {
+      const target = desiredRef.current;
+      let failed = false;
       try {
-        const res = await toggleCustomerStatus(customer.id, nextState);
+        const res = await toggleCustomerStatus(customer.id, target);
         if (res.error) {
-          // Rollback on failure
-          setActive(previousState);
-          window.dispatchEvent(
-            new CustomEvent('travinco:customer-status-changed', {
-              detail: { customerId: customer.id, isActive: previousState },
-            })
-          );
+          failed = true;
           toast.error(res.error);
-        } else {
-          toast.success(`Customer ${customer.full_name} ${nextState ? 'activated' : 'deactivated'}`);
-          router.refresh();
         }
       } catch {
-        // Rollback on unexpected exception
-        setActive(previousState);
-        window.dispatchEvent(
-          new CustomEvent('travinco:customer-status-changed', {
-            detail: { customerId: customer.id, isActive: previousState },
-          })
-        );
+        failed = true;
         toast.error('Could not update customer status.');
-      } finally {
-        setIsToggling(false);
       }
-    });
+      if (failed) {
+        desiredRef.current = confirmedRef.current;
+        setActive(confirmedRef.current);
+        broadcast(confirmedRef.current);
+        break;
+      }
+      confirmedRef.current = target;
+    }
+    inFlightRef.current = false;
+  }
+
+  function handleToggleActive() {
+    const nextState = !desiredRef.current;
+    desiredRef.current = nextState;
+    setActive(nextState);
+    // Status badge in the table listens for this and updates in the same frame.
+    broadcast(nextState);
+    if (!inFlightRef.current) void syncStatus();
   }
 
   function handleDelete() {
@@ -103,8 +111,7 @@ export function CustomerRowActions({
             role="switch"
             aria-checked={active}
             onClick={handleToggleActive}
-            disabled={isPending}
-            className="inline-flex items-center gap-1.5 cursor-pointer select-none group mr-1 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="inline-flex items-center gap-1.5 cursor-pointer select-none group mr-1"
             title={active ? 'Enabled — click to disable' : 'Disabled — click to enable'}
           >
             <span
@@ -124,9 +131,6 @@ export function CustomerRowActions({
                   active ? 'translate-x-[18px]' : 'translate-x-[2px]'
                 }`}
               >
-                {isPending && isToggling ? (
-                  <Loader2 className="h-2.5 w-2.5 animate-spin text-ink-500" />
-                ) : null}
               </span>
             </div>
           </button>

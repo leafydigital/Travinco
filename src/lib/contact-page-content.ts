@@ -1,4 +1,4 @@
-import { getSetting } from './settings';
+import { getSetting, getGeneralSettings } from './settings';
 import {
   type ContactPageContent,
   DEFAULT_CONTACT_PAGE_CONTENT,
@@ -12,6 +12,22 @@ export * from './contact-page-content-types';
  * For server components and server actions only.
  */
 export async function getContactPageContent(): Promise<ContactPageContent> {
+  const [content, general] = await Promise.all([loadContactPageContent(), getGeneralSettings()]);
+  // Contact details used to live on the (removed) Settings page — values saved there
+  // keep showing until they are re-saved from Theme → Contact.
+  const pick = (own: string | undefined, legacy: string | undefined) => own?.trim() || legacy || '';
+  return {
+    ...content,
+    phone: pick(content.phone, general.phone),
+    email: pick(content.email, general.email),
+    whatsapp: pick(content.whatsapp, general.whatsapp),
+    address: pick(content.address, general.address),
+    working_hours: pick(content.working_hours, general.working_hours),
+    map_embed_url: pick(content.map_embed_url, general.map_embed_url),
+  };
+}
+
+async function loadContactPageContent(): Promise<ContactPageContent> {
   try {
     let data = await getSetting<Partial<ContactPageContent>>('contact_page_content');
     if (!data) {
@@ -52,6 +68,10 @@ export async function getContactPageContent(): Promise<ContactPageContent> {
       form_subtitle: data.form_subtitle ?? DEFAULT_CONTACT_PAGE_CONTENT.form_subtitle,
       phone: data.phone ?? DEFAULT_CONTACT_PAGE_CONTENT.phone,
       email: data.email ?? DEFAULT_CONTACT_PAGE_CONTENT.email,
+      whatsapp: data.whatsapp ?? DEFAULT_CONTACT_PAGE_CONTENT.whatsapp,
+      address: data.address ?? DEFAULT_CONTACT_PAGE_CONTENT.address,
+      working_hours: data.working_hours ?? DEFAULT_CONTACT_PAGE_CONTENT.working_hours,
+      map_embed_url: data.map_embed_url ?? DEFAULT_CONTACT_PAGE_CONTENT.map_embed_url,
     };
   } catch (error) {
     console.error('getContactPageContent error:', error);

@@ -9,7 +9,7 @@ export default async function NewCustomerPage() {
   const profile = await requireProfile();
   await assertModulePermission(profile, 'customers', 'edit');
   return (
-    <div className="max-w-2xl space-y-5">
+    <div className="max-w-4xl space-y-5">
       <div className="flex items-center gap-3">
         <Link
           href="/travinco_dashboard/customers"

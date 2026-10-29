@@ -7,6 +7,7 @@ import { canAccess, canOverrideMarkup, isAdminRole } from '@/lib/tour/access';
 import { loadRatesForStays, loadTourMasters } from '@/lib/tour/data';
 import { addDays, buildCtx, buildSnapshot, normalizeInputs, quote, totalNights } from '@/lib/tour/engine';
 import type { QuoteInputs, RateRow } from '@/lib/tour/types';
+import { ALL_ZERO_PHONE_MESSAGE, isAllZeroPhone } from '@/lib/validations/phone';
 
 const STATUSES = ['draft', 'sent', 'accepted', 'rejected', 'expired'] as const;
 type Status = (typeof STATUSES)[number];
@@ -55,6 +56,7 @@ export async function saveQuotation(
   const m = await loadTourMasters();
   const inputs = normalizeInputs(raw, m);
   if (!inputs.guest_name.trim()) return { error: 'Enter the guest name.' };
+  if (isAllZeroPhone(inputs.guest_phone)) return { error: ALL_ZERO_PHONE_MESSAGE };
   if (!inputs.stays.length) return { error: 'Add at least one stay (location and nights).' };
   if (totalNights(inputs) > 60) return { error: 'A quotation can cover at most 60 nights.' };
   const override = canOverrideMarkup(profile);
@@ -205,7 +207,7 @@ export async function deleteQuotation(id: string): Promise<{ error?: string }> {
     await supabase.from('website_settings').upsert({
       key: `deleted_quotation_${id}`,
       value: { is_deleted: true, deleted_at: new Date().toISOString() },
-    });
+    }, { onConflict: 'key' });
   } catch (err) {
     console.warn('Failed to record deleted_quotation marker:', err);
   }

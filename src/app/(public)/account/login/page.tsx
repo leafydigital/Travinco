@@ -294,7 +294,7 @@ export default function LoginPage() {
     return () => clearInterval(interval);
   }, [resetCooldown]);
 
-  // Step 1: Submit Credentials -> Backend validates & sends OTP
+  // Submit credentials -> server signs the customer in directly
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (isLoading) return;
@@ -317,18 +317,17 @@ export default function LoginPage() {
         return;
       }
 
-      // ── Branch A: Staff member authenticated directly (Option A) ──
-      if (result.userType === 'staff') {
-        toast.success('Signed in successfully! Redirecting to dashboard…');
-        const target =
-          redirectTo && redirectTo.startsWith('/travinco_dashboard')
-            ? redirectTo
-            : (result.redirectUrl || '/travinco_dashboard');
-        router.replace(target);
+      // ── Signed in directly (no email OTP step) ──
+      if (result.success) {
+        toast.success('Signed in successfully!');
+        const target = getSafeRedirect(redirectTo);
+        const separator = target.includes('?') ? '&' : '?';
+        router.replace(`${target}${separator}login=success`);
+        router.refresh();
         return;
       }
 
-      // ── Branch B: Customer requires 2FA OTP ──
+      // Legacy fallback: an OTP step (no longer issued by the server)
       if (result.step === 'otp_required' && result.loginTicket) {
         setLoginTicket(result.loginTicket);
         setMaskedEmail(result.maskedEmail || email);

@@ -1,9 +1,11 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { requestEnquiryOtp, verifyEnquiryOtpAndSubmit } from '@/app/(public)/actions';
 import { PhoneInput } from './phone-input';
+import { DatePickerDMY } from './date-picker-dmy';
 import {
   CheckCircle2,
   User,
@@ -12,7 +14,6 @@ import {
   Users,
   Package,
   ChevronDown,
-  Search,
   X,
   Mail,
   ShieldCheck,
@@ -34,15 +35,20 @@ function getMinTravelDate(): { iso: string; display: string } {
   };
 }
 
-function formatDisplayDate(isoDate: string): string {
-  if (!isoDate || !/^\d{4}-\d{2}-\d{2}$/.test(isoDate)) return '';
-  const [yyyy, mm, dd] = isoDate.split('-');
-  return `${dd}/${mm}/${yyyy}`;
+/** Latest travel date: exactly 1 year from today (YYYY-MM-DD, local time). */
+function getMaxTravelDate(): string {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() + 1);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
 }
 
-// ─── Searchable Package Combobox (Select or Enter Custom Package) ─────────────
+// ─── Package Combobox (Pick from the full list or type a custom package) ──────
 
-const CUSTOM_TOUR_OPTION = { id: '', title: 'Custom Tour / Tailored Trip (No specific package)' };
+// Not a submittable value: choosing it clears the field so the visitor types their own trip name.
+const CUSTOM_TOUR_OPTION = { id: '', title: 'Custom Tour / Tailored Trip — type your own package name' };
 
 function PackageCombobox({
   packages,
@@ -69,8 +75,11 @@ function PackageCombobox({
   );
   const [selectedId, setSelectedId] = useState(defaultId);
   const [isOpen, setIsOpen] = useState(false);
-  const [highlightedIndex, setHighlightedIndex] = useState(0);
+  // -1 = nothing highlighted (Enter keeps the typed custom text)
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const [touched, setTouched] = useState(false);
+  // True after choosing "Custom Tour": prompts the visitor to type their own name
+  const [customMode, setCustomMode] = useState(false);
 
   // Sync with defaultId or defaultCustomTitle if they change externally
   useEffect(() => {
@@ -95,9 +104,9 @@ function PackageCombobox({
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
 
-  const filtered = query.trim()
-    ? allOptions.filter((o) => o.title.toLowerCase().includes(query.trim().toLowerCase()))
-    : allOptions;
+  // Typing never filters: the dropdown always lists every package, and the typed
+  // text is offered as a custom package at the top.
+  const filtered = allOptions;
 
   const hasExactMatch = packages.some(
     (p) => p.title.toLowerCase() === query.trim().toLowerCase()
@@ -116,18 +125,32 @@ function PackageCombobox({
     return () => document.removeEventListener('mousedown', onClickOutside);
   }, []);
 
-  // Scroll highlighted item into view.
+  // Scroll highlighted item into view (offset by the custom row when it's shown).
   useEffect(() => {
-    if (!isOpen) return;
-    const el = listRef.current?.children[highlightedIndex] as HTMLElement | undefined;
+    if (!isOpen || highlightedIndex < 0) return;
+    const offset = showCustomOption ? 1 : 0;
+    const el = listRef.current?.children[highlightedIndex + offset] as HTMLElement | undefined;
     el?.scrollIntoView({ block: 'nearest' });
-  }, [highlightedIndex, isOpen]);
+  }, [highlightedIndex, isOpen, showCustomOption]);
 
   function selectOption(option: { id: string; title: string }) {
+    if (option === CUSTOM_TOUR_OPTION) {
+      // Don't submit the placeholder text: clear the field and let the visitor type
+      setSelectedId('');
+      setQuery('');
+      setCustomMode(true);
+      setIsOpen(false);
+      setHighlightedIndex(-1);
+      onValidityChange?.(false);
+      onChange?.({ package_id: '', custom_package_name: '' });
+      inputRef.current?.focus();
+      return;
+    }
+    setCustomMode(false);
     setSelectedId(option.id);
     setQuery(option.id ? option.title : '');
     setIsOpen(false);
-    setHighlightedIndex(0);
+    setHighlightedIndex(-1);
     setTouched(true);
     onValidityChange?.(Boolean(option.id || option.title));
     onChange?.({ package_id: option.id, custom_package_name: option.id ? '' : option.title });
@@ -136,7 +159,7 @@ function PackageCombobox({
   function handleInputChange(val: string) {
     setQuery(val);
     setIsOpen(true);
-    setHighlightedIndex(0);
+    setHighlightedIndex(-1);
     const match = packages.find((p) => p.title.toLowerCase() === val.trim().toLowerCase());
     const nextId = match ? match.id : '';
     setSelectedId(nextId);
@@ -146,10 +169,11 @@ function PackageCombobox({
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (!isOpen) {
-      if (e.key === 'ArrowDown' || e.key === 'Enter') {
+      if (e.key === 'ArrowDown') {
         setIsOpen(true);
-        setHighlightedIndex(0);
+        setHighlightedIndex(-1);
       }
+      if (e.key === 'Enter') e.preventDefault();
       return;
     }
     if (e.key === 'ArrowDown') {
@@ -157,10 +181,12 @@ function PackageCombobox({
       setHighlightedIndex((i) => Math.min(i + 1, filtered.length - 1));
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
-      setHighlightedIndex((i) => Math.max(i - 1, 0));
+      setHighlightedIndex((i) => Math.max(i - 1, -1));
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      if (filtered[highlightedIndex]) {
+      // Only pick a list item when the user moved to it with the arrow keys;
+      // otherwise Enter confirms the typed custom package.
+      if (highlightedIndex >= 0 && filtered[highlightedIndex]) {
         selectOption(filtered[highlightedIndex]);
       } else if (query.trim()) {
         setSelectedId('');
@@ -181,23 +207,21 @@ function PackageCombobox({
       <input type="hidden" name="custom_package_name" value={selectedId ? '' : query.trim()} />
 
       <div className="relative">
-        <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center">
-          <Search className="h-3.5 w-3.5 text-ink-400" />
-        </span>
         <input
           ref={inputRef}
           type="text"
           role="combobox"
           autoComplete="off"
-          placeholder="Search package or enter custom package name…"
+          placeholder={customMode ? 'Type your custom package name…' : 'Select a package or type your own'}
           value={query}
           onFocus={() => {
-            setIsOpen(true);
-            setHighlightedIndex(0);
+            // In custom mode keep the list closed so the visitor can just type
+            if (!customMode) setIsOpen(true);
+            setHighlightedIndex(-1);
           }}
           onChange={(e) => handleInputChange(e.target.value)}
           onKeyDown={handleKeyDown}
-          className={`${inputClassName} pl-8 pr-16 ${showError ? 'border-coral-400 focus:ring-coral-400 bg-coral-50/20' : ''}`}
+          className={`${inputClassName} pr-16 ${showError ? 'border-coral-400 focus:ring-coral-400 bg-coral-50/20' : ''}`}
           aria-autocomplete="list"
           aria-expanded={isOpen}
           aria-controls="package-options-list"
@@ -213,6 +237,7 @@ function PackageCombobox({
               onClick={() => {
                 setSelectedId('');
                 setQuery('');
+                setCustomMode(false);
                 setIsOpen(false);
                 onValidityChange?.(false);
                 onChange?.({ package_id: '', custom_package_name: '' });
@@ -260,13 +285,10 @@ function PackageCombobox({
               }}
               className="flex cursor-pointer items-center gap-2 px-3 py-2.5 text-sm bg-brand-50/80 text-brand-800 font-medium hover:bg-brand-100 border-b border-brand-100"
             >
-              <span>✨ Use custom package: &ldquo;{query.trim()}&rdquo;</span>
+              <span>Custom package: &ldquo;{query.trim()}&rdquo;</span>
             </li>
           )}
-          {filtered.length === 0 && !showCustomOption ? (
-            <li className="px-3 py-2.5 text-sm text-ink-400">No packages match your search.</li>
-          ) : (
-            filtered.map((option, idx) => {
+          {filtered.map((option, idx) => {
               const isSelected = option.id === selectedId;
               const isHighlighted = idx === highlightedIndex;
               return (
@@ -290,12 +312,15 @@ function PackageCombobox({
                   )}
                 </li>
               );
-            })
-          )}
+            })}
         </ul>
       )}
       {showError && (
-        <p className="mt-1 text-xs text-coral-600 font-medium">Please select or enter a tour package to continue.</p>
+        <p className="mt-1 text-xs text-coral-600 font-medium">
+          {customMode
+            ? 'Please type your custom package name to continue.'
+            : 'Please select or enter a tour package to continue.'}
+        </p>
       )}
     </div>
   );
@@ -401,6 +426,7 @@ export function EnquiryForm({
   defaultName = '',
   defaultEmail = '',
   layout = 'stacked',
+  compact = false,
   availablePackages,
 }: {
   packageId?: string;
@@ -410,6 +436,8 @@ export function EnquiryForm({
   defaultName?: string;
   defaultEmail?: string;
   layout?: 'stacked' | 'split';
+  /** Tighter spacing for the split layout (package page enquiry modal: fits without scrolling). */
+  compact?: boolean;
   availablePackages?: { id: string; title: string }[];
 }) {
   const pathname = usePathname();
@@ -478,6 +506,7 @@ export function EnquiryForm({
   const [cooldown, setCooldown] = useState(0);
 
   const minTravelDate = useMemo(() => getMinTravelDate(), []);
+  const maxTravelDate = useMemo(() => getMaxTravelDate(), []);
 
   // Validation functions
   function validateName(val: string): string | null {
@@ -537,17 +566,19 @@ export function EnquiryForm({
 
   function validateDate(val: string): string | null {
     if (!val) {
-      return 'Travel date is required (DD/MM/YYYY)';
+      return 'Please select a travel date';
     }
     const minDate = getMinTravelDate();
     if (val < minDate.iso) {
-      return 'Travel date must be at least 2 days in advance (DD/MM/YYYY)';
+      return 'Please choose a date at least 2 days from today';
+    }
+    if (val > getMaxTravelDate()) {
+      return 'Please choose a date within 1 year from today';
     }
     return null;
   }
 
-  function handleDateChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const val = e.target.value;
+  function handleDateChange(val: string) {
     setFormValues((prev) => ({ ...prev, travel_date: val }));
     setDateTouched(true);
     setDateError(validateDate(val));
@@ -614,7 +645,7 @@ export function EnquiryForm({
 
     // Validate phone
     if (!phoneValid) {
-      setFormError('Entered valid mobile number');
+      setFormError('Enter a valid mobile number');
       return;
     }
 
@@ -853,7 +884,11 @@ export function EnquiryForm({
   // ── Split 2-Column Layout (Booking Page) ──────────────────────────────────
   if (layout === 'split') {
     return (
-      <form onSubmit={handleInitialSubmit} className="space-y-6" noValidate>
+      <form
+        onSubmit={handleInitialSubmit}
+        className={compact ? 'space-y-3 [&_.input]:py-2 [&_.input]:text-sm' : 'space-y-6'}
+        noValidate
+      >
         <div className="hidden" aria-hidden="true">
           <label htmlFor="website">Leave this field empty</label>
           <input id="website" name="website" type="text" tabIndex={-1} autoComplete="off" />
@@ -864,9 +899,9 @@ export function EnquiryForm({
         )}
         {destinationName && <input type="hidden" name="destination" value={destinationName} />}
 
-        <div className="grid gap-6 md:grid-cols-2 md:gap-8">
+        <div className={compact ? 'grid gap-3 md:grid-cols-2 md:gap-4' : 'grid gap-6 md:grid-cols-2 md:gap-8'}>
           {/* ── Left Column: Contact Details ─────────────────────────── */}
-          <div className="space-y-4 rounded-xl border border-ink-100 bg-sand-50/40 p-4 sm:p-5">
+          <div className={`rounded-xl border border-ink-100 bg-sand-50/40 ${compact ? 'space-y-2.5 p-3 sm:p-4' : 'space-y-4 p-4 sm:p-5'}`}>
             <div className="flex items-center gap-2 border-b border-ink-200/60 pb-2">
               <User className="h-4 w-4 text-brand-600" />
               <h2 className="text-xs font-bold uppercase tracking-wider text-ink-700">
@@ -956,8 +991,8 @@ export function EnquiryForm({
           </div>
 
           {/* ── Right Column: Package Request Details ────────────────── */}
-          <div className="space-y-4 rounded-xl border border-ink-100 bg-sand-50/40 p-4 sm:p-5 flex flex-col justify-between">
-            <div className="space-y-4">
+          <div className={`rounded-xl border border-ink-100 bg-sand-50/40 flex flex-col justify-between ${compact ? 'space-y-2.5 p-3 sm:p-4' : 'space-y-4 p-4 sm:p-5'}`}>
+            <div className={compact ? 'space-y-2.5' : 'space-y-4'}>
               <div className="flex items-center gap-2 border-b border-ink-200/60 pb-2">
                 <Compass className="h-4 w-4 text-brand-600" />
                 <h2 className="text-xs font-bold uppercase tracking-wider text-ink-700">
@@ -967,10 +1002,18 @@ export function EnquiryForm({
 
               {availablePackages && availablePackages.length > 0 && (
                 <div>
-                  <label className="mb-1 flex items-center gap-1.5 text-xs font-medium text-ink-600">
-                    <Package className="h-3.5 w-3.5 text-brand-600" />
-                    <span>Choose Tour Package *</span>
-                  </label>
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <label className="flex items-center gap-1.5 text-xs font-medium text-ink-600">
+                      <Package className="h-3.5 w-3.5 text-brand-600" />
+                      <span>Choose Tour Package *</span>
+                    </label>
+                    <Link
+                      href="/packages"
+                      className="shrink-0 text-xs font-semibold text-brand-600 hover:text-brand-700 hover:underline"
+                    >
+                      Browse Packages →
+                    </Link>
+                  </div>
                   <PackageCombobox
                     packages={availablePackages}
                     defaultId={formValues.package_id}
@@ -993,24 +1036,18 @@ export function EnquiryForm({
                   <Calendar className="h-3.5 w-3.5 text-ink-400" />
                   <span>When are you planning to travel? *</span>
                 </label>
-                <input
+                <DatePickerDMY
                   name="travel_date"
-                  type="date"
-                  required
                   min={minTravelDate.iso}
+                  max={maxTravelDate}
                   value={formValues.travel_date}
                   onChange={handleDateChange}
-                  onBlur={() => {
+                  onClose={() => {
                     setDateTouched(true);
                     setDateError(validateDate(formValues.travel_date));
                   }}
-                  className={`input bg-white ${dateError ? 'border-coral-400 focus:ring-coral-400 bg-coral-50/20' : ''}`}
-                  aria-invalid={Boolean(dateError)}
+                  invalid={Boolean(dateError)}
                 />
-                <p className="mt-1 text-[11px] text-ink-500">
-                  Format: DD/MM/YYYY (Min. 2 days ahead)
-                  {formValues.travel_date && !dateError ? ` • Selected: ${formatDisplayDate(formValues.travel_date)}` : ''}
-                </p>
                 {dateError && (
                   <p className="mt-1 text-xs text-coral-600 font-medium">{dateError}</p>
                 )}
@@ -1060,7 +1097,7 @@ export function EnquiryForm({
 
               <div>
                 <label className="mb-1 block text-xs font-medium text-ink-600">
-                  Approximate Budget (₹, optional)
+                  Approx. Budget per Person (₹) — Optional
                 </label>
                 <input
                   name="budget"
@@ -1069,7 +1106,7 @@ export function EnquiryForm({
                   min={0}
                   value={formValues.budget}
                   onChange={(e) => setFormValues((prev) => ({ ...prev, budget: e.target.value }))}
-                  placeholder="e.g. 50000 or 25000.50"
+                  placeholder="e.g. 25000"
                   className="input bg-white"
                 />
               </div>
@@ -1092,7 +1129,7 @@ export function EnquiryForm({
         </div>
 
         {/* ── Actions & Submit ────────────────────────────────────────── */}
-        <div className="pt-2 space-y-2">
+        <div className={compact ? 'space-y-2' : 'pt-2 space-y-2'}>
           {formError && (
             <p className="rounded-xl bg-coral-50 border border-coral-200 px-3.5 py-2.5 text-sm text-coral-700">
               {formError}
@@ -1114,7 +1151,7 @@ export function EnquiryForm({
             )}
           </button>
 
-          {!phoneValid && (
+          {!phoneValid && !compact && (
             <p className="text-center text-xs text-ink-400">
               Please enter a valid phone number for the selected country to submit.
             </p>
@@ -1233,24 +1270,18 @@ export function EnquiryForm({
 
         <div>
           <label className="mb-1 block text-xs font-medium text-ink-600">When are you traveling? *</label>
-          <input
+          <DatePickerDMY
             name="travel_date"
-            type="date"
-            required
             min={minTravelDate.iso}
+            max={maxTravelDate}
             value={formValues.travel_date}
             onChange={handleDateChange}
-            onBlur={() => {
+            onClose={() => {
               setDateTouched(true);
               setDateError(validateDate(formValues.travel_date));
             }}
-            className={`input bg-white ${dateError ? 'border-coral-400 focus:ring-coral-400 bg-coral-50/20' : ''}`}
-            aria-invalid={Boolean(dateError)}
+            invalid={Boolean(dateError)}
           />
-          <p className="mt-1 text-[11px] text-ink-500">
-            Format: DD/MM/YYYY (Min. 2 days ahead)
-            {formValues.travel_date && !dateError ? ` • Selected: ${formatDisplayDate(formValues.travel_date)}` : ''}
-          </p>
           {dateError && (
             <p className="mt-1 text-xs text-coral-600 font-medium">{dateError}</p>
           )}
@@ -1293,7 +1324,7 @@ export function EnquiryForm({
         </div>
 
         <div>
-          <label className="mb-1 block text-xs font-medium text-ink-600">Approximate Budget (₹, optional)</label>
+          <label className="mb-1 block text-xs font-medium text-ink-600">Approx. Budget per Person (₹) — Optional</label>
           <input
             name="budget"
             type="number"
@@ -1301,7 +1332,7 @@ export function EnquiryForm({
             min={0}
             value={formValues.budget}
             onChange={(e) => setFormValues((prev) => ({ ...prev, budget: e.target.value }))}
-            placeholder="e.g. 50000 or 25000.50"
+            placeholder="e.g. 25000"
             className="input bg-white"
           />
         </div>

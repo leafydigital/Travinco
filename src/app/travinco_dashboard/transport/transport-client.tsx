@@ -266,7 +266,6 @@ export function TransportClient({
       <VehicleModal
         isOpen={modalOpen}
         vehicleId={selectedVehicleId}
-        carTypes={carTypes}
         onClose={handleCloseModal}
         onSuccess={() => router.refresh()}
       />

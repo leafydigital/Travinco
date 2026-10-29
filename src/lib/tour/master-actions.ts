@@ -8,6 +8,7 @@ import { canEditMasters } from './access';
 import type { PlanItem, QuotationLogosConfig, InvoiceSettings } from './types';
 
 import { invalidateTourMastersCache } from './data';
+import { ALL_ZERO_PHONE_MESSAGE, isAllZeroPhone } from '@/lib/validations/phone';
 
 type Result = { error?: string; id?: number | string };
 
@@ -90,7 +91,7 @@ async function softDelete(
           await c.supabase.from('website_settings').upsert({
             key: `${settingKeyPrefix}_${numericId}`,
             value: { is_deleted: true, deleted_at: new Date().toISOString() },
-          });
+          }, { onConflict: 'key' });
         } catch (err) {
           console.warn(`Failed to record ${settingKeyPrefix} marker:`, err);
         }
@@ -120,7 +121,7 @@ async function softDelete(
       await c.supabase.from('website_settings').upsert({
         key: `${settingKeyPrefix}_${numericId}`,
         value: { is_deleted: true, deleted_at: new Date().toISOString() },
-      });
+      }, { onConflict: 'key' });
     } catch (err) {
       console.warn(`Failed to record ${settingKeyPrefix} marker:`, err);
     }
@@ -137,8 +138,10 @@ const vehicleSchema = z.object({
   vehicle_type: str(80).pipe(z.string().min(1, 'Car type is required')),
   company_name: str(150).pipe(z.string().min(1, 'Company name is required')),
   contact_person: optStr(120),
-  contact_number: str(30).pipe(z.string().min(5, 'Contact number is required')),
-  alt_contact_number: optStr(30),
+  contact_number: str(30)
+    .pipe(z.string().min(5, 'Contact number is required'))
+    .refine((v) => !isAllZeroPhone(v), ALL_ZERO_PHONE_MESSAGE),
+  alt_contact_number: optStr(30).refine((v) => !isAllZeroPhone(v), 'Alternate number cannot be all zeros.'),
   seats: optNum,
   is_ac: bool,
   rate_basis: z.enum(['per_day', 'per_trip']),
@@ -180,7 +183,7 @@ const pointSchema = z.object({
   km_from_location: reqNum,
   address: optStr(1000),
   google_maps_url: optStr(1000),
-  contact_phone: optStr(30),
+  contact_phone: optStr(30).refine((v) => !isAllZeroPhone(v), 'Contact number cannot be all zeros.'),
   use_for_pickup: bool,
   use_for_drop: bool,
   notes: optStr(2000),

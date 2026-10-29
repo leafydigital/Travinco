@@ -22,6 +22,7 @@ export async function revalidatePublicAndTheme() {
 
 import type { ThemeImageItem } from '@/lib/theme-images';
 import { fetchThemeImages } from '@/lib/theme-images';
+import { getTermsSettings } from '@/lib/settings';
 export type { ThemeImageItem };
 
 const BUCKET = 'theme-images';
@@ -32,6 +33,154 @@ const FALLBACK_BUCKET = 'site-images';
  */
 export async function getThemeImagesAction(): Promise<{ data: ThemeImageItem[]; error?: string }> {
   return fetchThemeImages(await createClient());
+}
+
+/** Saves a theme media record (theme_images table, website_settings fallback) and refreshes the site. */
+async function insertThemeRecord(fields: {
+  page: string;
+  placement: string;
+  image_url: string;
+  title?: string | null;
+  subtitle?: string | null;
+  badge?: string | null;
+  button_text?: string | null;
+  link_url?: string | null;
+}): Promise<ThemeImageItem> {
+  const supabase = await createAdminClient();
+  const newId = crypto.randomUUID();
+  const now = new Date().toISOString();
+
+  const newRecord: ThemeImageItem = {
+    id: newId,
+    page: fields.page,
+    placement: fields.placement,
+    image_url: fields.image_url,
+    title: fields.title ?? null,
+    subtitle: fields.subtitle ?? null,
+    badge: fields.badge ?? null,
+    button_text: fields.button_text ?? null,
+    link_url: fields.link_url ?? null,
+    sort_order: 0,
+    is_active: true,
+    is_deleted: false,
+    created_at: now,
+    updated_at: now,
+  };
+
+  // Try inserting into theme_images table
+  const { error: insertError } = await supabase.from('theme_images').insert(newRecord);
+
+  if (insertError) {
+    console.warn('theme_images table insert failed, saving to website_settings:', insertError.message);
+    // Fallback to website_settings
+    await supabase.from('website_settings').upsert(
+      {
+        key: `theme_img_${newId}`,
+        value: newRecord,
+      },
+      { onConflict: 'key' }
+    );
+  }
+
+  await revalidatePublicAndTheme();
+  return newRecord;
+}
+
+// ─── Hero videos ─────────────────────────────────────────────────────────────
+// Videos are too large for Server Action bodies (5 MB limit), so the browser
+// uploads them straight to Storage with a short-lived signed upload URL that is
+// only issued to staff with Theme edit access.
+
+const VIDEO_TYPES: Record<string, string> = {
+  'video/mp4': 'mp4',
+  'video/webm': 'webm',
+  'video/quicktime': 'mov',
+};
+const MAX_VIDEO_SIZE_BYTES = 50 * 1024 * 1024; // 50 MB (Supabase default per-file limit)
+const VIDEO_PREFIX = 'videos/';
+
+/** Video is only supported for the Home page hero slider. */
+function isVideoPlacement(page: string, placement: string) {
+  return page === 'home' && placement === 'hero';
+}
+
+export async function createThemeVideoUploadAction(input: {
+  contentType: string;
+  size: number;
+  page: string;
+  placement: string;
+}): Promise<{ path?: string; token?: string; bucket?: string; error?: string }> {
+  try {
+    const profile = await requireProfile();
+    const perm = await checkPageAccess(profile, 'theme', 'edit');
+    if (!perm.allowed) return { error: perm.error || 'Access denied.' };
+
+    const page = (input.page || '').trim().toLowerCase();
+    const placement = (input.placement || '').trim().toLowerCase();
+    if (!isVideoPlacement(page, placement)) {
+      return { error: 'Videos can only be used in the Home page hero slider.' };
+    }
+    const ext = VIDEO_TYPES[input.contentType];
+    if (!ext) return { error: 'Only MP4, WEBM or MOV videos are allowed.' };
+    if (!input.size || input.size > MAX_VIDEO_SIZE_BYTES) {
+      return { error: 'Video is too large — please keep it under 50 MB.' };
+    }
+
+    const { createServiceClient } = await import('@/lib/supabase/service');
+    const service = createServiceClient();
+    const path = `${VIDEO_PREFIX}${crypto.randomUUID()}.${ext}`;
+    const { data, error } = await service.storage.from(BUCKET).createSignedUploadUrl(path);
+    if (error || !data) {
+      console.error('createSignedUploadUrl failed:', error);
+      return { error: 'Could not prepare the video upload. Please try again.' };
+    }
+    return { path: data.path, token: data.token, bucket: BUCKET };
+  } catch (err: any) {
+    console.error('createThemeVideoUploadAction error:', err);
+    return { error: 'Could not prepare the video upload. Please try again.' };
+  }
+}
+
+/** Called after the browser finished uploading to the signed URL. */
+export async function saveThemeVideoAction(input: {
+  path: string;
+  page: string;
+  placement: string;
+}): Promise<{ success: boolean; data?: ThemeImageItem; error?: string }> {
+  try {
+    const profile = await requireProfile();
+    const perm = await checkPageAccess(profile, 'theme', 'edit');
+    if (!perm.allowed) return { success: false, error: perm.error || 'Access denied.' };
+
+    const page = (input.page || '').trim().toLowerCase();
+    const placement = (input.placement || '').trim().toLowerCase();
+    if (!isVideoPlacement(page, placement)) {
+      return { success: false, error: 'Videos can only be used in the Home page hero slider.' };
+    }
+    const path = input.path || '';
+    if (!path.startsWith(VIDEO_PREFIX) || path.includes('..') || !/\.(mp4|webm|mov)$/i.test(path)) {
+      return { success: false, error: 'Invalid video upload.' };
+    }
+
+    const { createServiceClient } = await import('@/lib/supabase/service');
+    const service = createServiceClient();
+
+    // Make sure the file really was uploaded
+    const fileName = path.slice(VIDEO_PREFIX.length);
+    const { data: listed } = await service.storage
+      .from(BUCKET)
+      .list(VIDEO_PREFIX.replace(/\/$/, ''), { search: fileName, limit: 1 });
+    if (!listed || !listed.some((f) => f.name === fileName)) {
+      return { success: false, error: 'The video upload did not complete. Please try again.' };
+    }
+
+    const { data: urlData } = service.storage.from(BUCKET).getPublicUrl(path);
+    const record = await insertThemeRecord({ page, placement, image_url: urlData.publicUrl });
+    return { success: true, data: record };
+  } catch (err: any) {
+    console.error('saveThemeVideoAction error:', err);
+    return { success: false, error: 'Could not save the video. Please try again.' };
+  }
 }
 
 /**
@@ -70,44 +219,16 @@ export async function uploadThemeImageAction(formData: FormData): Promise<{
       return { success: false, error: uploadRes.error || 'Image upload failed. Please try again.' };
     }
 
-    const imageUrl = uploadRes.url;
-    const supabase = await createAdminClient();
-    const newId = crypto.randomUUID();
-    const now = new Date().toISOString();
-
-    const newRecord: ThemeImageItem = {
-      id: newId,
+    const newRecord = await insertThemeRecord({
       page,
       placement,
-      image_url: imageUrl,
+      image_url: uploadRes.url,
       title,
       subtitle,
       badge,
       button_text,
       link_url,
-      sort_order: 0,
-      is_active: true,
-      is_deleted: false,
-      created_at: now,
-      updated_at: now,
-    };
-
-    // Try inserting into theme_images table
-    const { error: insertError } = await supabase.from('theme_images').insert(newRecord);
-
-    if (insertError) {
-      console.warn('theme_images table insert failed, saving to website_settings:', insertError.message);
-      // Fallback to website_settings
-      await supabase.from('website_settings').upsert(
-        {
-          key: `theme_img_${newId}`,
-          value: newRecord,
-        },
-        { onConflict: 'key' }
-      );
-    }
-
-    await revalidatePublicAndTheme();
+    });
 
     return { success: true, data: newRecord };
   } catch (err: any) {
@@ -367,8 +488,8 @@ export async function getPackagesPageContentAction(): Promise<{
   error?: string;
 }> {
   try {
-    const data = await getPackagesPageContent();
-    return { data };
+    const [data, terms] = await Promise.all([getPackagesPageContent(), getTermsSettings()]);
+    return { data: { ...data, terms_and_conditions: terms.terms_and_conditions ?? '' } };
   } catch (err: any) {
     console.error('getPackagesPageContentAction error:', err);
     return { data: DEFAULT_PACKAGES_PAGE_CONTENT, error: 'Could not load packages page content.' };
@@ -386,7 +507,22 @@ export async function savePackagesPageContentAction(
     const perm = await checkPageAccess(profile, 'theme', 'edit');
     if (!perm.allowed) return { success: false, error: perm.error || 'Access denied.' };
 
+    // Terms live in their own setting (read by every package detail page).
+    const { terms_and_conditions, ...pageContent } = content;
+    content = pageContent;
+
     const supabase = await createAdminClient();
+    if (terms_and_conditions !== undefined) {
+      const { error: termsError } = await supabase.from('website_settings').upsert(
+        { key: 'terms', value: { terms_and_conditions } as any, updated_at: new Date().toISOString() },
+        { onConflict: 'key' }
+      );
+      if (termsError) {
+        console.error('Failed to save terms in website_settings:', termsError);
+        return { success: false, error: 'Could not save terms & conditions.' };
+      }
+    }
+
     let { error: upsertError } = await supabase.from('website_settings').upsert(
       {
         key: 'packages_page_content',
@@ -431,7 +567,7 @@ export async function savePackagesPageContentAction(
 
     await revalidatePublicAndTheme();
 
-    return { success: true, data: content };
+    return { success: true, data: { ...content, terms_and_conditions } };
   } catch (err: any) {
     console.error('savePackagesPageContentAction error:', err);
     return { success: false, error: err?.message || 'Failed to save packages page content.' };

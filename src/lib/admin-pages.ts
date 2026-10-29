@@ -6,8 +6,7 @@ export type PageCategory =
   | 'Tour Operations'
   | 'Content & Marketing'
   | 'Finance & Master'
-  | 'Role Management'
-  | 'System';
+  | 'Role Management';
 
 export interface PageDefinition {
   key: string;
@@ -195,16 +194,6 @@ export const PAGE_CATALOG: PageDefinition[] = [
     defaultRoles: ['super_admin', 'admin'],
   },
 
-  // --- System ---
-  {
-    key: 'settings',
-    label: 'Settings',
-    href: '/travinco_dashboard/settings',
-    icon: 'Settings',
-    category: 'System',
-    description: 'Global site configuration, company info, and booking terms',
-    defaultRoles: ['super_admin', 'admin'],
-  },
 ];
 
 export const CATEGORIES: PageCategory[] = [
@@ -213,5 +202,4 @@ export const CATEGORIES: PageCategory[] = [
   'Content & Marketing',
   'Finance & Master',
   'Role Management',
-  'System',
 ];

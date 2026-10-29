@@ -107,7 +107,8 @@ export async function createClient(options?: { role?: 'admin' | 'customer' }) {
     if (
       area === 'admin' ||
       pathname.startsWith('/travinco_dashboard') ||
-      pathname.startsWith('/travinco_admin_login')
+      pathname.startsWith('/travinco_admin_login') ||
+      pathname === '/app'
     ) {
       return createAdminClient();
     }

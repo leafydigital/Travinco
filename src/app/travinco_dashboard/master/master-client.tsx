@@ -29,6 +29,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { ModalPortal } from '@/components/ui/modal-portal';
 
 interface MasterClientProps {
   initialData: RateMasterQueryResult;
@@ -514,224 +515,228 @@ export function MasterClient({ initialData, filterOptions, isAdmin = false }: Ma
 
       {/* Upload Excel Modal */}
       {isUploadOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-950/60 p-4 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="card w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden shadow-2xl rounded-2xl border border-ink-200/80 animate-in zoom-in-95 duration-200 bg-white">
-            <div className="flex items-center justify-between border-b border-ink-100 bg-sand-50/50 px-6 py-4 shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-100/80 text-brand-800 shadow-xs">
-                  <FileSpreadsheet className="h-5 w-5" />
-                </div>
-                <div>
-                  <h3 className="text-base font-semibold text-ink-900">
-                    Upload Rate Master Excel
-                  </h3>
-                  <p className="text-xs text-ink-500">
-                    Supports .xlsx and .xls files with Rate Master tab
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => !isUploading && setIsUploadOpen(false)}
-                className="rounded-lg p-1.5 text-ink-400 hover:bg-ink-100 hover:text-ink-700 transition-colors cursor-pointer"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleFileUpload} className="p-6 space-y-4 overflow-y-auto flex-1">
-              {/* File Dropzone */}
-              <div className="relative rounded-2xl border-2 border-dashed border-ink-200 bg-ink-50/40 p-6 sm:p-8 text-center transition-all hover:border-brand-500 hover:bg-brand-50/30">
-                <input
-                  type="file"
-                  accept=".xlsx, .xls, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0] || null;
-                    setSelectedFile(f);
-                  }}
-                  className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-                  disabled={isUploading}
-                />
-                <div className="flex flex-col items-center justify-center space-y-2.5">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-50 text-brand-700 shadow-inner">
-                    <Upload className="h-6 w-6" />
+        <ModalPortal>
+          <div className="fixed inset-0 bg-ink-950/50 z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+            <div className="card w-full max-w-3xl max-h-[96vh] flex flex-col overflow-hidden shadow-lg shadow-ink-900/5 rounded-2xl border border-ink-200/80 animate-in zoom-in-95 duration-200 bg-white">
+              <div className="flex items-center justify-between border-b border-ink-100 bg-sand-50/50 px-5 py-3 shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-100/80 text-brand-800 shadow-xs">
+                    <FileSpreadsheet className="h-5 w-5" />
                   </div>
                   <div>
-                    <p className="text-sm font-semibold text-ink-800">
-                      {selectedFile ? selectedFile.name : 'Click to browse or drop Excel file here'}
-                    </p>
-                    <p className="mt-0.5 text-xs text-ink-400">
-                      {selectedFile
-                        ? `${(selectedFile.size / 1024).toFixed(1)} KB`
-                        : '.xlsx or .xls files up to 15MB'}
+                    <h3 className="text-base font-semibold text-ink-900">
+                      Upload Rate Master Excel
+                    </h3>
+                    <p className="text-xs text-ink-500">
+                      Supports .xlsx and .xls files with Rate Master tab
                     </p>
                   </div>
                 </div>
-              </div>
-
-              {/* Sheet & Column Specifications */}
-              <div className="rounded-xl border border-ink-200/80 bg-ink-50/60 p-4 space-y-3 text-xs">
-                {/* Required Sheet Tab Banner & Sample Download Button */}
-                <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-ink-200/70">
-                  <div className="flex items-center gap-1.5 text-ink-800">
-                    <span className="font-semibold text-brand-900">Required Sheet Tab:</span>
-                    <span className="font-mono font-bold bg-brand-100 text-brand-900 px-2 py-0.5 rounded border border-brand-300">
-                      Rate Master
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleDownloadSampleTemplate}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-brand-200 bg-white px-2.5 py-1 text-xs font-semibold text-brand-800 hover:bg-brand-50 transition shadow-2xs cursor-pointer"
-                  >
-                    <Download className="h-3.5 w-3.5 text-brand-700" />
-                    Download Sample Template
-                  </button>
-                </div>
-
-                {/* Mandatory Columns Section */}
-                <div>
-                  <div className="flex items-center gap-1.5 font-bold text-coral-700 mb-1.5">
-                    <span className="h-2 w-2 rounded-full bg-coral-500 inline-block" />
-                    Mandatory Columns (Required in Excel):
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-1.5 pl-3 text-ink-800 font-medium">
-                    <span className="flex items-center gap-1.5">
-                      <span className="text-coral-600 font-bold">•</span>
-                      <span>Hotel Name</span>
-                    </span>
-                    <span className="flex items-center gap-1.5">
-                      <span className="text-coral-600 font-bold">•</span>
-                      <span>Location</span>
-                    </span>
-                    <span className="flex items-center gap-1.5">
-                      <span className="text-coral-600 font-bold">•</span>
-                      <span>Room Category</span>
-                    </span>
-                    <span className="flex items-center gap-1.5">
-                      <span className="text-coral-600 font-bold">•</span>
-                      <span>CP Cost <span className="text-[10px] text-ink-400 font-normal">(or MAP Cost)</span></span>
-                    </span>
-                    <span className="flex items-center gap-1.5 sm:col-span-2 md:col-span-1">
-                      <span className="text-coral-600 font-bold">•</span>
-                      <span>Date Range</span>
-                    </span>
-                  </div>
-                </div>
-
-                {/* Optional Columns Section */}
-                <div className="pt-2 border-t border-ink-200/70">
-                  <div className="flex items-center gap-1.5 font-semibold text-ink-700 mb-1.5">
-                    <span className="h-2 w-2 rounded-full bg-ink-400 inline-block" />
-                    Optional / Additional Columns:
-                  </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 pl-3 text-ink-600 text-[11px]">
-                    <span>• Hotel Category</span>
-                    <span>• Season</span>
-                    <span>• MAP Cost</span>
-                    <span>• Extra Adult CP</span>
-                    <span>• Extra Adult MAP</span>
-                    <span>• Child Bed Cost</span>
-                    <span>• Child No Bed Cost</span>
-                    <span>• Infant Policy</span>
-                    <span>• Mandatory Surcharges</span>
-                    <span>• Notes</span>
-                  </div>
-                </div>
-
-                {/* Flexible synonym notes */}
-                <p className="text-[11px] text-ink-400 italic pt-1 border-t border-ink-100">
-                  💡 Note: Common header variations (e.g. &quot;City&quot;, &quot;Property&quot;, &quot;Room Type&quot;, &quot;Validity&quot;) are automatically recognized.
-                </p>
-              </div>
-
-              {/* Modal Actions */}
-              <div className="flex items-center justify-end gap-3 pt-2">
                 <button
                   type="button"
-                  onClick={() => setIsUploadOpen(false)}
-                  className="btn-ghost text-sm font-medium px-4 py-2 cursor-pointer"
-                  disabled={isUploading}
+                  onClick={() => !isUploading && setIsUploadOpen(false)}
+                  className="rounded-lg p-1.5 text-ink-400 hover:bg-ink-100 hover:text-ink-700 transition-colors cursor-pointer"
                 >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={!selectedFile || isUploading}
-                  className="btn-primary inline-flex items-center gap-2 text-sm font-medium px-5 py-2.5 rounded-xl shadow-xs cursor-pointer"
-                >
-                  {isUploading ? (
-                    <>
-                      <RefreshCw className="h-4 w-4 animate-spin" />
-                      Importing to Database…
-                    </>
-                  ) : (
-                    <>
-                      <Upload className="h-4 w-4" />
-                      Upload & Save
-                    </>
-                  )}
+                  <X className="h-5 w-5" />
                 </button>
               </div>
-            </form>
+  
+              <form onSubmit={handleFileUpload} className="p-5 space-y-3 overflow-y-auto no-scrollbar flex-1">
+                {/* File Dropzone */}
+                <div className="relative rounded-2xl border-2 border-dashed border-ink-200 bg-ink-50/40 px-4 py-4 text-center transition-all hover:border-brand-500 hover:bg-brand-50/30">
+                  <input
+                    type="file"
+                    accept=".xlsx, .xls, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0] || null;
+                      setSelectedFile(f);
+                    }}
+                    className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                    disabled={isUploading}
+                  />
+                  <div className="flex items-center justify-center gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-700 shadow-inner">
+                      <Upload className="h-5 w-5" />
+                    </div>
+                    <div className="text-left">
+                      <p className="text-sm font-semibold text-ink-800">
+                        {selectedFile ? selectedFile.name : 'Click to browse or drop Excel file here'}
+                      </p>
+                      <p className="mt-0.5 text-xs text-ink-400">
+                        {selectedFile
+                          ? `${(selectedFile.size / 1024).toFixed(1)} KB`
+                          : '.xlsx or .xls files up to 15MB'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+  
+                {/* Sheet & Column Specifications */}
+                <div className="rounded-xl border border-ink-200/80 bg-ink-50/60 p-3.5 space-y-2.5 text-xs">
+                  {/* Required Sheet Tab Banner & Sample Download Button */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-ink-200/70">
+                    <div className="flex items-center gap-1.5 text-ink-800">
+                      <span className="font-semibold text-brand-900">Required Sheet Tab:</span>
+                      <span className="font-mono font-bold bg-brand-100 text-brand-900 px-2 py-0.5 rounded border border-brand-300">
+                        Rate Master
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleDownloadSampleTemplate}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-brand-200 bg-white px-2.5 py-1 text-xs font-semibold text-brand-800 hover:bg-brand-50 transition shadow-2xs cursor-pointer"
+                    >
+                      <Download className="h-3.5 w-3.5 text-brand-700" />
+                      Download Sample Template
+                    </button>
+                  </div>
+  
+                  {/* Mandatory Columns Section */}
+                  <div>
+                    <div className="flex items-center gap-1.5 font-bold text-coral-700 mb-1.5">
+                      <span className="h-2 w-2 rounded-full bg-coral-500 inline-block" />
+                      Mandatory Columns (Required in Excel):
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-x-3 gap-y-1 pl-3 text-ink-800 font-medium">
+                      <span className="flex items-center gap-1.5">
+                        <span className="text-coral-600 font-bold">•</span>
+                        <span>Hotel Name</span>
+                      </span>
+                      <span className="flex items-center gap-1.5">
+                        <span className="text-coral-600 font-bold">•</span>
+                        <span>Location</span>
+                      </span>
+                      <span className="flex items-center gap-1.5">
+                        <span className="text-coral-600 font-bold">•</span>
+                        <span>Room Category</span>
+                      </span>
+                      <span className="flex items-center gap-1.5">
+                        <span className="text-coral-600 font-bold">•</span>
+                        <span>CP Cost <span className="text-[10px] text-ink-400 font-normal">(or MAP Cost)</span></span>
+                      </span>
+                      <span className="flex items-center gap-1.5">
+                        <span className="text-coral-600 font-bold">•</span>
+                        <span>Date Range</span>
+                      </span>
+                    </div>
+                  </div>
+  
+                  {/* Optional Columns Section */}
+                  <div className="pt-2 border-t border-ink-200/70">
+                    <div className="flex items-center gap-1.5 font-semibold text-ink-700 mb-1.5">
+                      <span className="h-2 w-2 rounded-full bg-ink-400 inline-block" />
+                      Optional / Additional Columns:
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-x-3 gap-y-1 pl-3 text-ink-600 text-[11px]">
+                      <span>• Hotel Category</span>
+                      <span>• Season</span>
+                      <span>• MAP Cost</span>
+                      <span>• Extra Adult CP</span>
+                      <span>• Extra Adult MAP</span>
+                      <span>• Child Bed Cost</span>
+                      <span>• Child No Bed Cost</span>
+                      <span>• Infant Policy</span>
+                      <span>• Mandatory Surcharges</span>
+                      <span>• Notes</span>
+                    </div>
+                  </div>
+  
+                  {/* Flexible synonym notes */}
+                  <p className="text-[11px] text-ink-400 italic pt-1 border-t border-ink-100">
+                    💡 Note: Common header variations (e.g. &quot;City&quot;, &quot;Property&quot;, &quot;Room Type&quot;, &quot;Validity&quot;) are automatically recognized.
+                  </p>
+                </div>
+  
+                {/* Modal Actions */}
+                <div className="flex items-center justify-end gap-3 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setIsUploadOpen(false)}
+                    className="btn-ghost text-sm font-medium px-4 py-2 cursor-pointer"
+                    disabled={isUploading}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={!selectedFile || isUploading}
+                    className="btn-primary inline-flex items-center gap-2 text-sm font-medium px-5 py-2.5 rounded-xl shadow-xs cursor-pointer"
+                  >
+                    {isUploading ? (
+                      <>
+                        <RefreshCw className="h-4 w-4 animate-spin" />
+                        Importing to Database…
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="h-4 w-4" />
+                        Upload & Save
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
-        </div>
+        </ModalPortal>
       )}
 
       {/* Delete Row Confirmation Modal */}
       {itemToDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-950/60 p-4 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="card w-full max-w-md overflow-hidden shadow-2xl rounded-2xl border border-ink-200 bg-white p-6 space-y-4 animate-in zoom-in-95 duration-200">
-            <div className="flex items-start gap-3.5">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-100 text-red-600">
-                <AlertTriangle className="h-6 w-6" />
+        <ModalPortal>
+          <div className="fixed inset-0 bg-ink-950/50 z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+            <div className="card w-full max-w-md overflow-hidden shadow-lg shadow-ink-900/5 rounded-2xl border border-ink-200 bg-white p-6 space-y-4 animate-in zoom-in-95 duration-200">
+              <div className="flex items-start gap-3.5">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-100 text-red-600">
+                  <AlertTriangle className="h-6 w-6" />
+                </div>
+                <div className="space-y-1.5 flex-1">
+                  <h3 className="text-base font-semibold text-ink-950">
+                    Delete Hotel Rate?
+                  </h3>
+                  <p className="text-xs text-ink-600 leading-relaxed">
+                    Are you sure you want to delete the rate for{' '}
+                    <strong className="text-ink-900 font-semibold">{itemToDelete.hotelName || 'this hotel'}</strong>{' '}
+                    ({itemToDelete.roomCategory || 'Standard Room'}
+                    {itemToDelete.dateRange ? ` • ${itemToDelete.dateRange}` : ''})?
+                  </p>
+                  <p className="text-[11px] text-ink-400">
+                    This action cannot be undone.
+                  </p>
+                </div>
               </div>
-              <div className="space-y-1.5 flex-1">
-                <h3 className="text-base font-semibold text-ink-950">
-                  Delete Hotel Rate?
-                </h3>
-                <p className="text-xs text-ink-600 leading-relaxed">
-                  Are you sure you want to delete the rate for{' '}
-                  <strong className="text-ink-900 font-semibold">{itemToDelete.hotelName || 'this hotel'}</strong>{' '}
-                  ({itemToDelete.roomCategory || 'Standard Room'}
-                  {itemToDelete.dateRange ? ` • ${itemToDelete.dateRange}` : ''})?
-                </p>
-                <p className="text-[11px] text-ink-400">
-                  This action cannot be undone.
-                </p>
+  
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-ink-100">
+                <button
+                  type="button"
+                  onClick={() => setItemToDelete(null)}
+                  className="btn-ghost text-xs font-medium px-3.5 py-2"
+                  disabled={isPending}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmDeleteRow}
+                  disabled={isPending}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-red-600 px-4 py-2 text-xs font-medium text-white hover:bg-red-700 transition-colors shadow-xs"
+                >
+                  {isPending ? (
+                    <>
+                      <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                      Deleting…
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Yes, Delete
+                    </>
+                  )}
+                </button>
               </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-ink-100">
-              <button
-                type="button"
-                onClick={() => setItemToDelete(null)}
-                className="btn-ghost text-xs font-medium px-3.5 py-2"
-                disabled={isPending}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmDeleteRow}
-                disabled={isPending}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-red-600 px-4 py-2 text-xs font-medium text-white hover:bg-red-700 transition-colors shadow-xs"
-              >
-                {isPending ? (
-                  <>
-                    <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                    Deleting…
-                  </>
-                ) : (
-                  <>
-                    <Trash2 className="h-3.5 w-3.5" />
-                    Yes, Delete
-                  </>
-                )}
-              </button>
             </div>
           </div>
-        </div>
+        </ModalPortal>
       )}
 
       {/* Search & Filter Toolbar */}
@@ -1125,135 +1130,137 @@ export function MasterClient({ initialData, filterOptions, isAdmin = false }: Ma
 
       {/* Edit Rate Modal */}
       {itemToEdit && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-ink-950/60 backdrop-blur-xs p-4"
-        >
-          <div className="card w-full max-w-xl bg-white p-6 shadow-2xl rounded-2xl animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-start justify-between border-b border-ink-100 pb-4">
-              <div>
-                <h3 className="text-base font-bold text-ink-900">Edit Hotel Rate</h3>
-                <p className="text-xs text-ink-500 mt-0.5">
-                  {itemToEdit.hotelName} ({itemToEdit.location}) · {itemToEdit.roomCategory} · {itemToEdit.season}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setItemToEdit(null)}
-                className="rounded-lg p-1 text-ink-400 hover:bg-ink-100 hover:text-ink-700 transition cursor-pointer"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveEdit} className="space-y-4 pt-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+        <ModalPortal>
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="fixed inset-0 bg-ink-950/50 z-50 flex items-center justify-center overflow-y-auto p-4"
+          >
+            <div className="card w-full max-w-xl bg-white p-6 shadow-lg shadow-ink-900/5 rounded-2xl animate-in fade-in zoom-in-95 duration-150">
+              <div className="flex items-start justify-between border-b border-ink-100 pb-4">
                 <div>
-                  <label className="label">CP Cost (₹)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="any"
-                    value={editForm.cpCost}
-                    onChange={(e) => setEditForm((f) => ({ ...f, cpCost: e.target.value }))}
-                    placeholder="e.g. 3500"
-                    className="input"
-                  />
+                  <h3 className="text-base font-bold text-ink-900">Edit Hotel Rate</h3>
+                  <p className="text-xs text-ink-500 mt-0.5">
+                    {itemToEdit.hotelName} ({itemToEdit.location}) · {itemToEdit.roomCategory} · {itemToEdit.season}
+                  </p>
                 </div>
-                <div>
-                  <label className="label">MAP Cost (₹)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="any"
-                    value={editForm.mapCost}
-                    onChange={(e) => setEditForm((f) => ({ ...f, mapCost: e.target.value }))}
-                    placeholder="e.g. 4500"
-                    className="input"
-                  />
-                </div>
-                <div>
-                  <label className="label">Extra Adult CP (₹)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="any"
-                    value={editForm.extraAdultCP}
-                    onChange={(e) => setEditForm((f) => ({ ...f, extraAdultCP: e.target.value }))}
-                    placeholder="e.g. 1000"
-                    className="input"
-                  />
-                </div>
-                <div>
-                  <label className="label">Extra Adult MAP (₹)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="any"
-                    value={editForm.extraAdultMAP}
-                    onChange={(e) => setEditForm((f) => ({ ...f, extraAdultMAP: e.target.value }))}
-                    placeholder="e.g. 1500"
-                    className="input"
-                  />
-                </div>
-                <div>
-                  <label className="label">Child Bed Cost (₹)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="any"
-                    value={editForm.childBedCost}
-                    onChange={(e) => setEditForm((f) => ({ ...f, childBedCost: e.target.value }))}
-                    placeholder="e.g. 700"
-                    className="input"
-                  />
-                </div>
-                <div>
-                  <label className="label">Child No Bed Cost (₹)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="any"
-                    value={editForm.childNoBedCost}
-                    onChange={(e) => setEditForm((f) => ({ ...f, childNoBedCost: e.target.value }))}
-                    placeholder="e.g. 400"
-                    className="input"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="label">Notes / Policy Details</label>
-                <input
-                  type="text"
-                  value={editForm.notes}
-                  onChange={(e) => setEditForm((f) => ({ ...f, notes: e.target.value }))}
-                  placeholder="Additional rate notes, validity or policies..."
-                  className="input"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-ink-100">
                 <button
                   type="button"
                   onClick={() => setItemToEdit(null)}
-                  disabled={isSavingEdit}
-                  className="btn-outline cursor-pointer"
+                  className="rounded-lg p-1 text-ink-400 hover:bg-ink-100 hover:text-ink-700 transition cursor-pointer"
                 >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSavingEdit}
-                  className="btn-primary cursor-pointer"
-                >
-                  {isSavingEdit ? 'Saving...' : 'Save Changes'}
+                  <X className="h-5 w-5" />
                 </button>
               </div>
-            </form>
+  
+              <form onSubmit={handleSaveEdit} className="space-y-4 pt-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  <div>
+                    <label className="label">CP Cost (₹)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      value={editForm.cpCost}
+                      onChange={(e) => setEditForm((f) => ({ ...f, cpCost: e.target.value }))}
+                      placeholder="e.g. 3500"
+                      className="input"
+                    />
+                  </div>
+                  <div>
+                    <label className="label">MAP Cost (₹)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      value={editForm.mapCost}
+                      onChange={(e) => setEditForm((f) => ({ ...f, mapCost: e.target.value }))}
+                      placeholder="e.g. 4500"
+                      className="input"
+                    />
+                  </div>
+                  <div>
+                    <label className="label">Extra Adult CP (₹)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      value={editForm.extraAdultCP}
+                      onChange={(e) => setEditForm((f) => ({ ...f, extraAdultCP: e.target.value }))}
+                      placeholder="e.g. 1000"
+                      className="input"
+                    />
+                  </div>
+                  <div>
+                    <label className="label">Extra Adult MAP (₹)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      value={editForm.extraAdultMAP}
+                      onChange={(e) => setEditForm((f) => ({ ...f, extraAdultMAP: e.target.value }))}
+                      placeholder="e.g. 1500"
+                      className="input"
+                    />
+                  </div>
+                  <div>
+                    <label className="label">Child Bed Cost (₹)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      value={editForm.childBedCost}
+                      onChange={(e) => setEditForm((f) => ({ ...f, childBedCost: e.target.value }))}
+                      placeholder="e.g. 700"
+                      className="input"
+                    />
+                  </div>
+                  <div>
+                    <label className="label">Child No Bed Cost (₹)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      value={editForm.childNoBedCost}
+                      onChange={(e) => setEditForm((f) => ({ ...f, childNoBedCost: e.target.value }))}
+                      placeholder="e.g. 400"
+                      className="input"
+                    />
+                  </div>
+                </div>
+  
+                <div>
+                  <label className="label">Notes / Policy Details</label>
+                  <input
+                    type="text"
+                    value={editForm.notes}
+                    onChange={(e) => setEditForm((f) => ({ ...f, notes: e.target.value }))}
+                    placeholder="Additional rate notes, validity or policies..."
+                    className="input"
+                  />
+                </div>
+  
+                <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-ink-100">
+                  <button
+                    type="button"
+                    onClick={() => setItemToEdit(null)}
+                    disabled={isSavingEdit}
+                    className="btn-outline cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSavingEdit}
+                    className="btn-primary cursor-pointer"
+                  >
+                    {isSavingEdit ? 'Saving...' : 'Save Changes'}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
-        </div>
+        </ModalPortal>
       )}
     </div>
   );

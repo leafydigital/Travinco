@@ -307,14 +307,14 @@ export function SaveConfirmationProvider({ children }: { children?: React.ReactN
         createPortal(
           <div
             id="global-save-confirmation-dialog"
-            className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-navy-950/70 backdrop-blur-xs select-none animate-in fade-in duration-150"
+            className="fixed inset-0 bg-ink-950/50 z-[99999] flex items-center justify-center p-4 select-none animate-in fade-in duration-150"
             onClick={handleClose}
             role="dialog"
             aria-modal="true"
             aria-label="Save Confirmation"
           >
             <div
-              className="relative w-full max-w-md bg-white rounded-3xl shadow-2xl overflow-hidden border border-brand-200/80 animate-in zoom-in-95 duration-150 p-6 sm:p-7 space-y-5"
+              className="relative w-full max-w-md bg-white rounded-3xl shadow-lg shadow-ink-900/5 overflow-hidden border border-brand-200/80 animate-in zoom-in-95 duration-150 p-6 sm:p-7 space-y-5"
               onClick={(e) => e.stopPropagation()}
             >
               {/* Header with Save Icon & Close button */}
@@ -333,7 +333,7 @@ export function SaveConfirmationProvider({ children }: { children?: React.ReactN
                     </p>
                   </div>
                 </div>
-
+  
                 <button
                   type="button"
                   onClick={handleClose}
@@ -343,14 +343,14 @@ export function SaveConfirmationProvider({ children }: { children?: React.ReactN
                   <X className="h-4 w-4" />
                 </button>
               </div>
-
+  
               {/* Message Body */}
               <div className="rounded-2xl bg-sand-50/70 border border-sand-200/80 p-4">
                 <p className="text-xs sm:text-sm text-ink-700 leading-relaxed font-medium">
                   {actionInfo.description}
                 </p>
               </div>
-
+  
               {/* Buttons */}
               <div className="flex items-center justify-end gap-3 pt-1">
                 <button
@@ -360,7 +360,7 @@ export function SaveConfirmationProvider({ children }: { children?: React.ReactN
                 >
                   Cancel
                 </button>
-
+  
                 <button
                   type="button"
                   onClick={handleConfirm}

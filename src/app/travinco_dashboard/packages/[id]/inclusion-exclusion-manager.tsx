@@ -34,7 +34,10 @@ export function InclusionExclusionManager({
   const [isPending, startTransition] = useTransition();
 
   function add() {
-    if (!draft.trim()) return;
+    if (!draft.trim()) {
+      toast.error('Enter some text before adding.');
+      return;
+    }
     startTransition(async () => {
       const result = await onAdd(packageId, { item: draft.trim() });
       if (result.error) {
@@ -68,7 +71,10 @@ export function InclusionExclusionManager({
   }
 
   function saveEdit(id: string) {
-    if (!editValue.trim()) return;
+    if (!editValue.trim()) {
+      toast.error('This item cannot be empty.');
+      return;
+    }
     startTransition(async () => {
       const result = await onUpdate(packageId, id, { item: editValue.trim() });
       if (result.error) {

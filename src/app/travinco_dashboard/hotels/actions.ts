@@ -8,12 +8,11 @@ import { canEditMasters, canAccess } from '@/lib/tour/access';
 
 const optStr = (max: number) =>
   z.preprocess((v) => (v == null || String(v).trim() === '' ? null : String(v).trim()), z.string().max(max).nullable());
-const optId = z.preprocess((v) => (v == null || String(v).trim() === '' ? null : Number(v)), z.number().int().positive().nullable());
 
 const hotelSchema = z.object({
   name: z.preprocess((v) => String(v ?? '').trim(), z.string().min(1, 'Hotel name is required').max(150)),
   location_id: z.preprocess((v) => Number(v), z.number().int().positive({ message: 'Choose a location' })),
-  default_category_id: optId,
+  category_name: optStr(60),
   area: optStr(80),
   gst_basis: optStr(40),
   contact_person: optStr(120),
@@ -41,15 +40,38 @@ async function guard() {
   return createClient();
 }
 
+/** Finds a hotel category by name (case-insensitive), creating it when it is new. */
+async function resolveCategoryId(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  name: string | null
+): Promise<{ id: number | null } | { error: string }> {
+  if (!name) return { id: null };
+  const { data: cats } = await supabase.from('hotel_categories').select('id, name, sort_order');
+  const match = (cats ?? []).find((c) => c.name.trim().toLowerCase() === name.toLowerCase());
+  if (match) return { id: match.id };
+  const sort = Math.max(0, ...(cats ?? []).map((c) => c.sort_order ?? 0)) + 1;
+  const { data, error } = await supabase.from('hotel_categories').insert({ name, sort_order: sort }).select('id').single();
+  if (error || !data) {
+    console.error('resolveCategoryId', error?.message);
+    return { error: 'Could not create the new hotel category.' };
+  }
+  revalidatePath('/travinco_dashboard/hotels', 'layout');
+  return { id: data.id };
+}
+
 export async function saveHotel(id: number | null, raw: Record<string, unknown>): Promise<{ error?: string; id?: number }> {
   const parsed = hotelSchema.safeParse(raw);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Please check the form.' };
   const supabase = await guard();
   if (!supabase) return { error: 'Only admins can edit hotels.' };
+  const { category_name, ...fields } = parsed.data;
+  const cat = await resolveCategoryId(supabase, category_name);
+  if ('error' in cat) return { error: cat.error };
+  const row = { ...fields, default_category_id: cat.id };
   const q =
     id == null
-      ? supabase.from('hotels').insert(parsed.data).select('id').single()
-      : supabase.from('hotels').update(parsed.data).eq('id', id).select('id').single();
+      ? supabase.from('hotels').insert(row).select('id').single()
+      : supabase.from('hotels').update(row).eq('id', id).select('id').single();
   const { data, error } = await q;
   if (error) {
     if (error.code === '23505') return { error: 'A hotel with this name already exists in that location.' };

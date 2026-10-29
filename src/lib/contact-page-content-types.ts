@@ -17,6 +17,14 @@ export interface ContactPageContent {
   phone?: string;
   /** Overridable email displayed on the contact page */
   email?: string;
+  /** WhatsApp number — used on the contact page and the site header WhatsApp button */
+  whatsapp?: string;
+  /** Office address shown on the contact page */
+  address?: string;
+  /** Office working hours shown on the contact page */
+  working_hours?: string;
+  /** Google Maps embed URL for the map on the contact page */
+  map_embed_url?: string;
   info_badge?: string;
   info_title?: string;
   info_subtitle?: string;
@@ -41,6 +49,10 @@ export const DEFAULT_CONTACT_PAGE_CONTENT: ContactPageContent = {
   },
   phone: '',
   email: '',
+  whatsapp: '',
+  address: '',
+  working_hours: '',
+  map_embed_url: '',
   info_badge: 'Direct Assistance',
   info_title: 'Speak with our travel specialists',
   info_subtitle: 'Reach out via phone, WhatsApp, email, or visit our local concierge office.',

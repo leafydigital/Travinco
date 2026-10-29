@@ -32,9 +32,13 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
 
   if (!customer || (customer as any).is_deleted === true || delSetting) notFound();
 
-  const isActive = statusSetting?.value?.is_active !== undefined
-    ? Boolean(statusSetting.value.is_active)
-    : (customer as any).is_active !== false && (customer as any).status !== 'inactive';
+  // The is_active column is authoritative; the marker is a fallback for DBs without it.
+  const isActive =
+    typeof (customer as any).is_active === 'boolean'
+      ? (customer as any).is_active
+      : statusSetting?.value?.is_active !== undefined
+        ? Boolean(statusSetting.value.is_active)
+        : (customer as any).status !== 'inactive';
 
   const totalSpend = (bookings ?? []).reduce((sum, b) => sum + Number(b.amount_received), 0);
   const totalBookingValue = (bookings ?? []).reduce((sum, b) => sum + Number(b.total_amount), 0);

@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 import { formatCurrency, formatDate } from '@/lib/utils/format';
 import { ExpenseQuickAdd } from './expense-quick-add';
 import { ExpenseRowActions } from './expense-row-actions';
+import { paymentMethodLabel } from '@/lib/payment-methods';
 import { Suspense } from 'react';
 
 const PAGE_SIZE = 25;
@@ -103,7 +104,7 @@ async function ExpensesContent({ searchParams }: { searchParams: SearchParams })
             {row.description || '—'}
           </td>
           <td className="hidden md:table-cell px-3 sm:px-4 py-3 text-ink-600 max-w-[120px] truncate text-xs sm:text-sm">{row.supplier ?? '—'}</td>
-          <td className="hidden sm:table-cell px-3 sm:px-4 py-3 capitalize text-ink-500 whitespace-nowrap text-xs sm:text-sm">{row.payment_method.replace('_', ' ')}</td>
+          <td className="hidden sm:table-cell px-3 sm:px-4 py-3 text-ink-500 whitespace-nowrap text-xs sm:text-sm">{paymentMethodLabel(row.payment_method, row.notes)}</td>
           <td className="px-3 sm:px-4 py-3 text-right font-medium text-red-600 whitespace-nowrap text-xs sm:text-sm">
             {formatCurrency(row.amount)}
           </td>

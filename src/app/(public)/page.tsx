@@ -66,7 +66,7 @@ function HomeDestinationsSkeleton({ homeContent }: { homeContent: any }) {
           description={homeContent.destinations?.description}
         />
         <Link
-          href="/destinations"
+          href="/packages"
           className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-700 hover:text-brand-900 transition whitespace-nowrap mb-8"
         >
           <span>{homeContent.destinations?.cta_text || 'View all destinations'}</span>
@@ -81,13 +81,21 @@ function HomeDestinationsSkeleton({ homeContent }: { homeContent: any }) {
 async function HomeDestinationsSection({ homeContent }: { homeContent: any }) {
   try {
     const supabase = createPublicClient();
-    const { data: destinations } = await supabase
-      .from('destinations')
-      .select('id, name, slug, cover_image_url, description')
-      .eq('status', 'published')
-      .order('sort_order');
+    // Featured destinations first, then the rest by sort order to fill the 3 slots.
+    const [{ data: rows }, { data: deletedRows }] = await Promise.all([
+      supabase
+        .from('destinations')
+        .select('id, name, slug, cover_image_url, description, is_featured, is_deleted')
+        .eq('status', 'published')
+        .order('is_featured', { ascending: false })
+        .order('sort_order', { ascending: true })
+        .order('name', { ascending: true }),
+      supabase.from('website_settings').select('key').like('key', 'deleted_destination_%'),
+    ]);
+    const deletedIds = new Set((deletedRows ?? []).map((r: { key: string }) => r.key.replace('deleted_destination_', '')));
+    const destinations = (rows ?? []).filter((d) => d.is_deleted !== true && !deletedIds.has(String(d.id)));
 
-    if (!destinations || destinations.length === 0) return null;
+    if (destinations.length === 0) return null;
 
     return (
       <section className="container-page py-12 sm:py-16">
@@ -98,7 +106,7 @@ async function HomeDestinationsSection({ homeContent }: { homeContent: any }) {
             description={homeContent.destinations?.description}
           />
           <Link
-            href="/destinations"
+            href="/packages"
             className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-700 hover:text-brand-900 transition whitespace-nowrap mb-8"
           >
             <span>{homeContent.destinations?.cta_text || 'View all destinations'}</span>
@@ -108,7 +116,7 @@ async function HomeDestinationsSection({ homeContent }: { homeContent: any }) {
 
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {destinations.slice(0, 3).map((d) => (
-            <Link key={d.id} href={`/destinations/${d.slug}`} className="group block">
+            <Link key={d.id} href={`/packages?destination=${encodeURIComponent(d.slug)}`} className="group block">
               <div className="relative aspect-[4/3] sm:aspect-[16/10] overflow-hidden rounded-2xl bg-ink-100 shadow-md transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-xl">
                 {d.cover_image_url ? (
                   <Image
@@ -189,16 +197,23 @@ function HomePackagesSkeleton() {
 async function HomePackagesSection() {
   try {
     const supabase = createPublicClient();
-    const { data: featuredPackages } = await supabase
-      .from('travel_packages')
-      .select(
-        'id, title, slug, cover_image_url, duration_days, duration_nights, base_price, discount_price, currency, short_description, destinations(id, name, slug)'
-      )
-      .eq('status', 'published')
-      .eq('is_featured', true)
-      .limit(4);
+    // Featured packages first, then the newest ones to fill the 4 slots.
+    const [{ data: rows }, { data: deletedRows }] = await Promise.all([
+      supabase
+        .from('travel_packages')
+        .select(
+          'id, title, slug, cover_image_url, duration_days, duration_nights, base_price, discount_price, currency, short_description, is_featured, is_deleted, destinations(id, name, slug)'
+        )
+        .eq('status', 'published')
+        .order('is_featured', { ascending: false })
+        .order('created_at', { ascending: false })
+        .limit(24),
+      supabase.from('website_settings').select('key').like('key', 'deleted_package_%'),
+    ]);
+    const deletedIds = new Set((deletedRows ?? []).map((r: { key: string }) => r.key.replace('deleted_package_', '')));
+    const featuredPackages = (rows ?? []).filter((p) => p.is_deleted !== true && !deletedIds.has(String(p.id)));
 
-    if (!featuredPackages || featuredPackages.length === 0) return null;
+    if (featuredPackages.length === 0) return null;
 
     return (
       <section className="section-sand py-16 sm:py-20 border-y border-sand-200/60">
@@ -224,17 +239,6 @@ async function HomePackagesSection() {
               const destinationName = Array.isArray(destRaw) ? destRaw[0]?.name : destRaw?.name;
               return <PackageCard key={pkg.id} pkg={{ ...pkg, destinationName }} />;
             })}
-          </div>
-
-          {/* Link to Package Page */}
-          <div className="mt-8 text-center">
-            <Link
-              href="/packages"
-              className="btn-outline inline-flex items-center gap-2 text-sm bg-white hover:bg-sand-50 shadow-2xs font-medium"
-            >
-              <span>View all packages in package page</span>
-              <ArrowRight className="h-4 w-4 text-brand-600" />
-            </Link>
           </div>
 
           {/* Custom plan callout */}

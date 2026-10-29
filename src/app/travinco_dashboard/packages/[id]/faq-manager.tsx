@@ -34,7 +34,10 @@ export function FaqManager({
   const [isPending, startTransition] = useTransition();
 
   function add() {
-    if (!question.trim() || !answer.trim()) return;
+    if (!question.trim() || !answer.trim()) {
+      toast.error('Enter both a question and an answer.');
+      return;
+    }
     startTransition(async () => {
       const result = await onAdd(packageId, { question: question.trim(), answer: answer.trim() });
       if (result.error) {
@@ -54,7 +57,10 @@ export function FaqManager({
   }
 
   function saveEdit(id: string) {
-    if (!editQuestion.trim() || !editAnswer.trim()) return;
+    if (!editQuestion.trim() || !editAnswer.trim()) {
+      toast.error('Question and answer cannot be empty.');
+      return;
+    }
     startTransition(async () => {
       const result = await onUpdate(packageId, id, {
         question: editQuestion.trim(),

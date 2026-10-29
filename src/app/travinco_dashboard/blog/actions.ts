@@ -109,7 +109,7 @@ export async function deleteBlogPost(id: string) {
     await supabase.from('website_settings').upsert({
       key: `deleted_blog_${id}`,
       value: { is_deleted: true, deleted_at: new Date().toISOString() },
-    });
+    }, { onConflict: 'key' });
   } catch (err) {
     console.warn('Failed to record deleted_blog marker:', err);
   }

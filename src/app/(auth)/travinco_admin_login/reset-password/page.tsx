@@ -51,7 +51,7 @@ export default function AdminResetPasswordPage() {
         toast.error(res.error);
       } else {
         toast.success('Password updated successfully!');
-        router.push('/travinco_admin_login?reason=reset_success');
+        router.push('/app');
       }
     });
   };

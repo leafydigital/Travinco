@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
+import { isVideoUrl } from '@/lib/media';
 import Link from 'next/link';
 import { ArrowRight } from 'lucide-react';
 
@@ -103,16 +104,30 @@ export function HeroSlider({ slides, heroContent }: HeroSliderProps) {
                   isActive ? 'scale-105' : 'scale-100'
                 }`}
               >
-                <Image
-                  src={slide.imageUrl}
-                  alt={slide.title || 'Travel destination'}
-                  fill
-                  priority={idx === 0}
-                  loading={idx === 0 ? 'eager' : 'lazy'}
-                  unoptimized
-                  className="object-cover object-center brightness-[0.78] contrast-[1.05]"
-                  sizes="100vw"
-                />
+                {isVideoUrl(slide.imageUrl) ? (
+                  // Hero slides may be videos (uploaded from Customize Theme): muted autoplay loop
+                  <video
+                    src={slide.imageUrl}
+                    className="absolute inset-0 h-full w-full object-cover object-center brightness-[0.78] contrast-[1.05]"
+                    autoPlay
+                    muted
+                    loop
+                    playsInline
+                    preload={idx === 0 ? 'auto' : 'metadata'}
+                    aria-label={slide.title || 'Travel destination video'}
+                  />
+                ) : (
+                  <Image
+                    src={slide.imageUrl}
+                    alt={slide.title || 'Travel destination'}
+                    fill
+                    priority={idx === 0}
+                    loading={idx === 0 ? 'eager' : 'lazy'}
+                    unoptimized
+                    className="object-cover object-center brightness-[0.78] contrast-[1.05]"
+                    sizes="100vw"
+                  />
+                )}
               </div>
 
               {/* Subtle tint to gently lower brightness so text is easily readable */}

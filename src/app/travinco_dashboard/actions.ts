@@ -86,5 +86,5 @@ export async function signOut() {
   } catch (err) {
     console.warn('SignOut server error caught:', err);
   }
-  redirect('/account/login');
+  redirect('/app');
 }

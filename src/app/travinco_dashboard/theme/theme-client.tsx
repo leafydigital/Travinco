@@ -35,6 +35,8 @@ import {
 import { toast } from 'sonner';
 import {
   uploadThemeImageAction,
+  createThemeVideoUploadAction,
+  saveThemeVideoAction,
   updateThemeImageAction,
   toggleThemeImageStatusAction,
   deleteThemeImageAction,
@@ -42,6 +44,11 @@ import {
 } from './actions';
 
 import type { HomePageContent } from '@/lib/home-page-content-types';
+import { createClient as createBrowserSupabase } from '@/lib/supabase/client';
+import { isVideoUrl } from '@/lib/media';
+
+const VIDEO_MIME_TYPES = ['video/mp4', 'video/webm', 'video/quicktime'];
+const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
 import { DEFAULT_HOME_PAGE_CONTENT } from '@/lib/home-page-content-types';
 import { HomePageEditor } from './home-page-editor';
 import { PackagesPageEditor } from './packages-page-editor';
@@ -65,6 +72,7 @@ import { DEFAULT_PAGE_TITLES_CONTENT } from '@/lib/page-titles-content-types';
 import { ContactPageEditor } from './contact-page-editor';
 import type { ContactPageContent } from '@/lib/contact-page-content-types';
 import { DEFAULT_CONTACT_PAGE_CONTENT } from '@/lib/contact-page-content-types';
+import { ModalPortal } from '@/components/ui/modal-portal';
 
 interface DestinationItem {
   id: string;
@@ -239,6 +247,8 @@ export function ThemeClient({
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadPreview, setUploadPreview] = useState<string | null>(null);
   const [uploadPlacement, setUploadPlacement] = useState<string>('hero');
+  // Video files are supported for the Home page hero slider only
+  const allowVideoUpload = activeTab === 'home' && uploadPlacement === 'hero';
   const [isUploading, setIsUploading] = useState(false);
   const [lastUploadedImage, setLastUploadedImage] = useState<ThemeImageItem | null>(null);
 
@@ -310,6 +320,51 @@ export function ThemeClient({
     }
 
     setIsUploading(true);
+
+    // Videos (Home hero only) upload straight to Storage via a signed URL
+    if (VIDEO_MIME_TYPES.includes(uploadFile.type)) {
+      try {
+        if (uploadFile.size > MAX_VIDEO_BYTES) {
+          toast.error('Video is too large — please keep it under 50 MB.');
+          return;
+        }
+        const prep = await createThemeVideoUploadAction({
+          contentType: uploadFile.type,
+          size: uploadFile.size,
+          page: activeTab,
+          placement: uploadPlacement,
+        });
+        if (prep.error || !prep.path || !prep.token || !prep.bucket) {
+          toast.error(prep.error || 'Could not prepare the video upload.');
+          return;
+        }
+        const { error: upErr } = await createBrowserSupabase()
+          .storage.from(prep.bucket)
+          .uploadToSignedUrl(prep.path, prep.token, uploadFile, { contentType: uploadFile.type });
+        if (upErr) {
+          toast.error('Video upload failed. Please try again.');
+          return;
+        }
+        const saved = await saveThemeVideoAction({ path: prep.path, page: activeTab, placement: uploadPlacement });
+        if (saved.success && saved.data) {
+          toast.success('Video uploaded and added to the hero slider!');
+          setImages((prev) => [saved.data!, ...prev]);
+          setLastUploadedImage(saved.data);
+          router.refresh();
+          setUploadFile(null);
+          setUploadPreview(null);
+          setIsUploadOpen(false);
+        } else {
+          toast.error(saved.error || 'Could not save the video.');
+        }
+      } catch {
+        toast.error('An unexpected error occurred during upload.');
+      } finally {
+        setIsUploading(false);
+      }
+      return;
+    }
+
     const fd = new FormData();
     fd.append('image', uploadFile);
     fd.append('page', activeTab);
@@ -711,158 +766,182 @@ export function ThemeClient({
 
       {/* ── Centered Upload Modal Dialog (No Scrolling Upward) ── */}
       {isUploadOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-navy-950/75 backdrop-blur-xs select-none animate-in fade-in duration-150"
-          onClick={() => setIsUploadOpen(false)}
-          role="dialog"
-          aria-modal="true"
-        >
+        <ModalPortal>
           <div
-            className="card p-6 sm:p-7 border-brand-200 bg-white shadow-2xl space-y-5 rounded-3xl w-full max-w-2xl max-h-[92vh] overflow-y-auto animate-in zoom-in-95 duration-150"
-            onClick={(e) => e.stopPropagation()}
+            className="fixed inset-0 bg-ink-950/50 z-50 flex items-center justify-center p-4 select-none animate-in fade-in duration-150"
+            onClick={() => setIsUploadOpen(false)}
+            role="dialog"
+            aria-modal="true"
           >
-            <div className="flex items-center justify-between border-b border-ink-100 pb-3.5">
-              <div className="flex items-center gap-2.5">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-500 text-white shadow-xs">
-                  <Upload className="h-5 w-5" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-ink-900">
-                    Upload Image &bull; {currentTabConfig.label}
-                  </h3>
-                  <p className="text-xs text-ink-500">
-                    Select an image file to immediately add to this section on the customer website.
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsUploadOpen(false)}
-                className="flex h-8 w-8 items-center justify-center rounded-full bg-ink-100 text-ink-600 hover:bg-ink-200 hover:text-ink-900 transition cursor-pointer"
-                aria-label="Close upload modal"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleUploadSubmit} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                {/* Left Column: File Dropzone & Preview */}
-                <div>
-                  <label className="block text-xs font-semibold text-ink-700 mb-1.5">
-                    Select Image File <span className="text-coral-600">*</span>
-                  </label>
-                  <div className="relative flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-ink-300 bg-ink-50/40 p-6 hover:border-brand-500 transition-colors cursor-pointer text-center min-h-[190px]">
-                    <input
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp"
-                      onChange={handleFileChange}
-                      required
-                      className="absolute inset-0 h-full w-full opacity-0 cursor-pointer"
-                      disabled={isUploading}
-                    />
-
-                    {uploadPreview ? (
-                      <div className="space-y-2 text-center">
-                        <div className="relative mx-auto h-28 w-44 overflow-hidden rounded-xl border border-ink-200 shadow-sm">
-                          <Image
-                            src={uploadPreview}
-                            alt="Upload preview"
-                            fill
-                            className="object-cover"
-                          />
-                        </div>
-                        <p className="text-xs text-ink-600 font-medium truncate max-w-[220px]">
-                          {uploadFile?.name}
-                        </p>
-                        <span className="text-[10px] text-brand-600 underline">Click to change</span>
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl bg-white text-ink-500 shadow-xs border border-ink-200">
-                          <ImageIcon className="h-5 w-5 text-brand-600" />
-                        </div>
-                        <div>
-                          <p className="text-xs font-semibold text-ink-800">
-                            Click to select or drag & drop image
-                          </p>
-                          <p className="text-[11px] text-ink-400">JPG, PNG, or WEBP up to 8MB</p>
-                        </div>
-                      </div>
-                    )}
+            <div
+              className="card p-6 sm:p-7 border-brand-200 bg-white shadow-lg shadow-ink-900/5 space-y-5 rounded-3xl w-full max-w-2xl max-h-[92vh] overflow-y-auto animate-in zoom-in-95 duration-150"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between border-b border-ink-100 pb-3.5">
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-500 text-white shadow-xs">
+                    <Upload className="h-5 w-5" />
                   </div>
-                </div>
-
-                {/* Right Column: Section Placement */}
-                <div className="space-y-4 flex flex-col justify-between">
                   <div>
-                    <label className="block text-xs font-semibold text-ink-700 mb-1.5">
-                      Target Section Placement <span className="text-coral-600">*</span>
-                    </label>
-                    <div className="space-y-2">
-                      {currentTabConfig.placements.map((p) => (
-                        <label
-                          key={p.value}
-                          className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition ${
-                            uploadPlacement === p.value
-                              ? 'border-brand-500 bg-brand-50/60 ring-1 ring-brand-500/20'
-                              : 'border-ink-200 bg-white hover:border-ink-300'
-                          }`}
-                        >
-                          <input
-                            type="radio"
-                            name="uploadPlacement"
-                            value={p.value}
-                            checked={uploadPlacement === p.value}
-                            onChange={(e) => setUploadPlacement(e.target.value)}
-                            className="mt-0.5 text-brand-600 focus:ring-brand-500"
-                          />
-                          <div className="text-xs">
-                            <p className="font-semibold text-ink-900">{p.label}</p>
-                            <p className="text-ink-500 text-[11px] mt-0.5">{p.hint}</p>
-                          </div>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="rounded-xl bg-sand-50 p-3 text-[11px] text-ink-600 border border-sand-200">
-                    <span className="font-semibold text-ink-900">Live website sync:</span> Uploaded visual will instantly appear on the customer side under the selected section.
+                    <h3 className="text-sm font-bold text-ink-900">
+                      Upload Image &bull; {currentTabConfig.label}
+                    </h3>
+                    <p className="text-xs text-ink-500">
+                      Select an image file to immediately add to this section on the customer website.
+                    </p>
                   </div>
                 </div>
-              </div>
-
-              {/* Submit Actions */}
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-ink-100">
                 <button
                   type="button"
                   onClick={() => setIsUploadOpen(false)}
-                  disabled={isUploading}
-                  className="btn-ghost text-xs px-4 py-2 font-medium"
+                  className="flex h-8 w-8 items-center justify-center rounded-full bg-ink-100 text-ink-600 hover:bg-ink-200 hover:text-ink-900 transition cursor-pointer"
+                  aria-label="Close upload modal"
                 >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={!uploadFile || isUploading}
-                  className="btn-primary inline-flex items-center gap-2 text-xs font-semibold px-5 py-2.5 rounded-xl shadow-xs cursor-pointer"
-                >
-                  {isUploading ? (
-                    <>
-                      <RefreshCw className="h-4 w-4 animate-spin" />
-                      <span>Uploading to Theme…</span>
-                    </>
-                  ) : (
-                    <>
-                      <Upload className="h-4 w-4" />
-                      <span>Upload & Add Image</span>
-                    </>
-                  )}
+                  <X className="h-4 w-4" />
                 </button>
               </div>
-            </form>
+  
+              <form onSubmit={handleUploadSubmit} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  {/* Left Column: File Dropzone & Preview */}
+                  <div>
+                    <label className="block text-xs font-semibold text-ink-700 mb-1.5">
+                      {allowVideoUpload ? 'Select Image or Video File' : 'Select Image File'}{' '}
+                      <span className="text-coral-600">*</span>
+                    </label>
+                    <div className="relative flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-ink-300 bg-ink-50/40 p-6 hover:border-brand-500 transition-colors cursor-pointer text-center min-h-[190px]">
+                      <input
+                        type="file"
+                        accept={
+                          allowVideoUpload
+                            ? 'image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime'
+                            : 'image/jpeg,image/png,image/webp'
+                        }
+                        onChange={handleFileChange}
+                        required
+                        className="absolute inset-0 h-full w-full opacity-0 cursor-pointer"
+                        disabled={isUploading}
+                      />
+  
+                      {uploadPreview ? (
+                        <div className="space-y-2 text-center">
+                          <div className="relative mx-auto h-28 w-44 overflow-hidden rounded-xl border border-ink-200 shadow-sm">
+                            {uploadFile && VIDEO_MIME_TYPES.includes(uploadFile.type) ? (
+                              <video
+                                src={uploadPreview}
+                                className="h-full w-full object-cover"
+                                muted
+                                loop
+                                autoPlay
+                                playsInline
+                              />
+                            ) : (
+                              <Image
+                                src={uploadPreview}
+                                alt="Upload preview"
+                                fill
+                                className="object-cover"
+                              />
+                            )}
+                          </div>
+                          <p className="text-xs text-ink-600 font-medium truncate max-w-[220px]">
+                            {uploadFile?.name}
+                          </p>
+                          <span className="text-[10px] text-brand-600 underline">Click to change</span>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-xl bg-white text-ink-500 shadow-xs border border-ink-200">
+                            <ImageIcon className="h-5 w-5 text-brand-600" />
+                          </div>
+                          <div>
+                            <p className="text-xs font-semibold text-ink-800">
+                              {allowVideoUpload
+                                ? 'Click to select or drag & drop an image or video'
+                                : 'Click to select or drag & drop image'}
+                            </p>
+                            <p className="text-[11px] text-ink-400">
+                              {allowVideoUpload
+                                ? 'Images: JPG, PNG, WEBP up to 8MB • Videos: MP4, WEBM, MOV up to 50MB'
+                                : 'JPG, PNG, or WEBP up to 8MB'}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+  
+                  {/* Right Column: Section Placement */}
+                  <div className="space-y-4 flex flex-col justify-between">
+                    <div>
+                      <label className="block text-xs font-semibold text-ink-700 mb-1.5">
+                        Target Section Placement <span className="text-coral-600">*</span>
+                      </label>
+                      <div className="space-y-2">
+                        {currentTabConfig.placements.map((p) => (
+                          <label
+                            key={p.value}
+                            className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition ${
+                              uploadPlacement === p.value
+                                ? 'border-brand-500 bg-brand-50/60 ring-1 ring-brand-500/20'
+                                : 'border-ink-200 bg-white hover:border-ink-300'
+                            }`}
+                          >
+                            <input
+                              type="radio"
+                              name="uploadPlacement"
+                              value={p.value}
+                              checked={uploadPlacement === p.value}
+                              onChange={(e) => setUploadPlacement(e.target.value)}
+                              className="mt-0.5 text-brand-600 focus:ring-brand-500"
+                            />
+                            <div className="text-xs">
+                              <p className="font-semibold text-ink-900">{p.label}</p>
+                              <p className="text-ink-500 text-[11px] mt-0.5">{p.hint}</p>
+                            </div>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+  
+                    <div className="rounded-xl bg-sand-50 p-3 text-[11px] text-ink-600 border border-sand-200">
+                      <span className="font-semibold text-ink-900">Live website sync:</span> Uploaded visual will instantly appear on the customer side under the selected section.
+                    </div>
+                  </div>
+                </div>
+  
+                {/* Submit Actions */}
+                <div className="flex items-center justify-end gap-3 pt-3 border-t border-ink-100">
+                  <button
+                    type="button"
+                    onClick={() => setIsUploadOpen(false)}
+                    disabled={isUploading}
+                    className="btn-ghost text-xs px-4 py-2 font-medium"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={!uploadFile || isUploading}
+                    className="btn-primary inline-flex items-center gap-2 text-xs font-semibold px-5 py-2.5 rounded-xl shadow-xs cursor-pointer"
+                  >
+                    {isUploading ? (
+                      <>
+                        <RefreshCw className="h-4 w-4 animate-spin" />
+                        <span>Uploading to Theme…</span>
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="h-4 w-4" />
+                        <span>Upload & Add Image</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
-        </div>
+        </ModalPortal>
       )}
 
       {/* ── Media Assets Library View (Filters, Search & Image Cards) ── */}
@@ -980,13 +1059,26 @@ export function ThemeClient({
             >
               {/* Image Preview Container */}
               <div className="relative aspect-[16/10] overflow-hidden bg-ink-100">
-                <Image
-                  src={item.image_url}
-                  alt={item.title || 'Theme visual'}
-                  fill
-                  className="object-cover transition-transform duration-500 group-hover:scale-105"
-                  sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
-                />
+                {isVideoUrl(item.image_url) ? (
+                  <video
+                    src={item.image_url}
+                    className="h-full w-full object-cover"
+                    muted
+                    loop
+                    playsInline
+                    preload="metadata"
+                    onMouseEnter={(e) => e.currentTarget.play().catch(() => {})}
+                    onMouseLeave={(e) => e.currentTarget.pause()}
+                  />
+                ) : (
+                  <Image
+                    src={item.image_url}
+                    alt={item.title || 'Theme visual'}
+                    fill
+                    className="object-cover transition-transform duration-500 group-hover:scale-105"
+                    sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
+                  />
+                )}
 
                 {/* Placement Tag Badge */}
                 <span
@@ -1126,120 +1218,135 @@ export function ThemeClient({
 
       {/* ── Edit Modal (Change Placement) ── */}
       {itemToEdit && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-950/60 p-4 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="card w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl border border-ink-200 p-6 space-y-4 animate-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between border-b border-ink-100 pb-3">
-              <div className="flex items-center gap-2">
-                <Pencil className="h-4 w-4 text-brand-600" />
-                <h3 className="text-base font-bold text-ink-900">Change Section Placement</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setItemToEdit(null)}
-                className="rounded-lg p-1 text-ink-400 hover:bg-ink-100 hover:text-ink-700"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveEdit} className="space-y-4">
-              {/* Preview Thumbnail */}
-              <div className="relative h-40 w-full overflow-hidden rounded-xl border border-ink-200 bg-ink-50">
-                <Image
-                  src={itemToEdit.image_url}
-                  alt={itemToEdit.placement || 'Edit preview'}
-                  fill
-                  className="object-cover"
-                />
-              </div>
-
-              {/* Placement selector */}
-              <div>
-                <label className="block text-xs font-semibold text-ink-700 mb-1.5">
-                  Target Section Placement
-                </label>
-                <select
-                  value={editForm.placement}
-                  onChange={(e) => setEditForm((p) => ({ ...p, placement: e.target.value }))}
-                  className="input text-xs h-10 rounded-lg"
-                >
-                  {currentTabConfig.placements.map((p) => (
-                    <option key={p.value} value={p.value}>
-                      {p.label} — ({p.hint})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Modal Actions */}
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-ink-100">
+        <ModalPortal>
+          <div className="fixed inset-0 bg-ink-950/50 z-50 flex items-center justify-center p-4 animate-in fade-in duration-150">
+            <div className="card w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-lg shadow-ink-900/5 border border-ink-200 p-6 space-y-4 animate-in zoom-in-95 duration-150">
+              <div className="flex items-center justify-between border-b border-ink-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <Pencil className="h-4 w-4 text-brand-600" />
+                  <h3 className="text-base font-bold text-ink-900">Change Section Placement</h3>
+                </div>
                 <button
                   type="button"
                   onClick={() => setItemToEdit(null)}
-                  disabled={isSavingEdit}
-                  className="btn-ghost text-xs px-4 py-2 font-medium"
+                  className="rounded-lg p-1 text-ink-400 hover:bg-ink-100 hover:text-ink-700"
                 >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSavingEdit}
-                  className="btn-primary inline-flex items-center gap-2 text-xs font-semibold px-5 py-2.5 rounded-xl shadow-xs"
-                >
-                  {isSavingEdit ? (
-                    <>
-                      <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                      <span>Saving…</span>
-                    </>
-                  ) : (
-                    <span>Save Changes</span>
-                  )}
+                  <X className="h-4 w-4" />
                 </button>
               </div>
-            </form>
+  
+              <form onSubmit={handleSaveEdit} className="space-y-4">
+                {/* Preview Thumbnail */}
+                <div className="relative h-40 w-full overflow-hidden rounded-xl border border-ink-200 bg-ink-50">
+                  {isVideoUrl(itemToEdit.image_url) ? (
+                    <video
+                      src={itemToEdit.image_url}
+                      className="h-full w-full object-cover"
+                      muted
+                      loop
+                      autoPlay
+                      playsInline
+                    />
+                  ) : (
+                    <Image
+                      src={itemToEdit.image_url}
+                      alt={itemToEdit.placement || 'Edit preview'}
+                      fill
+                      className="object-cover"
+                    />
+                  )}
+                </div>
+  
+                {/* Placement selector */}
+                <div>
+                  <label className="block text-xs font-semibold text-ink-700 mb-1.5">
+                    Target Section Placement
+                  </label>
+                  <select
+                    value={editForm.placement}
+                    onChange={(e) => setEditForm((p) => ({ ...p, placement: e.target.value }))}
+                    className="input text-xs h-10 rounded-lg"
+                  >
+                    {currentTabConfig.placements.map((p) => (
+                      <option key={p.value} value={p.value}>
+                        {p.label} — ({p.hint})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+  
+                {/* Modal Actions */}
+                <div className="flex items-center justify-end gap-3 pt-3 border-t border-ink-100">
+                  <button
+                    type="button"
+                    onClick={() => setItemToEdit(null)}
+                    disabled={isSavingEdit}
+                    className="btn-ghost text-xs px-4 py-2 font-medium"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSavingEdit}
+                    className="btn-primary inline-flex items-center gap-2 text-xs font-semibold px-5 py-2.5 rounded-xl shadow-xs"
+                  >
+                    {isSavingEdit ? (
+                      <>
+                        <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                        <span>Saving…</span>
+                      </>
+                    ) : (
+                      <span>Save Changes</span>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
-        </div>
+        </ModalPortal>
       )}
 
       {/* ── Delete Confirmation Dialog ── */}
       {itemToDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-950/60 p-4 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="card w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl border border-ink-200 p-6 space-y-4 animate-in zoom-in-95 duration-150">
-            <div className="flex items-start gap-3.5">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-100 text-red-600">
-                <AlertTriangle className="h-6 w-6" />
+        <ModalPortal>
+          <div className="fixed inset-0 bg-ink-950/50 z-50 flex items-center justify-center p-4 animate-in fade-in duration-150">
+            <div className="card w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-lg shadow-ink-900/5 border border-ink-200 p-6 space-y-4 animate-in zoom-in-95 duration-150">
+              <div className="flex items-start gap-3.5">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-100 text-red-600">
+                  <AlertTriangle className="h-6 w-6" />
+                </div>
+                <div className="space-y-1.5 flex-1">
+                  <h3 className="text-base font-bold text-ink-950">Delete Theme Image?</h3>
+                  <p className="text-xs text-ink-600 leading-relaxed">
+                    Are you sure you want to delete{' '}
+                    <strong className="text-ink-900 font-semibold">
+                      {itemToDelete.title || 'this visual asset'}
+                    </strong>
+                    ? It will be removed from customer-facing pages.
+                  </p>
+                </div>
               </div>
-              <div className="space-y-1.5 flex-1">
-                <h3 className="text-base font-bold text-ink-950">Delete Theme Image?</h3>
-                <p className="text-xs text-ink-600 leading-relaxed">
-                  Are you sure you want to delete{' '}
-                  <strong className="text-ink-900 font-semibold">
-                    {itemToDelete.title || 'this visual asset'}
-                  </strong>
-                  ? It will be removed from customer-facing pages.
-                </p>
+  
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-ink-100">
+                <button
+                  type="button"
+                  onClick={() => setItemToDelete(null)}
+                  className="btn-ghost text-xs px-3.5 py-2 font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmDelete}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-red-600 px-4 py-2 text-xs font-semibold text-white hover:bg-red-700 transition shadow-xs"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  <span>Yes, Delete</span>
+                </button>
               </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-ink-100">
-              <button
-                type="button"
-                onClick={() => setItemToDelete(null)}
-                className="btn-ghost text-xs px-3.5 py-2 font-medium"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmDelete}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-red-600 px-4 py-2 text-xs font-semibold text-white hover:bg-red-700 transition shadow-xs"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                <span>Yes, Delete</span>
-              </button>
             </div>
           </div>
-        </div>
+        </ModalPortal>
       )}
     </div>
   );

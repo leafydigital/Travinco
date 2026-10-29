@@ -17,6 +17,7 @@ import {
   ArrowRight,
   CheckCircle2,
   Image as ImageIcon,
+  FileText,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type {
@@ -567,12 +568,39 @@ export function PackagesPageEditor({
         </div>
       </section>
 
+      {/* ── 4. TERMS & CONDITIONS ── */}
+      <section className="rounded-2xl border border-ink-200 bg-white p-5 sm:p-6 shadow-xs space-y-5">
+        <div className="flex items-center gap-2.5 border-b border-ink-100 pb-4">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-50 text-brand-700">
+            <FileText className="h-5 w-5" />
+          </div>
+          <div>
+            <h3 className="font-display text-base font-bold text-ink-950">
+              4. Terms &amp; Conditions (Package Detail Pages)
+            </h3>
+            <p className="text-xs text-ink-500">
+              Shared terms shown on every package&apos;s detail page. Each line or paragraph is shown as written.
+            </p>
+          </div>
+        </div>
+
+        <textarea
+          rows={10}
+          value={content.terms_and_conditions ?? ''}
+          onChange={(e) =>
+            setContent((prev) => ({ ...prev, terms_and_conditions: e.target.value }))
+          }
+          placeholder="e.g. Booking is confirmed only after receipt of advance payment..."
+          className="input text-xs sm:text-sm"
+        />
+      </section>
+
       {/* ── Bottom Save Sticky Bar ── */}
       <div className="sticky bottom-4 z-30 flex items-center justify-between rounded-2xl bg-navy-950/90 backdrop-blur-md p-4 text-white shadow-2xl border border-white/10">
         <div className="flex items-center gap-2 text-xs">
           <Info className="h-4 w-4 text-sand-300" />
           <span className="font-medium text-white/90">
-            Unsaved changes will be published to the customer Packages page when saved.
+            Unsaved changes will be published to the customer Packages page and package detail pages when saved.
           </span>
         </div>
         <button

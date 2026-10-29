@@ -50,6 +50,7 @@ import {
 } from '@/lib/tour/engine';
 import type { DayEdit, HotelPick, QuoteInputs, RateRow, StayInput, TourMasters } from '@/lib/tour/types';
 import { getRatesForLocations, saveQuotation, searchCustomers } from '@/app/travinco_dashboard/quotations/actions';
+import { ALL_ZERO_PHONE_MESSAGE, isAllZeroPhone } from '@/lib/validations/phone';
 import { QuoteDocument } from './quote-document';
 
 const TRIP_TYPES = ['Tour', 'Honeymoon', 'Family', 'Group', 'Pilgrimage', 'Corporate', 'Adventure'];
@@ -119,6 +120,7 @@ export function QuotationBuilder({
   const snapshot = useMemo(() => buildSnapshot(ctx, inputs, q1, q2), [ctx, inputs, q1, q2]);
 
   const save = (status?: 'draft' | 'sent') => {
+    if (isAllZeroPhone(inputs.guest_phone)) return void toast.error(ALL_ZERO_PHONE_MESSAGE);
     const warns = Array.from(new Set([...q1.warn, ...(q2?.warn ?? [])]));
     if (status === 'sent' && warns.length > 0) {
       toast.warning(warns[0] ?? 'Please verify quotation details before sending.', {
@@ -789,7 +791,14 @@ function GuestSection({
     <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-2 xl:grid-cols-3">
       <CustomerPicker inputs={inputs} upd={upd} className="col-span-2 sm:col-span-2 md:col-span-2 lg:col-span-2 xl:col-span-2" />
       <Field label="Phone">
-        <input className="input h-8 text-xs py-1 px-2" placeholder="Phone number" value={inputs.guest_phone} onChange={(e) => upd({ guest_phone: e.target.value })} />
+        <input
+          className={`input h-8 text-xs py-1 px-2${isAllZeroPhone(inputs.guest_phone) ? ' border-red-400 focus:border-red-500' : ''}`}
+          placeholder="Phone number"
+          inputMode="tel"
+          value={inputs.guest_phone}
+          onChange={(e) => upd({ guest_phone: e.target.value })}
+        />
+        {isAllZeroPhone(inputs.guest_phone) && <p className="mt-0.5 text-[10px] text-red-600">{ALL_ZERO_PHONE_MESSAGE}</p>}
       </Field>
       <Field label="Email">
         <input className="input h-8 text-xs py-1 px-2" type="email" placeholder="Email address" value={inputs.guest_email} onChange={(e) => upd({ guest_email: e.target.value })} />
