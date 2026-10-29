@@ -55,13 +55,13 @@ export default async function InvoicePage({ params }: { params: { id: string } }
               {q && (
                 <>
                   {' · from '}
-                  <Link className="text-brand-700 hover:underline" href={`/admin/quotations/${q.id}`}>{q.quote_number}</Link>
+                  <Link className="text-brand-700 hover:underline" href={`/travinco_dashboard/quotations/${q.id}`}>{q.quote_number}</Link>
                 </>
               )}
               {inv.customer_id && (
                 <>
                   {' · '}
-                  <Link className="text-brand-700 hover:underline" href={`/admin/customers/${inv.customer_id}`}>customer</Link>
+                  <Link className="text-brand-700 hover:underline" href={`/travinco_dashboard/customers/${inv.customer_id}`}>customer</Link>
                 </>
               )}
             </p>
@@ -81,7 +81,7 @@ export default async function InvoicePage({ params }: { params: { id: string } }
         </div>
         {!settings.company_gstin && (
           <p className="rounded-lg bg-sand-50 px-3 py-2 text-sm text-sand-900">
-            Add your GSTIN, address and bank details under <Link href="/admin/quotations/settings" className="underline">Quotations › Settings</Link> so they print on invoices.
+            Add your GSTIN, address and bank details under <Link href="/travinco_dashboard/quotations/settings" className="underline">Quotations › Settings</Link> so they print on invoices.
           </p>
         )}
       </div>

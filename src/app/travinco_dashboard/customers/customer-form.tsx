@@ -4,7 +4,7 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/admin-alert';
 import { HField, CountryInput } from '@/components/admin/horizontal-field';
 import { StringListEditor } from '@/components/admin/string-list-editor';
 import { PhoneInput, COUNTRY_PHONE_CODES } from '@/components/public/phone-input';
@@ -75,7 +75,7 @@ export function CustomerForm({
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
       <div className="card space-y-3.5 p-5">
-        <HField label="Full name" required htmlFor="cust-name" fieldClassName="sm:max-w-sm">
+        <HField label="Full name" required htmlFor="cust-name" fieldClassName="sm:max-w-[14rem]">
           <input
             id="cust-name"
             required
@@ -134,7 +134,7 @@ export function CustomerForm({
           )}
         </HField>
 
-        <HField label="Email" htmlFor="cust-email" fieldClassName="sm:max-w-sm">
+        <HField label="Email" htmlFor="cust-email" fieldClassName="sm:max-w-[14rem]">
           <input
             id="cust-email"
             type="email"

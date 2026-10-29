@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
-import { Plus, Trash2, Save, Star } from 'lucide-react';
+import { toast } from '@/lib/admin-alert';
+import { Plus, Trash2, Star, Loader2, Send, FileText } from 'lucide-react';
 import { TextField, TextAreaField, SelectField, FieldWrapper } from '@/components/ui/form-fields';
 import { StringListEditor } from '@/components/admin/string-list-editor';
 import {
@@ -18,6 +18,7 @@ import {
   type PackageFormValues,
 } from '@/lib/validations/package';
 import { ConfirmDeleteDialog } from '@/components/admin/confirm-delete-dialog';
+import { StagedImagePicker } from '@/components/admin/staged-image-picker';
 import {
   AdminDateField,
   CurrencyCombobox,
@@ -56,7 +57,10 @@ export function PackageForm({
   initialValues,
   packageId,
   currentStatus,
+  header,
 }: {
+  /** Page heading shown in the sticky action bar (create form only). */
+  header?: React.ReactNode;
   destinations: Destination[];
   initialValues?: Partial<PackageFormValues>;
   packageId?: string;
@@ -82,7 +86,7 @@ export function PackageForm({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitted, setSubmitted] = useState(false);
   const [uploadedUrls, setUploadedUrls] = useState<string[]>([]);
-  const [isUploading, setIsUploading] = useState(false);
+  const [pendingPhotos, setPendingPhotos] = useState(0);
   const [videoUrlsText, setVideoUrlsText] = useState('');
   const [itineraryDays, setItineraryDays] = useState<DraftItineraryDay[]>([]);
   const [dayToDeleteIndex, setDayToDeleteIndex] = useState<number | null>(null);
@@ -180,27 +184,31 @@ export function PackageForm({
     set('is_featured', true);
   }
 
-  async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files ?? []);
-    if (files.length === 0) return;
-    setIsUploading(true);
+  /** Uploads the staged photos once the admin clicks "Save photos". Returns the files that failed. */
+  async function uploadPhotos(files: File[]) {
     const newUrls: string[] = [];
+    const failed: File[] = [];
+    const errorsList: string[] = [];
     for (const file of files) {
       const formData = new FormData();
       formData.set('file', file);
       const result = await uploadPackageImage(formData);
       if (result.error) {
-        toast.error(`${file.name}: ${result.error}`);
+        failed.push(file);
+        errorsList.push(`${file.name}: ${result.error}`);
       } else if (result.url) {
         newUrls.push(result.url);
       }
     }
-    if (newUrls.length > 0) {
-      setUploadedUrls((prev) => [...prev, ...newUrls]);
-      toast.success(newUrls.length === 1 ? 'Image uploaded' : `${newUrls.length} images uploaded`);
-    }
-    setIsUploading(false);
-    e.target.value = '';
+    if (newUrls.length > 0) setUploadedUrls((prev) => [...prev, ...newUrls]);
+    if (errorsList.length > 0) toast.error(errorsList.join(' • '));
+    else if (newUrls.length > 0)
+      toast.success(newUrls.length === 1 ? 'Photo uploaded' : `${newUrls.length} photos uploaded`);
+    return failed;
+  }
+
+  function removeUploaded(url: string) {
+    setUploadedUrls((prev) => prev.filter((u) => u !== url));
   }
 
   function addItineraryDay() {
@@ -245,6 +253,14 @@ export function PackageForm({
   function handleSubmit(e: React.FormEvent, publishNow: boolean) {
     e.preventDefault();
     setSubmitted(true);
+
+    if (pendingPhotos > 0) {
+      toast.warning('Photos not uploaded yet', {
+        description: 'Click "Save photos" to upload the selected photos, or remove them, before saving the package.',
+      });
+      document.getElementById('package-photos')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
 
     const payload = buildPayload();
     const destinationName = destination.id ? null : destination.name.trim();
@@ -319,7 +335,7 @@ export function PackageForm({
         // placeholder — the preview page itself is keyed by ID, but
         // this keeps the URL shown afterwards consistent with what the
         // package will actually use once published.
-        router.push(`/admin/packages/${result.id}/preview`);
+        router.push(`/travinco_dashboard/packages/${result.id}/preview`);
       } else if (packageId) {
         // Editing an existing package: back to the admin packages
         // list, so staff land somewhere useful after saving rather
@@ -335,6 +351,28 @@ export function PackageForm({
 
   return (
     <form id="package-form" noValidate onSubmit={(e) => handleSubmit(e, false)} className="space-y-3">
+      {!packageId && (
+        <div className="sticky top-0 z-30 -mx-3.5 border-b border-ink-200 bg-ink-50/95 px-3.5 py-3 backdrop-blur-md sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">{header}</div>
+            <div className="flex shrink-0 items-center gap-2">
+              <button type="submit" className="btn-outline inline-flex items-center gap-1.5" disabled={isPending}>
+                {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                {isPending ? 'Saving…' : 'Save as draft'}
+              </button>
+              <button
+                type="button"
+                onClick={(e) => handleSubmit(e, true)}
+                className="btn-primary inline-flex items-center gap-1.5"
+                disabled={isPending}
+              >
+                {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                {isPending ? 'Publishing…' : 'Publish'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Basic information */}
       <div className="card space-y-2.5 p-4">
         <h2 className="text-sm font-semibold text-ink-800">Basic information</h2>
@@ -584,7 +622,7 @@ export function PackageForm({
         </div>
         <p className="text-xs text-ink-400">
           Terms &amp; conditions are now managed once for all packages under{' '}
-          <a href="/admin/settings" className="text-brand-600 hover:underline">
+          <a href="/travinco_dashboard/settings" className="text-brand-600 hover:underline">
             Settings
           </a>
           , instead of being entered separately here.
@@ -696,37 +734,48 @@ export function PackageForm({
 
       {!packageId && (
         <div className="grid gap-3 lg:grid-cols-2">
-          <div className="card space-y-2.5 p-4">
+          <div id="package-photos" className="card space-y-2.5 p-4">
             <h2 className="text-sm font-semibold text-ink-800">Photos</h2>
             <p className="text-xs text-ink-400">
               JPG, PNG or WEBP — the first photo is the cover.{' '}
               <strong>At least one is required to publish.</strong>
             </p>
 
-            <div>
-              <input
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                multiple
-                onChange={handleFileSelect}
-                disabled={isUploading}
-                className="block w-full text-sm text-ink-600 file:mr-3 file:rounded-full file:border-0 file:bg-brand-50 file:px-4 file:py-2 file:text-sm file:font-medium file:text-brand-700 hover:file:bg-brand-100"
-              />
-              {isUploading && <p className="mt-1.5 text-xs text-brand-600">Uploading…</p>}
-            </div>
-
             {uploadedUrls.length > 0 && (
               <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-5">
-                {uploadedUrls.map((url) => (
+                {uploadedUrls.map((url, i) => (
                   <div
                     key={url}
                     className="relative aspect-square overflow-hidden rounded-lg border border-ink-100"
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={url} alt="" className="h-full w-full object-cover" />
+                    {i === 0 && (
+                      <span className="absolute left-1 top-1 rounded-full bg-brand-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                        Cover
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      data-no-confirm-save="true"
+                      onClick={() => removeUploaded(url)}
+                      className="absolute right-1 top-1 rounded-full bg-coral-600 p-1 text-white shadow"
+                      aria-label="Remove photo"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
                   </div>
                 ))}
               </div>
+            )}
+
+            <StagedImagePicker onSave={uploadPhotos} disabled={isPending} onPendingChange={setPendingPhotos} />
+
+            {uploadedUrls.length === 0 && (
+              <p className="rounded-lg bg-sand-50 px-3 py-2 text-xs text-sand-800">
+                No photos saved yet — at least one image is needed before this package can be published. You can
+                still save it as a draft now and add photos later.
+              </p>
             )}
           </div>
 
@@ -778,46 +827,6 @@ export function PackageForm({
           </div>
         )}
       </div>
-
-      {packageId && (
-        <div className="flex items-center justify-between rounded-2xl bg-white p-4 border border-ink-200 shadow-xs">
-          <p className="text-xs text-ink-500 font-medium">
-            Saves package title, pricing, duration, descriptions, highlights, and SEO fields.
-          </p>
-          <button
-            type="submit"
-            className="btn-primary inline-flex items-center gap-2 px-5 py-2.5 text-xs font-bold rounded-xl"
-            disabled={isPending}
-          >
-            <Save className="h-4 w-4" />
-            <span>{isPending ? 'Saving changes…' : 'Save Package Details'}</span>
-          </button>
-        </div>
-      )}
-
-      {!packageId && (
-        <div className="space-y-2">
-          {uploadedUrls.length === 0 && (
-            <p className="rounded-lg bg-sand-50 px-3 py-2 text-xs text-sand-800">
-              No photos added yet — at least one image is needed before this package can be published. You can
-              still save it as a draft now and add photos later.
-            </p>
-          )}
-          <div className="flex justify-end gap-3">
-            <button type="submit" className="btn-outline" disabled={isPending}>
-              {isPending ? 'Saving…' : 'Save as draft'}
-            </button>
-            <button
-              type="button"
-              onClick={(e) => handleSubmit(e, true)}
-              className="btn-primary"
-              disabled={isPending}
-            >
-              {isPending ? 'Publishing…' : 'Publish'}
-            </button>
-          </div>
-        </div>
-      )}
 
       <FeaturedLimitModal
         isOpen={featuredModalItems !== null}

@@ -19,7 +19,7 @@ import {
   Image as ImageIcon,
   FileText,
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/admin-alert';
 import type {
   PackagesPageContent,
   PackagesHeroPillar,

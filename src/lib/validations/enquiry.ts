@@ -1,3 +1,4 @@
+import { containsBadWords, badWordsError } from './contact-rules';
 import { z } from 'zod';
 
 export const enquiryFormSchema = z.object({
@@ -79,7 +80,12 @@ export const enquiryFormSchema = z.object({
     .refine((val) => val === undefined || (!Number.isNaN(val) && val >= 0), {
       message: 'Enter a valid budget amount',
     }),
-  message: z.string().max(2000).optional().or(z.literal('')),
+  message: z
+    .string()
+    .max(2000)
+    .refine((val) => !containsBadWords(val), { message: badWordsError('Special Requests / Notes') })
+    .optional()
+    .or(z.literal('')),
   // Honeypot field — real users never fill this in; bots often do.
   website: z.string().max(0, 'Spam detected').optional().or(z.literal('')),
 });

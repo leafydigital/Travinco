@@ -4,6 +4,10 @@ import { createClient } from '@/lib/supabase/server';
 import { requireProfile, checkModulePermission } from '@/lib/supabase/auth-helpers';
 import { customerSchema } from '@/lib/validations/customer';
 import { revalidatePath } from 'next/cache';
+import { z } from 'zod';
+import { isValidPhoneNumber } from 'libphonenumber-js/mobile';
+import { validateFullName, validateEmailAddress } from '@/lib/validations/contact-rules';
+import { isFakePhone } from '@/lib/validations/phone';
 
 export async function createCustomer(raw: unknown) {
   const profile = await requireProfile();
@@ -47,8 +51,8 @@ export async function updateCustomer(id: string, raw: unknown) {
   if (error) return { error: 'Could not update customer.' };
 
   revalidatePath('/travinco_dashboard/customers');
-  revalidatePath('/admin/customers');
-  revalidatePath(`/admin/customers/${id}`);
+  revalidatePath('/travinco_dashboard/customers');
+  revalidatePath(`/travinco_dashboard/customers/${id}`);
   return {};
 }
 
@@ -115,8 +119,8 @@ export async function deleteCustomer(id: string) {
   }
 
   revalidatePath('/travinco_dashboard/customers');
-  revalidatePath('/admin/customers');
-  revalidatePath(`/admin/customers/${id}`);
+  revalidatePath('/travinco_dashboard/customers');
+  revalidatePath(`/travinco_dashboard/customers/${id}`);
   return {};
 }
 
@@ -284,7 +288,7 @@ export async function getCustomerById(id: string): Promise<{ data?: FullCustomer
 
   const { data, error } = await supabase
     .from('customers')
-    .select('id, full_name, phone, whatsapp_number, email, city, state, country, source, notes, is_active')
+    .select('id, full_name, phone, whatsapp_number, email, address, city, state, country, source, notes, is_active')
     .eq('id', id)
     .single();
 
@@ -325,3 +329,64 @@ export async function getCustomerById(id: string): Promise<{ data?: FullCustomer
   };
 }
 
+
+const phoneValue = z
+  .string()
+  .trim()
+  .refine((v) => isValidPhoneNumber(v) && !isFakePhone(v), { message: 'Enter a valid phone number' });
+
+/** Fields edited in the quick "Edit Customer" modal — nothing else on the record is touched. */
+const customerQuickEditSchema = z.object({
+  full_name: z
+    .string()
+    .trim()
+    .superRefine((v, ctx) => {
+      const err = validateFullName(v);
+      if (err) ctx.addIssue({ code: 'custom', message: err });
+    }),
+  phone: phoneValue,
+  whatsapp_number: phoneValue.nullable().optional(),
+  email: z
+    .string()
+    .trim()
+    .superRefine((v, ctx) => {
+      if (!v) return;
+      const err = validateEmailAddress(v);
+      if (err) ctx.addIssue({ code: 'custom', message: err });
+    })
+    .nullable()
+    .optional(),
+  address: z.string().trim().max(500, 'Address is too long').nullable().optional(),
+  source: z.enum(['website', 'whatsapp', 'phone', 'walk_in', 'referral', 'social_media', 'other']),
+  notes: z.string().max(2000).nullable().optional(),
+});
+
+export async function updateCustomerDetails(id: string, raw: unknown) {
+  const profile = await requireProfile();
+  const perm = await checkModulePermission(profile, 'customers', 'edit');
+  if (!perm.allowed) return { error: perm.error || 'You do not have permission to edit customers.' };
+
+  const parsed = customerQuickEditSchema.safeParse(raw);
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Please check the form.' };
+
+  const d = parsed.data;
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from('customers')
+    .update({
+      full_name: d.full_name.replace(/\s+/g, ' '),
+      phone: d.phone,
+      whatsapp_number: d.whatsapp_number || null,
+      email: d.email || null,
+      address: d.address || null,
+      source: d.source,
+      notes: d.notes || null,
+    })
+    .eq('id', id);
+
+  if (error) return { error: 'Could not update customer.' };
+
+  revalidatePath('/travinco_dashboard/customers');
+  revalidatePath(`/travinco_dashboard/customers/${id}`);
+  return {};
+}

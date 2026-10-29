@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
+import { toast } from '@/lib/admin-alert';
 import { Trash2 } from 'lucide-react';
 import { deleteQuotation } from './actions';
 import { ConfirmDeleteDialog } from '@/components/admin/confirm-delete-dialog';

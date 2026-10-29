@@ -13,7 +13,7 @@ import {
   ShieldCheck,
   AlertCircle,
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/admin-alert';
 import { resetStaffPasswordAction } from '@/app/travinco_dashboard/actions';
 
 interface ResetPasswordModalProps {

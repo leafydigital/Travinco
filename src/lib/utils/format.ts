@@ -1,30 +1,97 @@
-export function formatCurrency(amount: number, currency = 'INR') {
-  return new Intl.NumberFormat('en-IN', {
-    style: 'currency',
-    currency,
-    maximumFractionDigits: 0,
-  }).format(amount);
+/** Symbols for currencies whose Intl narrow symbol is ambiguous ($) or missing. */
+const CURRENCY_SYMBOL_OVERRIDES: Record<string, string> = {
+  SGD: 'S$',
+  AUD: 'A$',
+  CAD: 'C$',
+  NZD: 'NZ$',
+  HKD: 'HK$',
+  AED: 'د.إ',
+  SAR: '﷼',
+  QAR: 'QR',
+  OMR: 'OMR',
+  KWD: 'KD',
+  BHD: 'BD',
+};
+
+/** The display symbol for a currency code, e.g. INR → ₹, USD → $, EUR → €. */
+export function currencySymbol(currency = 'INR') {
+  const code = (currency || 'INR').toUpperCase();
+  if (CURRENCY_SYMBOL_OVERRIDES[code]) return CURRENCY_SYMBOL_OVERRIDES[code];
+  try {
+    const part = new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: code,
+      currencyDisplay: 'narrowSymbol',
+    })
+      .formatToParts(0)
+      .find((p) => p.type === 'currency');
+    return part?.value ?? code;
+  } catch {
+    return code;
+  }
 }
+
+/** Formats an amount with the currency's symbol (₹12,345 / $12,345 / €12,345). */
+export function formatCurrency(amount: number, currency = 'INR') {
+  const code = (currency || 'INR').toUpperCase();
+  let number: string;
+  try {
+    number = new Intl.NumberFormat(code === 'INR' ? 'en-IN' : 'en-US', {
+      maximumFractionDigits: 0,
+    }).format(Number(amount) || 0);
+  } catch {
+    number = String(amount);
+  }
+  const symbol = currencySymbol(code);
+  // Letter-based symbols read better with a space (e.g. "RM 1,200", "QR 500")
+  return /^[A-Za-z]/.test(symbol) && !/\$$/.test(symbol) ? `${symbol} ${number}` : `${symbol}${number}`;
+}
+
+/**
+ * Business timezone. Dates/times are rendered in IST everywhere — otherwise
+ * server-rendered pages show UTC times (the server's zone), 5h30m off.
+ */
+export const APP_TIME_ZONE = 'Asia/Kolkata';
+
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 
 export function formatDate(value: string | Date | null | undefined) {
   if (!value) return '—';
   const date = typeof value === 'string' ? new Date(value) : value;
+  if (Number.isNaN(date.getTime())) return '—';
   return new Intl.DateTimeFormat('en-IN', {
     day: '2-digit',
     month: 'short',
     year: 'numeric',
+    // Plain YYYY-MM-DD values are calendar dates (parsed as UTC midnight) — don't shift them
+    timeZone: typeof value === 'string' && DATE_ONLY.test(value) ? 'UTC' : APP_TIME_ZONE,
+  }).format(date);
+}
+
+export function formatTime(value: string | Date | null | undefined) {
+  if (!value) return '';
+  const date = typeof value === 'string' ? new Date(value) : value;
+  if (Number.isNaN(date.getTime())) return '';
+  return new Intl.DateTimeFormat('en-IN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: APP_TIME_ZONE,
   }).format(date);
 }
 
 export function formatDateTime(value: string | Date | null | undefined) {
   if (!value) return '—';
   const date = typeof value === 'string' ? new Date(value) : value;
+  if (Number.isNaN(date.getTime())) return '—';
   return new Intl.DateTimeFormat('en-IN', {
     day: '2-digit',
     month: 'short',
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
+    hour12: true,
+    timeZone: APP_TIME_ZONE,
   }).format(date);
 }
 

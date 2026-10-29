@@ -3,7 +3,7 @@
 import { useState, useTransition, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
+import { toast } from '@/lib/admin-alert';
 import { Calendar, X, Clock, AlertTriangle, Loader2 } from 'lucide-react';
 import { updateEnquiryFollowupDate } from './actions';
 import { formatDate } from '@/lib/utils/format';

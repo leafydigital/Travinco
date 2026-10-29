@@ -22,6 +22,8 @@ export interface StaffContext {
   perms: {
     rows: Record<string, any>[];
     settingValue: unknown;
+    /** The user's role pages (null = no role assigned yet → legacy rules). */
+    role?: { pages: string[]; isSystem: boolean } | null;
   };
 }
 

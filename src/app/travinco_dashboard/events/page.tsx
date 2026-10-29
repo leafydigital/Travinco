@@ -51,7 +51,7 @@ async function EventsRows() {
       {filteredEvents.map((e) => (
         <tr key={e.id} className="border-b border-ink-50 last:border-0 hover:bg-ink-50/50">
           <td className="px-5 py-3">
-            <Link href={`/admin/events/${e.id}`} className="font-medium text-ink-800 hover:text-brand-700">
+            <Link href={`/travinco_dashboard/events/${e.id}`} className="font-medium text-ink-800 hover:text-brand-700">
               {e.title}
             </Link>
           </td>
@@ -78,7 +78,7 @@ export default async function AdminEventsPage() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-semibold text-ink-900">Events</h1>
-        <Link href="/admin/events/new" className="btn-primary">
+        <Link href="/travinco_dashboard/events/new" className="btn-primary">
           <Plus className="h-4 w-4" /> New event
         </Link>
       </div>

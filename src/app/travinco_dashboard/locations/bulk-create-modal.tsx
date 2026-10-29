@@ -14,7 +14,7 @@ import {
   ChevronDown,
   ChevronUp,
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/admin-alert';
 import { bulkCreateLocations, type CreatedLocationItem } from './actions';
 import { ModalPortal } from '@/components/ui/modal-portal';
 

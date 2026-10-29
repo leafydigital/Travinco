@@ -145,10 +145,9 @@ const phoneField = z
 
 const editEnquirySchema = z
   .object({
-  customer_name: z.string().min(2, 'Please enter a name').max(120),
-  phone: phoneField,
+  customer_name: z.string().trim().min(2, 'Please enter a name').max(120),
+  // Phone and email come from the customer and are read-only in the dashboard
   whatsapp_number: phoneField.optional().or(z.literal('')),
-  email: z.string().email('Enter a valid email'),
   destination: z.string().max(120).optional().or(z.literal('')),
   travel_date: z.string().optional().or(z.literal('')),
   return_date: z.string().optional().or(z.literal('')),
@@ -197,9 +196,7 @@ export async function updateEnquiryDetails(enquiryId: string, raw: unknown) {
     .from('enquiries')
     .update({
       customer_name: parsed.data.customer_name,
-      phone: parsed.data.phone,
       whatsapp_number: parsed.data.whatsapp_number || null,
-      email: parsed.data.email,
       destination: parsed.data.destination || null,
       travel_date: parsed.data.travel_date || null,
       return_date: parsed.data.return_date || null,

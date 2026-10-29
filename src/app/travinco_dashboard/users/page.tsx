@@ -15,7 +15,7 @@ export default async function AdminUsersPage() {
   }
 
   const supabase = await createClient();
-  const [{ data: allUsers }, { data: roleSettings }, { data: deletedSettings }] = await Promise.all([
+  const [{ data: allUsers }, { data: roleSettings }, { data: deletedSettings }, rolesRes, tempRes] = await Promise.all([
     supabase
       .from('profiles')
       .select('*')
@@ -28,7 +28,20 @@ export default async function AdminUsersPage() {
       .from('website_settings')
       .select('key')
       .like('key', 'deleted_user_%'),
+    supabase.from('staff_roles').select('id, name, pages, is_system').order('is_system', { ascending: false }).order('name'),
+    supabase.from('staff_temp_passwords').select('profile_id, temp_password, created_at'),
   ]);
+
+  const roles = (rolesRes.data ?? []).map((r) => ({
+    id: r.id,
+    name: r.name,
+    pages: r.pages ?? [],
+    isSystem: r.is_system,
+  }));
+  const tempPasswords: Record<string, { password: string; setAt: string }> = {};
+  for (const t of tempRes.data ?? []) {
+    tempPasswords[t.profile_id] = { password: t.temp_password, setAt: t.created_at };
+  }
 
   // Clean up errant keys that were temporarily broadcasted to all staff
   const errantKeys = [
@@ -85,9 +98,9 @@ export default async function AdminUsersPage() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold tracking-tight text-ink-900">Staff & Users</h1>
+          <h1 className="text-xl font-bold tracking-tight text-ink-900">Users</h1>
           <p className="text-xs text-ink-500 mt-0.5">
-            Manage your team members, custom roles, active/inactive status, and page permissions.
+            Create staff accounts, assign a role, and share their temporary password.
           </p>
         </div>
         <Link href="/travinco_dashboard/users/new" className="btn-primary">
@@ -99,6 +112,8 @@ export default async function AdminUsersPage() {
         initialUsers={users ?? []}
         currentUserId={profile.id}
         currentUserRole={profile.role}
+        roles={roles}
+        tempPasswords={tempRes.error ? null : tempPasswords}
       />
     </div>
   );

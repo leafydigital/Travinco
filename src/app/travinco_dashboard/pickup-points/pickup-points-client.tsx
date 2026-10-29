@@ -3,7 +3,7 @@
 import { useState, useTransition, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
+import { toast } from '@/lib/admin-alert';
 import { Plus, Search, Trash2, Pencil, MapPin } from 'lucide-react';
 import { deletePickupPoint } from '@/lib/tour/master-actions';
 import { ConfirmDeleteDialog } from '@/components/admin/confirm-delete-dialog';

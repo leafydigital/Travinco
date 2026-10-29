@@ -834,7 +834,7 @@ export async function saveQuotationLogos(logosConfig: QuotationLogosConfig): Pro
   invalidateTourMastersCache();
   revalidatePath('/travinco_dashboard/quotations');
   revalidatePath('/travinco_dashboard/quotations/settings');
-  revalidatePath('/admin/quotations/settings');
+  revalidatePath('/travinco_dashboard/quotations/settings');
   return {};
 }
 
@@ -873,8 +873,8 @@ export async function saveInvoiceSettings(invoiceSettings: InvoiceSettings): Pro
   invalidateTourMastersCache();
   revalidatePath('/travinco_dashboard/quotations/settings');
   revalidatePath('/travinco_dashboard/invoices');
-  revalidatePath('/admin/quotations/settings');
-  revalidatePath('/admin/invoices');
+  revalidatePath('/travinco_dashboard/quotations/settings');
+  revalidatePath('/travinco_dashboard/invoices');
   return {};
 }
 

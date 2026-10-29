@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
+import { toast } from '@/lib/admin-alert';
 import { Plus, Search, Pencil, Trash2, X } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { ConfirmDeleteDialog } from '@/components/admin/confirm-delete-dialog';

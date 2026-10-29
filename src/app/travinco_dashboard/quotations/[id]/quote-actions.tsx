@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
+import { toast } from '@/lib/admin-alert';
 import { Check, Copy, CopyPlus, FileDown, MessageCircle, Pencil, Printer, ReceiptText, Send, Trash2, X, ClipboardCopy } from 'lucide-react';
 import { setQuotationStatus, duplicateQuotation, deleteQuotation } from '../actions';
 import { convertQuotationToInvoice } from '../../invoices/actions';
@@ -51,13 +51,13 @@ export function QuoteActions({
   const convert = (opt: 1 | 2) =>
     run(() => convertQuotationToInvoice(id, opt), 'Invoice created', (r) => {
       setConvertOpen(false);
-      if (r.id) router.push(`/admin/invoices/${r.id}`);
+      if (r.id) router.push(`/travinco_dashboard/invoices/${r.id}`);
     });
 
   return (
     <div className="flex flex-wrap items-center gap-2 print:hidden">
       {invoiceId ? (
-        <Link href={`/admin/invoices/${invoiceId}`} className="btn-cta">
+        <Link href={`/travinco_dashboard/invoices/${invoiceId}`} className="btn-cta">
           <ReceiptText className="h-4 w-4" /> View invoice
         </Link>
       ) : (

@@ -26,6 +26,8 @@ export default async function QuotationPage({ params, searchParams }: { params: 
   ]);
   if (!q || (q as any).is_deleted === true) notFound();
   const snap = q.snapshot as QuoteSnapshot;
+  // Older quotations stored vehicle/distance warnings too — those are no longer shown
+  const pricingNotes = (snap.warnings ?? []).filter((w) => !/vehicle|distance/i.test(w));
   const by = (Array.isArray(q.profiles) ? q.profiles[0] : q.profiles) as { full_name: string } | null;
   const fileName = `${q.quote_number} ${q.guest_name} ${snap.duration}`.replace(/[^\w\- ]+/g, '').replace(/\s+/g, '_');
   const today = new Date().toISOString().slice(0, 10);
@@ -52,7 +54,7 @@ export default async function QuotationPage({ params, searchParams }: { params: 
               {q.enquiry_id && (
                 <>
                   {' · '}
-                  <Link className="text-brand-700 hover:underline" href={`/admin/enquiries/${q.enquiry_id}`}>enquiry</Link>
+                  <Link className="text-brand-700 hover:underline" href={`/travinco_dashboard/enquiries/${q.enquiry_id}`}>enquiry</Link>
                 </>
               )}
             </p>
@@ -95,13 +97,13 @@ export default async function QuotationPage({ params, searchParams }: { params: 
           ))}
         </div>
 
-        {snap.warnings?.length > 0 && (
+        {pricingNotes.length > 0 && (
           <details className="card border-sand-300 bg-sand-50 p-4 text-sm text-sand-900">
             <summary className="flex cursor-pointer items-center gap-1.5 font-semibold">
-              <AlertTriangle className="h-4 w-4" /> {snap.warnings.length} pricing note{snap.warnings.length > 1 ? 's' : ''} when this was saved
+              <AlertTriangle className="h-4 w-4" /> {pricingNotes.length} pricing note{pricingNotes.length > 1 ? 's' : ''} when this was saved
             </summary>
             <ul className="mt-2 space-y-1 text-xs">
-              {snap.warnings.map((w) => <li key={w}>• {w}</li>)}
+              {pricingNotes.map((w) => <li key={w}>• {w}</li>)}
             </ul>
           </details>
         )}

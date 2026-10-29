@@ -8,10 +8,8 @@ import {
   Eye,
   EyeOff,
   Loader2,
-  ShieldCheck,
   AlertCircle,
   ArrowLeft,
-  KeyRound,
   Check,
   Circle,
   CheckCircle2,
@@ -205,9 +203,12 @@ export function StaffLoginForm({
   return (
     <div className="w-full max-w-md rounded-2xl border border-ink-100 bg-white p-6 shadow-xl sm:p-8">
       <div className="mb-6 text-center">
-        <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-brand-50 text-brand-700">
-          {mode === 'login' ? <ShieldCheck className="h-6 w-6" /> : <KeyRound className="h-6 w-6" />}
-        </div>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/images/green_logo.png"
+          alt="Travinco"
+          className="mx-auto mb-4 h-14 w-auto object-contain"
+        />
         <h1 className="font-display text-2xl font-bold text-ink-900">
           {mode === 'login' ? 'Team sign in' : 'Reset password'}
         </h1>
@@ -234,7 +235,7 @@ export function StaffLoginForm({
           <form onSubmit={handleLogin} className="space-y-4" noValidate>
             <div>
               <label className="label" htmlFor="staff-email">
-                Work email
+                Email
               </label>
               <div className="relative">
                 <input

@@ -3,7 +3,10 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
+import { toast } from '@/lib/admin-alert';
+import { DatePickerDMY } from '@/components/public/date-picker-dmy';
+import { PhoneInput, COUNTRY_PHONE_CODES } from '@/components/public/phone-input';
+import { validateEmailAddress } from '@/lib/validations/contact-rules';
 import {
   ArrowDown,
   ArrowLeft,
@@ -61,6 +64,55 @@ const groupRates = (rows: RateRow[]) => {
   return out;
 };
 
+/** Letters with single spaces and . ' - only (e.g. "Mary-Ann O'Neil"). */
+const GUEST_NAME_RE = /^[\p{L}][\p{L}\p{M} .'-]*$/u;
+
+/** Live-cleans typed guest names: drops digits/symbols, leading and repeated spaces. */
+function sanitizeGuestName(v: string) {
+  return v
+    .replace(/[^\p{L}\p{M} .'-]/gu, '')
+    .replace(/^\s+/, '')
+    .replace(/\s{2,}/g, ' ');
+}
+
+/** Quotation title / cost reason: letters, spaces and light punctuation — no digits. */
+const TEXT_ONLY_RE = /^[\p{L}\p{M} &,.'()/-]*$/u;
+function sanitizeTextOnly(v: string) {
+  return v.replace(/[^\p{L}\p{M} &,.'()/-]/gu, '').replace(/^\s+/, '').replace(/\s{2,}/g, ' ');
+}
+
+/** Largest amount accepted in cost fields — stays within lakhs (₹99,99,999). */
+const MAX_AMOUNT = 9999999;
+
+function splitPhone(stored?: string | null): { dialCode: string; number: string } {
+  if (!stored) return { dialCode: '+91', number: '' };
+  if (!stored.startsWith('+')) return { dialCode: '+91', number: stored.replace(/\D/g, '') };
+  const sorted = [...COUNTRY_PHONE_CODES].sort((a, b) => b.code.length - a.code.length);
+  for (const c of sorted) {
+    if (stored.startsWith(c.code)) return { dialCode: c.code, number: stored.slice(c.code.length).replace(/\D/g, '') };
+  }
+  return { dialCode: '+91', number: stored.replace(/\D/g, '') };
+}
+
+function isoOffset({ days = 0, years = 0 }: { days?: number; years?: number }) {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  d.setFullYear(d.getFullYear() + years);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+/** Same window as the customer "Book with us" form: 2 days ahead up to 1 year. */
+const startDateRange = () => ({ min: isoOffset({ days: 2 }), max: isoOffset({ years: 1 }) });
+
+function validateStartDate(value: string, initialValue: string): string | null {
+  if (!value) return 'Please select a start date.';
+  // An unchanged date on an existing quotation is left alone, even if it is now in the past
+  if (value === initialValue) return null;
+  const { min, max } = startDateRange();
+  if (value < min) return 'Start date must be at least 2 days from today.';
+  if (value > max) return 'Start date must be within 1 year from today.';
+  return null;
+}
+
 export function QuotationBuilder({
   masters: m,
   initial,
@@ -84,8 +136,11 @@ export function QuotationBuilder({
     return g;
   });
   const [loading, setLoading] = useState(false);
-  const [saving, startSave] = useTransition();
+  // Which button is saving ('draft' | 'sent' | 'save'); null when idle
+  const [savingAs, setSavingAs] = useState<'draft' | 'sent' | 'save' | null>(null);
+  const saving = savingAs !== null;
   const upd = (patch: Partial<QuoteInputs>) => setInputs((s) => ({ ...s, ...patch }));
+  const [phoneValid, setPhoneValid] = useState(true);
 
   // Load Rate Master rows for any stay location we have not fetched yet.
   const stayKey = inputs.stays.map((s) => s.location_id).join(',');
@@ -120,6 +175,33 @@ export function QuotationBuilder({
   const snapshot = useMemo(() => buildSnapshot(ctx, inputs, q1, q2), [ctx, inputs, q1, q2]);
 
   const save = (status?: 'draft' | 'sent') => {
+    const name = inputs.guest_name.trim();
+    if (!name) return void toast.error('Please enter the guest name.');
+    if (!GUEST_NAME_RE.test(name)) {
+      return void toast.error('Guest name can only contain letters and spaces (no numbers or symbols).');
+    }
+    const dateError = validateStartDate(inputs.start_date, initial.start_date);
+    if (dateError) return void toast.error(dateError);
+    if (inputs.guest_phone.replace(/\D/g, '') && !phoneValid) {
+      return void toast.error('Please enter a valid phone number.');
+    }
+    if (inputs.guest_email.trim()) {
+      const emailError = validateEmailAddress(inputs.guest_email);
+      if (emailError) return void toast.error(emailError);
+    }
+    if (inputs.title.trim() && !TEXT_ONLY_RE.test(inputs.title.trim())) {
+      return void toast.error('Quotation title can only contain letters (no numbers).');
+    }
+    const badReason = inputs.stays.some((st) =>
+      [st.opt1, st.opt2].some((p) => p?.additional_cost_reason && !TEXT_ONLY_RE.test(p.additional_cost_reason))
+    );
+    if (badReason) return void toast.error('Additional cost reason can only contain letters (no numbers).');
+    if (inputs.valid_until) {
+      const validMax = isoOffset({ years: 1 });
+      if (inputs.valid_until > validMax && inputs.valid_until !== initial.valid_until) {
+        return void toast.error('Valid until must be within 1 year from today.');
+      }
+    }
     if (isAllZeroPhone(inputs.guest_phone)) return void toast.error(ALL_ZERO_PHONE_MESSAGE);
     const warns = Array.from(new Set([...q1.warn, ...(q2?.warn ?? [])]));
     if (status === 'sent' && warns.length > 0) {
@@ -127,13 +209,30 @@ export function QuotationBuilder({
         description: warns.length > 1 ? `+${warns.length - 1} more items need attention` : undefined,
       });
     }
-    startSave(async () => {
-      const res = await saveQuotation(quoteId, inputs, status);
+    if (saving) return;
+    setSavingAs(status ?? 'save');
+    void (async () => {
+      let res: Awaited<ReturnType<typeof saveQuotation>>;
+      try {
+        res = await saveQuotation(quoteId, inputs, status);
+      } catch {
+        setSavingAs(null);
+        return void toast.error('Could not save the quotation. Please try again.');
+      }
+      // Saving is finished here — only now show the result
+      setSavingAs(null);
       if (res.error) return void toast.error(res.error);
-      toast.success(quoteId ? 'Quotation saved' : 'Quotation created');
-      router.push(`/admin/quotations/${res.id}`);
+      const target = `/travinco_dashboard/quotations/${res.id}`;
+      router.prefetch(target);
+      await toast.success(quoteId ? 'Quotation saved successfully' : 'Quotation created successfully', {
+        description: quoteId
+          ? 'Your changes have been saved.'
+          : `${inputs.guest_name.trim() ? `Quotation for ${inputs.guest_name.trim()} ` : 'The quotation '}has been created.`,
+        persistent: true,
+      });
+      router.push(target);
       router.refresh();
-    });
+    })();
   };
 
   const applyTemplate = (id: string) => {
@@ -318,17 +417,15 @@ export function QuotationBuilder({
     applyTemplate(tplId);
   };
 
+  // Clears only the template filter dropdowns — the quotation form keeps what was entered
   const handleResetFilters = () => {
     setSelectedDestination('');
     setSelectedLocation('');
     setSelectedDays('');
     setSelectedTemplateId('');
-    if (!quoteId) {
-      setInputs(blankInputs(m));
-    }
   };
 
-  const hasActiveFilter = !!(selectedDestination || selectedLocation || selectedDays || selectedTemplateId);
+  const hasActiveFilter = !!(selectedDestination || selectedLocation || selectedDays);
 
   // Sync initial template if already populated
   useEffect(() => {
@@ -349,20 +446,19 @@ export function QuotationBuilder({
 
   const nights = totalNights(inputs);
 
+  const goBack = () => {
+    if (typeof window !== 'undefined' && window.history.length > 1) router.back();
+    else router.push('/travinco_dashboard/quotations');
+  };
+
   return (
     <div className="space-y-6 pb-24">
-      {/* 1. Page Header & Back Navigation */}
-      <div className="space-y-2 border-b border-ink-100 pb-3">
+      {/* 1. Sticky header: navigation, total price and save actions */}
+      <div className="sticky top-0 z-30 -mx-3.5 space-y-2 border-b border-ink-200 bg-ink-50/95 px-3.5 py-3 backdrop-blur-md sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
         <div className="flex items-center gap-2 text-xs text-ink-500">
           <button
             type="button"
-            onClick={() => {
-              if (typeof window !== 'undefined' && window.history.length > 1) {
-                router.back();
-              } else {
-                router.push('/admin/quotations');
-              }
-            }}
+            onClick={goBack}
             className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-ink-600 hover:bg-ink-100 hover:text-brand-700 transition-colors"
             title="Go back"
           >
@@ -371,7 +467,7 @@ export function QuotationBuilder({
           </button>
           <span className="text-ink-300">/</span>
           <Link
-            href="/admin/quotations"
+            href="/travinco_dashboard/quotations"
             className="font-medium text-ink-500 hover:text-brand-700 transition-colors"
           >
             Quotations
@@ -380,7 +476,7 @@ export function QuotationBuilder({
             <>
               <span className="text-ink-300">/</span>
               <Link
-                href={`/admin/quotations/${quoteId}`}
+                href={`/travinco_dashboard/quotations/${quoteId}`}
                 className="font-medium text-ink-500 hover:text-brand-700 transition-colors"
               >
                 {quoteNumber || 'View Quotation'}
@@ -390,11 +486,11 @@ export function QuotationBuilder({
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
+          <div className="min-w-0">
             <h1 className="text-xl font-semibold text-ink-900">
               {quoteId ? `Edit quotation ${quoteNumber ?? ''}` : 'New quotation'}
             </h1>
-            <p className="text-xs text-ink-500 sm:text-sm">
+            <p className="truncate text-xs text-ink-500 sm:text-sm">
               {inputs.stays.length
                 ? `${durationLabel(nights)} · ${inputs.stays.map((s) => locName(ctx, s.location_id)).join(' → ')}`
                 : 'Autofill from a template or select route destinations below.'}
@@ -406,20 +502,45 @@ export function QuotationBuilder({
               )}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="text-right">
+              <span className="block text-[10px] font-semibold uppercase tracking-wider text-ink-400">Total Package Price</span>
+              <div className="flex items-baseline justify-end gap-2">
+                <span className="text-xl font-bold tabular-nums text-brand-700">₹{inr(q1.total)}</span>
+                <span className="text-xs font-medium text-ink-500">₹{inr(q1.perPerson)} / adult</span>
+              </div>
+            </div>
+            {q2 && (
+              <div className="rounded-md border border-ocean-200 bg-ocean-50 px-2 py-1 text-right">
+                <span className="block text-[10px] font-medium uppercase tracking-wide text-ocean-600">Option 2</span>
+                <span className="text-xs font-bold tabular-nums text-ocean-800">₹{inr(q2.total)}</span>
+              </div>
+            )}
             <button
               type="button"
-              onClick={() => {
-                if (typeof window !== 'undefined' && window.history.length > 1) {
-                  router.back();
-                } else {
-                  router.push('/admin/quotations');
-                }
-              }}
-              className="btn-outline h-9 px-3 text-xs text-ink-600 hover:bg-ink-50 hover:text-ink-900"
+              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-brand-300 bg-white px-3 text-xs font-semibold text-brand-800 shadow-2xs transition-colors hover:border-brand-400 hover:bg-brand-50 disabled:opacity-50"
+              disabled={saving}
+              onClick={() => save(quoteId ? undefined : 'draft')}
             >
-              <ArrowLeft className="h-3.5 w-3.5 mr-1 inline" />
-              <span>Back</span>
+              {savingAs === 'draft' || savingAs === 'save' ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Save className="h-3.5 w-3.5 shrink-0" />
+              )}
+              <span>{savingAs === 'draft' || savingAs === 'save' ? 'Saving....' : quoteId ? 'Save changes' : 'Save draft'}</span>
+            </button>
+            <button
+              type="button"
+              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-xs font-semibold text-white shadow-sm transition-all hover:bg-emerald-500 hover:shadow disabled:opacity-50"
+              disabled={saving}
+              onClick={() => save('sent')}
+            >
+              {savingAs === 'sent' ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Send className="h-3.5 w-3.5 shrink-0" />
+              )}
+              <span>{savingAs === 'sent' ? 'Saving....' : 'Save Quotation'}</span>
             </button>
           </div>
         </div>
@@ -567,7 +688,7 @@ export function QuotationBuilder({
               {/* Section 1: Guest & Tour Specs */}
               <div>
                 <SectionHeader title="1. Guest & Trip Specifications" subtitle="Guest information, group composition, dates and category preference." />
-                <GuestSection m={m} inputs={inputs} upd={upd} />
+                <GuestSection m={m} inputs={inputs} upd={upd} onPhoneValidity={setPhoneValid} />
               </div>
 
               <hr className="border-ink-100" />
@@ -596,65 +717,6 @@ export function QuotationBuilder({
             </div>
           </div>
 
-          {/* Total Package Price Bar (Fully responsive with aligned buttons) */}
-          <div className="card sticky bottom-4 z-20 border-ink-200 bg-white/95 p-3.5 shadow-lg backdrop-blur sm:p-4">
-            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-b border-ink-100 pb-2.5">
-              <div>
-                <span className="block text-[11px] font-semibold uppercase tracking-wider text-ink-400">Total Package Price</span>
-                <div className="flex flex-wrap items-baseline gap-2 mt-0.5">
-                  <span className="text-2xl font-bold tabular-nums text-brand-700">₹{inr(q1.total)}</span>
-                  <span className="text-xs font-medium text-ink-500">₹{inr(q1.perPerson)} / adult</span>
-                </div>
-              </div>
-              {q2 && (
-                <div className="rounded-md bg-ocean-50 border border-ocean-200 px-2 py-1 text-right">
-                  <span className="block text-[10px] font-medium text-ocean-600 uppercase tracking-wide">Option 2</span>
-                  <span className="text-xs font-bold text-ocean-800 tabular-nums">₹{inr(q2.total)}</span>
-                </div>
-              )}
-            </div>
-
-            <div className="grid grid-cols-12 gap-2 pt-2.5 items-center">
-              {/* Back Button */}
-              <button
-                type="button"
-                className="col-span-3 inline-flex items-center justify-center gap-1 h-9 px-2.5 rounded-lg border border-ink-200 bg-white text-xs font-medium text-ink-700 hover:bg-ink-50 hover:text-ink-900 transition-colors cursor-pointer shadow-2xs disabled:opacity-50"
-                onClick={() => {
-                  if (typeof window !== 'undefined' && window.history.length > 1) {
-                    router.back();
-                  } else {
-                    router.push('/admin/quotations');
-                  }
-                }}
-                disabled={saving}
-              >
-                <ArrowLeft className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate">Back</span>
-              </button>
-
-              {/* Save as draft / Save changes */}
-              <button
-                type="button"
-                className="col-span-4 inline-flex items-center justify-center gap-1.5 h-9 px-2 rounded-lg border border-brand-300 bg-white text-xs font-semibold text-brand-800 hover:bg-brand-50 hover:border-brand-400 transition-colors cursor-pointer shadow-2xs disabled:opacity-50"
-                disabled={saving}
-                onClick={() => save(quoteId ? undefined : 'draft')}
-              >
-                <Save className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate">{saving ? 'Saving…' : quoteId ? 'Save changes' : 'Save draft'}</span>
-              </button>
-
-              {/* Save Quotation */}
-              <button
-                type="button"
-                className="col-span-5 inline-flex items-center justify-center gap-1.5 h-9 px-2.5 rounded-lg bg-emerald-600 text-xs font-semibold text-white shadow-sm hover:bg-emerald-500 hover:shadow transition-all cursor-pointer disabled:opacity-50"
-                disabled={saving}
-                onClick={() => save('sent')}
-              >
-                <Send className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate">Save Quotation</span>
-              </button>
-            </div>
-          </div>
         </div>
 
         {/* RIGHT COLUMN: 3. Day-wise Itinerary (Wider and full content display with no scrollbar) */}
@@ -712,6 +774,7 @@ function CountInput({
   onChange,
   min = 0,
   max,
+  integer = true,
   className = 'input h-8 text-xs py-1 px-2 font-medium',
   placeholder,
   allowEmpty,
@@ -721,54 +784,95 @@ function CountInput({
   onChange: (val: number | null) => void;
   min?: number;
   max?: number;
+  /** Whole numbers only (default). Set false for money amounts with up to 2 decimals. */
+  integer?: boolean;
   className?: string;
   placeholder?: string;
   allowEmpty?: boolean;
   ariaLabel?: string;
 }) {
   const [localVal, setLocalVal] = useState<string>(value != null ? String(value) : '');
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     setLocalVal(value != null ? String(value) : '');
   }, [value]);
 
+  const pattern = integer ? /^\d+$/ : /^\d+(\.\d{0,2})?$/;
+
   return (
-    <input
-      type="number"
-      min={min}
-      max={max}
-      className={className}
-      value={localVal}
-      placeholder={placeholder}
-      aria-label={ariaLabel}
-      onChange={(e) => {
-        const text = e.target.value;
-        setLocalVal(text);
-        if (text === '') {
-          if (allowEmpty) onChange(null);
-        } else {
-          const parsed = Number(text);
-          if (!Number.isNaN(parsed)) {
-            onChange(Math.max(min, parsed));
+    <div>
+      <input
+        type="text"
+        inputMode={integer ? 'numeric' : 'decimal'}
+        className={cn(className, error && 'border-red-400 focus:border-red-500')}
+        value={localVal}
+        placeholder={placeholder}
+        aria-label={ariaLabel}
+        aria-invalid={Boolean(error)}
+        onKeyDown={(e) => {
+          // Explain why the key is refused instead of silently changing the value later
+          if (e.key === '-') {
+            e.preventDefault();
+            setError('Negative values are not allowed');
+          } else if (['e', 'E', '+'].includes(e.key)) {
+            e.preventDefault();
+            setError('Numbers only');
+          } else if (integer && (e.key === '.' || e.key === ',')) {
+            e.preventDefault();
+            setError('Whole numbers only (no decimals)');
           }
-        }
-      }}
-      onBlur={() => {
-        if (localVal === '' || Number.isNaN(Number(localVal))) {
-          if (allowEmpty) {
+        }}
+        onChange={(e) => {
+          const text = e.target.value.trim();
+          if (text === '') {
             setLocalVal('');
-            onChange(null);
-          } else {
+            setError(null);
+            if (allowEmpty) onChange(null);
+            return;
+          }
+          if (!pattern.test(text)) {
+            setError(
+              text.includes('-')
+                ? 'Negative values are not allowed'
+                : integer
+                  ? 'Enter a whole number'
+                  : 'Enter a valid amount'
+            );
+            return;
+          }
+          const n = Number(text);
+          if (max != null && n > max) {
+            setError(`Maximum allowed is ${max.toLocaleString('en-IN')}`);
+            return;
+          }
+          setLocalVal(text);
+          if (n < min) {
+            setError(`Must be at least ${min}`);
+            return;
+          }
+          setError(null);
+          onChange(n);
+        }}
+        onBlur={() => {
+          if (localVal === '') {
+            if (!allowEmpty) {
+              setLocalVal(String(min));
+              onChange(min);
+              setError(`This field can't be empty — set to ${min}`);
+            }
+            return;
+          }
+          const n = Number(localVal);
+          if (n < min) {
             setLocalVal(String(min));
             onChange(min);
+            setError(`Must be at least ${min} — set to ${min}`);
           }
-        } else {
-          const clamped = Math.max(min, Number(localVal));
-          setLocalVal(String(clamped));
-          onChange(clamped);
-        }
-      }}
-    />
+        }}
+      />
+      {error && <p className="mt-0.5 text-[10px] leading-tight text-red-600">{error}</p>}
+    </div>
   );
 }
 
@@ -780,28 +884,52 @@ function GuestSection({
   m,
   inputs,
   upd,
+  onPhoneValidity,
 }: {
   m: TourMasters;
   inputs: QuoteInputs;
   upd: (p: Partial<QuoteInputs>) => void;
+  onPhoneValidity: (valid: boolean) => void;
 }) {
+  const [phone, setPhone] = useState(() => splitPhone(inputs.guest_phone));
+  const [emailTouched, setEmailTouched] = useState(false);
+  const [titleError, setTitleError] = useState<string | null>(null);
+  // Picking a saved customer fills the phone from outside — keep the picker in step
+  useEffect(() => {
+    if (inputs.guest_phone !== `${phone.dialCode}${phone.number}` && inputs.guest_phone !== phone.number) {
+      setPhone(splitPhone(inputs.guest_phone));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inputs.guest_phone]);
+  const emailError = emailTouched && inputs.guest_email.trim() ? validateEmailAddress(inputs.guest_email) : null;
   const pickups = m.points.filter((p) => p.use_for_pickup);
   const drops = m.points.filter((p) => p.use_for_drop);
   return (
     <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-2 xl:grid-cols-3">
       <CustomerPicker inputs={inputs} upd={upd} className="col-span-2 sm:col-span-2 md:col-span-2 lg:col-span-2 xl:col-span-2" />
-      <Field label="Phone">
-        <input
-          className={`input h-8 text-xs py-1 px-2${isAllZeroPhone(inputs.guest_phone) ? ' border-red-400 focus:border-red-500' : ''}`}
+      <Field label="Phone" className="col-span-2 text-xs [&_.input]:h-8 [&_.input]:py-1 [&_.input]:text-xs">
+        <PhoneInput
+          name="guest_phone"
           placeholder="Phone number"
-          inputMode="tel"
-          value={inputs.guest_phone}
-          onChange={(e) => upd({ guest_phone: e.target.value })}
+          value={phone}
+          onValidityChange={onPhoneValidity}
+          onChange={(next) => {
+            setPhone(next);
+            upd({ guest_phone: next.number ? `${next.dialCode}${next.number}` : '' });
+          }}
         />
-        {isAllZeroPhone(inputs.guest_phone) && <p className="mt-0.5 text-[10px] text-red-600">{ALL_ZERO_PHONE_MESSAGE}</p>}
       </Field>
       <Field label="Email">
-        <input className="input h-8 text-xs py-1 px-2" type="email" placeholder="Email address" value={inputs.guest_email} onChange={(e) => upd({ guest_email: e.target.value })} />
+        <input
+          className={cn('input h-8 text-xs py-1 px-2', emailError && 'border-red-400 focus:border-red-500')}
+          type="email"
+          placeholder="Email address"
+          value={inputs.guest_email}
+          aria-invalid={Boolean(emailError)}
+          onChange={(e) => upd({ guest_email: e.target.value.trim() })}
+          onBlur={() => setEmailTouched(true)}
+        />
+        {emailError && <p className="mt-0.5 text-[10px] leading-tight text-red-600">{emailError}</p>}
       </Field>
       <Field label="Trip type">
         <select className="input h-8 text-xs py-1 px-1.5" value={inputs.trip_type} onChange={(e) => upd({ trip_type: e.target.value })}>
@@ -810,9 +938,7 @@ function GuestSection({
           ))}
         </select>
       </Field>
-      <Field label="Start date">
-        <input className="input h-8 text-xs py-1 px-1.5" type="date" value={inputs.start_date} onChange={(e) => e.target.value && upd({ start_date: e.target.value })} />
-      </Field>
+      <StartDateField value={inputs.start_date} onChange={(v) => upd({ start_date: v })} />
       <Field label="Meal plan">
         <select className="input h-8 text-xs py-1 px-1.5" value={inputs.meal} onChange={(e) => upd({ meal: e.target.value as 'CP' | 'MAP' })}>
           <option value="CP">CP (Breakfast)</option>
@@ -909,9 +1035,46 @@ function GuestSection({
         </label>
       </Field>
       <Field label="Quotation title" hint="Auto if empty" className="col-span-2 sm:col-span-2 md:col-span-2 lg:col-span-2 xl:col-span-2">
-        <input className="input h-8 text-xs py-1 px-2" placeholder="e.g. Kerala Package" value={inputs.title} onChange={(e) => upd({ title: e.target.value })} />
+        <input
+          className={cn('input h-8 text-xs py-1 px-2', titleError && 'border-red-400 focus:border-red-500')}
+          placeholder="e.g. Kerala Package"
+          maxLength={150}
+          value={inputs.title}
+          onChange={(e) => {
+            const clean = sanitizeTextOnly(e.target.value);
+            setTitleError(clean !== e.target.value.replace(/^\s+/, '').replace(/\s{2,}/g, ' ') ? 'Only letters are allowed — numbers and symbols are removed' : null);
+            upd({ title: clean });
+          }}
+          onBlur={() => setTitleError(null)}
+        />
+        {titleError && <p className="mt-0.5 text-[10px] leading-tight text-red-600">{titleError}</p>}
       </Field>
     </div>
+  );
+}
+
+function StartDateField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  // Remember the date the form opened with so an existing (older) date stays valid
+  const [initialValue] = useState(value);
+  const [touched, setTouched] = useState(false);
+  const { min, max } = startDateRange();
+  const error = touched ? validateStartDate(value, initialValue) : null;
+  return (
+    <Field label="Start date *">
+      <DatePickerDMY
+        value={value}
+        min={initialValue && initialValue < min ? initialValue : min}
+        max={max}
+        className="h-8 py-1 px-2 text-xs"
+        invalid={Boolean(error)}
+        onChange={(v) => {
+          setTouched(true);
+          if (v) onChange(v);
+        }}
+        onClose={() => setTouched(true)}
+      />
+      {error && <p className="mt-0.5 text-[10px] text-red-600">{error}</p>}
+    </Field>
   );
 }
 
@@ -919,7 +1082,8 @@ function CustomerPicker({ inputs, upd, className }: { inputs: QuoteInputs; upd: 
   const [open, setOpen] = useState(false);
   const [results, setResults] = useState<{ id: string; full_name: string; phone: string; email: string | null; city: string | null }[]>([]);
   const timer = useRef<ReturnType<typeof setTimeout>>();
-  const onChange = (v: string) => {
+  const onChange = (raw: string) => {
+    const v = sanitizeGuestName(raw);
     upd({ guest_name: v, customer_id: null });
     clearTimeout(timer.current);
     if (v.trim().length < 2) return setResults([]);
@@ -936,6 +1100,8 @@ function CustomerPicker({ inputs, upd, className }: { inputs: QuoteInputs; upd: 
           <input
             className="input h-8 pl-7 text-xs py-1 pr-2"
             placeholder="Search / enter name"
+            maxLength={150}
+            aria-invalid={Boolean(inputs.guest_name.trim()) && !GUEST_NAME_RE.test(inputs.guest_name.trim())}
             value={inputs.guest_name}
             onChange={(e) => onChange(e.target.value)}
             onFocus={() => results.length && setOpen(true)}
@@ -1583,17 +1749,15 @@ function HotelRow({
         {/* If manual or custom rate is needed */}
         {isCustomOrManual ? (
           <Field label="Rate / night (₹)" className="sm:col-span-3">
-            <input
-              className="input h-8 text-xs py-1 px-2 font-medium"
-              type="number"
+            <CountInput
+              value={pick.manual_rate ?? null}
               min={0}
+              max={MAX_AMOUNT}
+              integer={false}
+              allowEmpty
               placeholder="Rate per night"
-              value={pick.manual_rate ?? ''}
-              onChange={(e) =>
-                handlePatch({
-                  manual_rate: e.target.value === '' ? null : num(e.target.value),
-                })
-              }
+              ariaLabel="Rate per night"
+              onChange={(val) => handlePatch({ manual_rate: val })}
             />
           </Field>
         ) : null}
@@ -1604,17 +1768,15 @@ function HotelRow({
           hint="Adds to stay"
           className={isCustomOrManual ? 'sm:col-span-3' : 'sm:col-span-3'}
         >
-          <input
-            className="input h-8 text-xs py-1 px-2 font-medium"
-            type="number"
+          <CountInput
+            value={pick.additional_cost ?? null}
             min={0}
+            max={MAX_AMOUNT}
+            integer={false}
+            allowEmpty
             placeholder="0"
-            value={pick.additional_cost ?? ''}
-            onChange={(e) =>
-              handlePatch({
-                additional_cost: e.target.value === '' ? null : Math.max(0, num(e.target.value)),
-              })
-            }
+            ariaLabel="Additional cost"
+            onChange={(val) => handlePatch({ additional_cost: val })}
           />
         </Field>
 
@@ -1628,13 +1790,17 @@ function HotelRow({
             className="input h-8 text-xs py-1 px-2"
             type="text"
             placeholder="e.g. Peak surcharge, Gala dinner, Balcony view"
+            maxLength={120}
             value={pick.additional_cost_reason ?? ''}
             onChange={(e) =>
               handlePatch({
-                additional_cost_reason: e.target.value || null,
+                additional_cost_reason: sanitizeTextOnly(e.target.value) || null,
               })
             }
           />
+          {/[0-9]/.test(pick.additional_cost_reason ?? '') && (
+            <p className="mt-0.5 text-[10px] leading-tight text-red-600">Numbers are not allowed</p>
+          )}
         </Field>
 
         {/* Stay Total & Seasons */}
@@ -2498,6 +2664,7 @@ function TransportSection({
           <CountInput
             value={inputs.vehicle_days}
             min={1}
+            max={365}
             allowEmpty
             placeholder={String(totalNights(inputs) + 1)}
             onChange={(val) => upd({ vehicle_days: val })}
@@ -2505,36 +2672,47 @@ function TransportSection({
           />
         </Field>
         <Field label="Total km" hint={`Est: ${inr(V.kmEstimated)} km`}>
-          <input
-            className="input h-8 text-xs py-1 px-2"
-            type="number"
+          <CountInput
+            value={inputs.vehicle_km ?? null}
             min={0}
+            max={99999}
+            allowEmpty
             placeholder={String(V.kmEstimated)}
-            value={inputs.vehicle_km ?? ''}
-            onChange={(e) => upd({ vehicle_km: e.target.value === '' ? null : num(e.target.value) })}
+            ariaLabel="Total km"
+            onChange={(val) => upd({ vehicle_km: val })}
           />
         </Field>
         <Field label="Tolls/permits (₹)">
-          <input className="input h-8 text-xs py-1 px-2" type="number" min={0} value={inputs.vehicle_extra || ''} onChange={(e) => upd({ vehicle_extra: num(e.target.value) })} />
+          <CountInput
+            value={inputs.vehicle_extra || null}
+            min={0}
+            max={MAX_AMOUNT}
+            integer={false}
+            allowEmpty
+            ariaLabel="Tolls/permits"
+            onChange={(val) => upd({ vehicle_extra: val ?? 0 })}
+          />
         </Field>
         <Field
           label="Markup %"
           hint={canOverrideMarkup ? `Std: ${ctx.m.settings.markup_pct}%` : 'Admin locked'}
         >
-          <input
-            className="input h-8 text-xs py-1 px-2"
-            type="number"
-            min={0}
-            max={100}
-            disabled={!canOverrideMarkup}
-            placeholder={String(ctx.m.settings.markup_pct)}
-            value={canOverrideMarkup ? inputs.markup_pct ?? '' : ctx.m.settings.markup_pct}
-            onChange={(e) => upd({ markup_pct: e.target.value === '' ? null : num(e.target.value) })}
-          />
+          {canOverrideMarkup ? (
+            <CountInput
+              value={inputs.markup_pct ?? null}
+              min={0}
+              max={100}
+              integer={false}
+              allowEmpty
+              placeholder={String(ctx.m.settings.markup_pct)}
+              ariaLabel="Markup %"
+              onChange={(val) => upd({ markup_pct: val })}
+            />
+          ) : (
+            <input className="input h-8 text-xs py-1 px-2" disabled value={ctx.m.settings.markup_pct} readOnly />
+          )}
         </Field>
-        <Field label="Valid until">
-          <input className="input h-8 text-xs py-1 px-1.5" type="date" value={inputs.valid_until ?? ''} onChange={(e) => upd({ valid_until: e.target.value || null })} />
-        </Field>
+        <ValidUntilField value={inputs.valid_until ?? ''} onChange={(v) => upd({ valid_until: v || null })} />
         <Field label="Internal notes (private)" className="col-span-2 sm:col-span-3 md:col-span-2 lg:col-span-3 xl:col-span-2">
           <input className="input h-8 text-xs py-1 px-2" placeholder="Private internal notes" value={inputs.notes} onChange={(e) => upd({ notes: e.target.value })} />
         </Field>
@@ -2573,16 +2751,20 @@ function TransportSection({
                     upd({ others: (inputs.others || []).map((x, j) => (j === i ? { ...x, label: e.target.value } : x)) })
                   }
                 />
-                <input
-                  className="input h-8 w-28 text-xs py-1 px-2"
-                  type="number"
-                  min={0}
-                  placeholder="₹"
-                  value={o.amount || ''}
-                  onChange={(e) =>
-                    upd({ others: (inputs.others || []).map((x, j) => (j === i ? { ...x, amount: num(e.target.value) } : x)) })
-                  }
-                />
+                <div className="w-28 shrink-0">
+                  <CountInput
+                    value={o.amount || null}
+                    min={0}
+                    max={MAX_AMOUNT}
+                    integer={false}
+                    allowEmpty
+                    placeholder="₹"
+                    ariaLabel="Cost amount"
+                    onChange={(val) =>
+                      upd({ others: (inputs.others || []).map((x, j) => (j === i ? { ...x, amount: val ?? 0 } : x)) })
+                    }
+                  />
+                </div>
                 <IconBtn title="Remove" danger onClick={() => upd({ others: (inputs.others || []).filter((_, j) => j !== i) })}>
                   <X className="h-3.5 w-3.5" />
                 </IconBtn>
@@ -2644,7 +2826,7 @@ function PriceBreakdownSection({
   const handleCustomTotal = (newTotal: number) => {
     if (newTotal > 0 && q.net > 0) {
       const newMp = deriveMarkupPctFromTotal(q.net, newTotal, q.gstPct);
-      upd({ markup_pct: newMp });
+      upd({ markup_pct: Math.max(0, newMp) });
     }
   };
 
@@ -2675,14 +2857,7 @@ function PriceBreakdownSection({
             {canOverrideMarkup ? (
               <div className="flex items-center gap-1.5">
                 <span className="text-xs font-semibold text-brand-200">₹</span>
-                <input
-                  type="number"
-                  min={0}
-                  className="h-8 w-32 rounded bg-brand-800 px-2 text-right text-base font-bold text-white border border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-300 tabular-nums"
-                  value={Math.round(q.total)}
-                  onChange={(e) => handleCustomTotal(Number(e.target.value))}
-                  title="Directly edit Total Price to auto-adjust Markup %"
-                />
+                <EditableTotal total={q.total} disabled={q.net <= 0} onCommit={handleCustomTotal} />
               </div>
             ) : (
               <span className="text-base font-bold tabular-nums">₹{inr(q.total)}</span>
@@ -2736,6 +2911,110 @@ function PriceBreakdownSection({
 // ---------------------------------------------------------------------------
 // Small UI bits
 // ---------------------------------------------------------------------------
+
+/**
+ * Total price box: typing is kept locally and applied on Enter / leaving the field,
+ * so the markup isn't recalculated (and the number rewritten) on every keystroke.
+ */
+function EditableTotal({
+  total,
+  disabled,
+  onCommit,
+}: {
+  total: number;
+  disabled?: boolean;
+  onCommit: (value: number) => void;
+}) {
+  const rounded = Math.round(total);
+  const [text, setText] = useState(String(rounded));
+  const [editing, setEditing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!editing) setText(String(rounded));
+  }, [rounded, editing]);
+
+  const commit = () => {
+    setEditing(false);
+    const n = Number(text);
+    if (!text || !Number.isFinite(n) || n <= 0) {
+      setError('Enter a valid total');
+      setText(String(rounded));
+      return;
+    }
+    setError(null);
+    if (n !== rounded) onCommit(n);
+  };
+
+  return (
+    <div className="text-right">
+      <input
+        type="text"
+        inputMode="numeric"
+        disabled={disabled}
+        className="h-8 w-32 rounded border border-brand-500 bg-brand-800 px-2 text-right text-base font-bold tabular-nums text-white focus:outline-none focus:ring-2 focus:ring-brand-300 disabled:opacity-60"
+        value={text}
+        title={disabled ? 'Add hotels or costs first' : 'Edit the total and press Enter to adjust the markup %'}
+        onFocus={(e) => {
+          setEditing(true);
+          e.currentTarget.select();
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            e.currentTarget.blur();
+          } else if (e.key === 'Escape') {
+            setText(String(rounded));
+            e.currentTarget.blur();
+          } else if (e.key === '-') {
+            e.preventDefault();
+            setError('Negative values are not allowed');
+          }
+        }}
+        onChange={(e) => {
+          const v = e.target.value.replace(/[^\d]/g, '').slice(0, 9);
+          setText(v);
+          setError(null);
+        }}
+        onBlur={commit}
+      />
+      {error && <p className="mt-0.5 text-[10px] text-red-200">{error}</p>}
+    </div>
+  );
+}
+
+function ValidUntilField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [initialValue] = useState(value);
+  const today = isoOffset({});
+  const max = isoOffset({ years: 1 });
+  const outOfRange = value && value !== initialValue && (value < today || value > max);
+  return (
+    <Field label="Valid until" hint="Up to 1 year from today">
+      <div className="relative">
+        <DatePickerDMY
+          value={value}
+          min={initialValue && initialValue < today ? initialValue : today}
+          max={initialValue && initialValue > max ? initialValue : max}
+          className="h-8 py-1 px-2 pr-12 text-xs"
+          invalid={Boolean(outOfRange)}
+          onChange={onChange}
+        />
+        {value && (
+          <button
+            type="button"
+            data-no-confirm-save="true"
+            onClick={() => onChange('')}
+            className="absolute right-7 top-1/2 -translate-y-1/2 rounded p-0.5 text-ink-400 hover:bg-ink-100 hover:text-ink-700"
+            aria-label="Clear valid until date"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        )}
+      </div>
+      {outOfRange && <p className="mt-0.5 text-[10px] text-red-600">Must be within 1 year from today</p>}
+    </Field>
+  );
+}
 
 function Field({
   label,

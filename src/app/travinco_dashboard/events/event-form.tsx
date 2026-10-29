@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
+import { toast } from '@/lib/admin-alert';
 import { TextField, TextAreaField } from '@/components/ui/form-fields';
 import { slugify } from '@/lib/validations/package';
 import type { EventFormValues } from '@/lib/validations/content';
@@ -34,7 +34,7 @@ export function EventForm({
       }
       toast.success(eventId ? 'Event updated' : 'Event created as draft');
       if (!eventId && 'id' in result && result.id) {
-        router.push(`/admin/events/${result.id}`);
+        router.push(`/travinco_dashboard/events/${result.id}`);
       } else {
         router.refresh();
       }

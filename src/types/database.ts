@@ -116,6 +116,8 @@ export interface Database {
           phone: string | null;
           role: UserRole;
           role_title: string | null;
+          /** Assigned role (staff_roles.id) — the pages this user can open come from it. */
+          role_id?: string | null;
           is_active: boolean;
           is_deleted?: boolean;
           avatar_url: string | null;
@@ -319,6 +321,32 @@ export interface Database {
           expires_at: string;
         };
         Update: Partial<Database['public']['Tables']['enquiry_email_otps']['Row']>;
+      };
+      staff_roles: {
+        Row: {
+          id: string;
+          name: string;
+          pages: string[];
+          is_system: boolean;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database['public']['Tables']['staff_roles']['Row']> & { name: string };
+        Update: Partial<Database['public']['Tables']['staff_roles']['Row']>;
+      };
+      staff_temp_passwords: {
+        Row: {
+          profile_id: string;
+          temp_password: string;
+          set_by: string | null;
+          created_at: string;
+        };
+        Insert: Partial<Database['public']['Tables']['staff_temp_passwords']['Row']> & {
+          profile_id: string;
+          temp_password: string;
+        };
+        Update: Partial<Database['public']['Tables']['staff_temp_passwords']['Row']>;
       };
       staff_permissions: {
         Row: {

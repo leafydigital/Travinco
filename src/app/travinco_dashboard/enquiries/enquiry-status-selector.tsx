@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
+import { toast } from '@/lib/admin-alert';
 import { ChevronDown, Check, Loader2 } from 'lucide-react';
 import { updateEnquiryStatus } from './actions';
 import type { EnquiryStatus } from '@/types/database';

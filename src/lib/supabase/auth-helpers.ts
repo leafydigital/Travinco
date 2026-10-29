@@ -4,6 +4,7 @@ import { cache } from 'react';
 import { headers } from 'next/headers';
 import { STAFF_CONTEXT_HEADER, decodeStaffContext, type StaffContext } from '@/lib/supabase/staff-context';
 import type { Tables } from '@/types/database';
+import { roleInfoFromProfile, type ProfileRoleInfo } from '@/lib/staff-roles';
 
 export type CurrentProfile = Tables<'profiles'>;
 export type UserRole = CurrentProfile['role'];
@@ -111,12 +112,13 @@ export const getStaffPermissions = cache(async (profileId: string) => {
     return buildStaffPermissions(
       profileId,
       forwarded.perms.rows as Tables<'staff_permissions'>[],
-      forwarded.perms.settingValue
+      forwarded.perms.settingValue,
+      forwarded.perms.role ?? null
     );
   }
 
   const supabase = await createAdminClient();
-  const [{ data: dbPerms }, { data: settingRow }] = await Promise.all([
+  const [{ data: dbPerms }, { data: settingRow }, roleRes] = await Promise.all([
     supabase
       .from('staff_permissions')
       .select('*')
@@ -126,17 +128,44 @@ export const getStaffPermissions = cache(async (profileId: string) => {
       .select('value')
       .eq('key', `staff_perms_${profileId}`)
       .maybeSingle(),
+    // Errors (e.g. roles migration not run yet) simply mean "no role" → legacy rules
+    supabase
+      .from('profiles')
+      .select('role_id, staff_roles!profiles_role_id_fkey(pages, is_system)')
+      .eq('id', profileId)
+      .maybeSingle(),
   ]);
 
-  return buildStaffPermissions(profileId, dbPerms ?? [], settingRow?.value ?? null);
+  const role = roleRes.error ? null : roleInfoFromProfile(roleRes.data as Record<string, unknown> | null);
+  return buildStaffPermissions(profileId, dbPerms ?? [], settingRow?.value ?? null, role);
 });
 
-/** Shared transform: website_settings page grants override staff_permissions rows. */
+/**
+ * Shared transform producing the user's page grants.
+ * 1. A role (profiles.role_id) is the source of truth: its pages become the whitelist.
+ *    The built-in Admin role returns no rows, so admins fall through to full access.
+ * 2. Without a role, legacy website_settings grants override staff_permissions rows.
+ */
 function buildStaffPermissions(
   profileId: string,
   dbPerms: Tables<'staff_permissions'>[],
-  settingValue: unknown
-) {
+  settingValue: unknown,
+  role: ProfileRoleInfo = null
+): Tables<'staff_permissions'>[] {
+  if (role) {
+    if (role.isSystem) return [];
+    const pages = role.pages.length > 0 ? role.pages : ['__none__'];
+    return pages.map((pageKey) => ({
+      id: `role_${profileId}_${pageKey}`,
+      profile_id: profileId,
+      module: pageKey,
+      // '__none__' keeps an empty role a strict (empty) whitelist instead of role defaults
+      can_view: pageKey !== '__none__',
+      can_edit: pageKey !== '__none__',
+      created_at: new Date().toISOString(),
+    }));
+  }
+
   if (settingValue && Array.isArray((settingValue as any).pages)) {
     const grantedPages = (settingValue as any).pages as string[];
     return grantedPages.map((pageKey) => ({
@@ -167,7 +196,7 @@ export async function assertRole(
  *
  * Rules:
  * 1. Super admin has unrestricted access to all pages and actions.
- * 2. Role Management pages ('page_access', 'users') are strictly restricted to admin & super_admin.
+ * 2. Role Management pages ('roles', 'users') are strictly restricted to admin & super_admin.
  * 3. If explicit records exist in `staff_permissions` for this user, a STRICT WHITELIST is enforced:
  *    only pages where can_view === true are allowed. Any page without can_view === true is rejected.
  * 4. Default role baselines apply ONLY if the user has never had permissions configured.
@@ -183,7 +212,7 @@ export const hasPageAccess = cache(async (
   if (profile.role === 'super_admin') return true;
 
   // 2. Role Management pages are strictly reserved for admin and super_admin
-  if (pageKey === 'page_access' || pageKey === 'users') {
+  if (pageKey === 'roles' || pageKey === 'users' || pageKey === 'page_access') {
     return profile.role === 'admin';
   }
 

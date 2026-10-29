@@ -20,7 +20,7 @@ export default async function EditEventPage({ params }: { params: { id: string }
           <h1 className="text-xl font-semibold text-ink-900">{event.title}</h1>
           <StatusBadge status={event.status} />
         </div>
-        <Link href="/admin/events" className="btn-outline">
+        <Link href="/travinco_dashboard/events" className="btn-outline">
           Back
         </Link>
       </div>

@@ -5,6 +5,12 @@ import { useFormState, useFormStatus } from 'react-dom';
 import { submitContactMessage, type ContactFormState } from './actions';
 import { PhoneInput } from '@/components/public/phone-input';
 import { CheckCircle2, AlertCircle, Clock } from 'lucide-react';
+import {
+  validateFullName,
+  validateEmailAddress,
+  containsBadWords,
+  badWordsError,
+} from '@/lib/validations/contact-rules';
 
 const initialState: ContactFormState = {};
 const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
@@ -56,7 +62,7 @@ export function ContactForm() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phoneValue, setPhoneValue] = useState({ dialCode: '+91', number: '' });
-  const [phoneValid, setPhoneValid] = useState(true);
+  const [phoneValid, setPhoneValid] = useState(false);
   const [whatsappSameAsPhone, setWhatsappSameAsPhone] = useState(true);
   const [whatsappValue, setWhatsappValue] = useState({ dialCode: '+91', number: '' });
   const [subject, setSubject] = useState('');
@@ -106,25 +112,12 @@ export function ContactForm() {
   }, [state.success]);
 
   // Validation functions
-  function validateName(val: string): string | null {
-    const trimmed = val.trim();
-    if (!trimmed) {
-      return 'Enter valid full name';
-    }
-    if (/\d/.test(val)) {
-      return 'Enter valid full name';
-    }
-    if (!/^[a-zA-Z\s'.\-]+$/.test(trimmed)) {
-      return 'Enter valid full name';
-    }
-    return null;
-  }
+  const validateName = validateFullName;
 
   function handleNameChange(val: string) {
     setName(val);
-    if (/\d/.test(val)) {
-      setNameError('Enter valid full name');
-    } else if (nameTouched) {
+    // Flag digits/symbols as soon as they're typed; full check after the first blur
+    if (nameTouched || /[^A-Za-z\s.'-]/.test(val)) {
       setNameError(validateName(val));
     } else {
       setNameError(null);
@@ -136,16 +129,7 @@ export function ContactForm() {
     setNameError(validateName(name));
   }
 
-  function validateEmail(val: string): string | null {
-    const trimmed = val.trim();
-    if (!trimmed) {
-      return 'Email address is required';
-    }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
-      return 'Please enter a valid email address';
-    }
-    return null;
-  }
+  const validateEmail = validateEmailAddress;
 
   function handleEmailChange(val: string) {
     setEmail(val);
@@ -162,11 +146,13 @@ export function ContactForm() {
   }
 
   // Field validity checks
-  const isNameValid = Boolean(name.trim()) && !/\d/.test(name) && /^[a-zA-Z\s'.\-]+$/.test(name.trim());
-  const isEmailValid = Boolean(email.trim()) && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
-  const isSubjectValid = Boolean(subject.trim());
-  const isMessageValid = Boolean(message.trim());
-  const isPhoneValid = phoneValid;
+  const subjectError = containsBadWords(subject) ? badWordsError('Subject') : null;
+  const messageError = containsBadWords(message) ? badWordsError('Message') : null;
+  const isNameValid = validateName(name) === null;
+  const isEmailValid = validateEmail(email) === null;
+  const isSubjectValid = Boolean(subject.trim()) && !subjectError;
+  const isMessageValid = Boolean(message.trim()) && !messageError;
+  const isPhoneValid = Boolean(phoneValue.number) && phoneValid;
 
   // Form is complete and button enables only when all required fields are valid
   const isFormValid =
@@ -274,10 +260,13 @@ export function ContactForm() {
 
         {/* Phone Input */}
         <div>
-          <label className="mb-1 block text-xs font-semibold text-ink-700">Phone number</label>
+          <label className="mb-1 block text-xs font-semibold text-ink-700">
+            Phone number <span className="text-red-500">*</span>
+          </label>
           <PhoneInput
             name="phone"
-            placeholder="Phone number"
+            required
+            placeholder="Phone number*"
             onValidityChange={setPhoneValid}
             value={phoneValue}
             onChange={setPhoneValue}
@@ -314,7 +303,7 @@ export function ContactForm() {
           )}
         </div>
 
-        {/* Subject (Required - No error message) */}
+        {/* Subject (Required — warns on inappropriate language) */}
         <div>
           <label className="mb-1 block text-xs font-semibold text-ink-700">
             Subject <span className="text-red-500">*</span>
@@ -326,11 +315,19 @@ export function ContactForm() {
             value={subject}
             onChange={(e) => setSubject(e.target.value)}
             placeholder="Subject*"
-            className="input bg-white text-sm"
+            maxLength={200}
+            aria-invalid={Boolean(subjectError)}
+            className={`input bg-white text-sm ${subjectError ? 'border-coral-400 focus:ring-coral-400 bg-coral-50/20' : ''}`}
           />
+          {subjectError && (
+            <p className="mt-1 text-xs text-coral-600 font-medium flex items-center gap-1 animate-in fade-in duration-150">
+              <AlertCircle className="h-3 w-3 shrink-0" />
+              <span>{subjectError}</span>
+            </p>
+          )}
         </div>
 
-        {/* Message (Required - No error message) */}
+        {/* Message (Required — warns on inappropriate language) */}
         <div>
           <label className="mb-1 block text-xs font-semibold text-ink-700">
             Your message <span className="text-red-500">*</span>
@@ -342,8 +339,16 @@ export function ContactForm() {
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             placeholder="Your message*"
-            className="input bg-white text-sm"
+            maxLength={2000}
+            aria-invalid={Boolean(messageError)}
+            className={`input bg-white text-sm ${messageError ? 'border-coral-400 focus:ring-coral-400 bg-coral-50/20' : ''}`}
           />
+          {messageError && (
+            <p className="mt-1 text-xs text-coral-600 font-medium flex items-center gap-1 animate-in fade-in duration-150">
+              <AlertCircle className="h-3 w-3 shrink-0" />
+              <span>{messageError}</span>
+            </p>
+          )}
         </div>
       </div>
 
@@ -361,7 +366,7 @@ export function ContactForm() {
       {/* Helper text when button is disabled */}
       {!isFormValid && !clientRateLimited && (
         <p className="text-center text-xs text-ink-400">
-          Please complete all required fields (*), ensure full name has no numbers, and provide a valid email to enable sending.
+          Please complete all required fields (*) with a valid name, email and phone number to enable sending.
         </p>
       )}
     </form>

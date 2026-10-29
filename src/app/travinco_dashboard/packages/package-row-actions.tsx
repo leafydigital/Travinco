@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
+import { toast } from '@/lib/admin-alert';
 import Link from 'next/link';
 import { Pencil, Eye, CheckCircle2, EyeOff, Star, Copy, Trash2 } from 'lucide-react';
 import {

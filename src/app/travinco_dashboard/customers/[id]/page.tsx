@@ -58,10 +58,10 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
           <p className="text-sm text-ink-500">Customer since {formatDate(customer.created_at)}</p>
         </div>
         <div className="flex items-center gap-2">
-          <Link href={`/admin/customers/${customer.id}/edit`} className="btn-outline">
+          <Link href={`/travinco_dashboard/customers/${customer.id}/edit`} className="btn-outline">
             Edit customer
           </Link>
-          <Link href="/admin/customers" className="btn-outline">
+          <Link href="/travinco_dashboard/customers" className="btn-outline">
             Back to customers
           </Link>
         </div>
@@ -93,7 +93,7 @@ export default async function CustomerDetailPage({ params }: { params: { id: str
               {(enquiries ?? []).map((e) => (
                 <Link
                   key={e.id}
-                  href={`/admin/enquiries/${e.id}`}
+                  href={`/travinco_dashboard/enquiries/${e.id}`}
                   className="flex items-center justify-between rounded-lg border border-ink-100 p-3 text-sm hover:bg-ink-50"
                 >
                   <div>

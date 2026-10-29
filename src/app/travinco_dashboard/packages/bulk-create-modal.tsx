@@ -18,7 +18,7 @@ import {
   Image as ImageIcon,
   UploadCloud,
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/admin-alert';
 import { bulkCreatePackages, type BulkPackageInput } from './actions';
 import { uploadPackageImage } from './upload-actions';
 import { packageCategories } from '@/lib/validations/package';

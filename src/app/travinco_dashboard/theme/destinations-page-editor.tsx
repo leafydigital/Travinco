@@ -20,7 +20,7 @@ import {
   MapPin,
   Globe,
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/admin-alert';
 import type {
   DestinationsPageContent,
   DestinationsHeroPillar,

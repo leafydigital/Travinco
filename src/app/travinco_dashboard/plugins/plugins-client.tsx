@@ -2,7 +2,7 @@
 
 import { useState, useTransition, useRef, useId, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { toast } from 'sonner';
+import { toast } from '@/lib/admin-alert';
 import {
   Plus,
   Pencil,

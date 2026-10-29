@@ -1,9 +1,11 @@
 import { createClient } from '@/lib/supabase/server';
 import { requireProfile } from '@/lib/supabase/auth-helpers';
 import { redirect, notFound } from 'next/navigation';
-import { UserPermissionsForm } from './user-permissions-form';
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
+import { UserForm } from '../user-form';
+
+export const metadata = { title: 'Edit user — Admin Portal' };
 
 export default async function EditUserPage({ params }: { params: { id: string } }) {
   const profile = await requireProfile();
@@ -12,57 +14,42 @@ export default async function EditUserPage({ params }: { params: { id: string } 
   }
 
   const supabase = await createClient();
-  const [{ data: user }, { data: permissions }, { data: customRoleSetting }, { data: permSetting }] = await Promise.all([
+  const [{ data: user }, { data: roleRows }] = await Promise.all([
     supabase.from('profiles').select('*').eq('id', params.id).single(),
-    supabase.from('staff_permissions').select('*').eq('profile_id', params.id),
-    supabase.from('website_settings').select('value').eq('key', `custom_role_${params.id}`).maybeSingle(),
-    supabase.from('website_settings').select('value').eq('key', `staff_perms_${params.id}`).maybeSingle(),
+    supabase.from('staff_roles').select('id, name, pages, is_system').order('is_system', { ascending: false }).order('name'),
   ]);
 
   if (!user) notFound();
-
-  const customRole = user.role_title || (customRoleSetting?.value as any)?.role_title || null;
-
-  let effectivePermissions = permissions ?? [];
-  if (permSetting?.value && Array.isArray((permSetting.value as any).pages)) {
-    effectivePermissions = (permSetting.value as any).pages.map((pageKey: string) => ({
-      id: `virtual_${params.id}_${pageKey}`,
-      profile_id: params.id,
-      module: pageKey as any,
-      can_view: true,
-      can_edit: true,
-      created_at: new Date().toISOString(),
-    }));
+  // Only the Super Admin can edit admins; nobody edits the Super Admin here
+  if (user.role === 'super_admin' || (user.role === 'admin' && profile.role !== 'super_admin')) {
+    redirect('/travinco_dashboard/users');
   }
 
+  const roles = (roleRows ?? [])
+    .filter((r) => !r.is_system || profile.role === 'super_admin' || r.id === user.role_id)
+    .map((r) => ({ id: r.id, name: r.name, pages: r.pages ?? [], isSystem: r.is_system }));
+
   return (
-    <div className="max-w-5xl space-y-6 pb-12">
+    <div className="max-w-4xl space-y-4 pb-12">
       <div className="flex items-center gap-3">
         <Link
           href="/travinco_dashboard/users"
-          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-ink-200 bg-white text-ink-600 hover:bg-ink-50 hover:text-ink-900 transition-colors shadow-2xs"
+          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-ink-200 bg-white text-ink-600 shadow-2xs transition-colors hover:bg-ink-50 hover:text-ink-900"
           title="Back to Users"
         >
           <ArrowLeft className="h-4 w-4" />
         </Link>
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-ink-900">
-            Edit Staff Member — {user.full_name}
-          </h1>
-          <p className="text-xs text-ink-500 mt-0.5">
-            Update role designation, active status, and granular page access permissions.
-          </p>
+          <h1 className="text-xl font-bold tracking-tight text-ink-900">Edit user — {user.full_name}</h1>
+          <p className="mt-0.5 text-xs text-ink-500">Change the name or role. Page access follows the role.</p>
         </div>
       </div>
-
-      <UserPermissionsForm
+      <UserForm
+        mode="edit"
+        roles={roles}
         userId={user.id}
-        userName={user.full_name}
-        userEmail={user.email}
-        currentRole={customRole || (user.role === 'admin' ? 'Admin' : 'Staff')}
-        isActive={user.is_active}
         isSelf={user.id === profile.id}
-        existingPermissions={effectivePermissions}
+        initial={{ full_name: user.full_name, email: user.email, role_id: user.role_id ?? null }}
       />
     </div>
   );

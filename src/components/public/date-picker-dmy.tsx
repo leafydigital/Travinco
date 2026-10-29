@@ -70,6 +70,21 @@ export function DatePickerDMY({
     return { y: base.y, m: base.m };
   });
   const wrapperRef = useRef<HTMLDivElement>(null);
+  // Where the calendar opens, so it never runs off the screen on narrow layouts
+  const [placement, setPlacement] = useState({ alignRight: false, openUp: false });
+
+  function openCalendar() {
+    const rect = wrapperRef.current?.getBoundingClientRect();
+    if (rect) {
+      const popW = Math.min(288, window.innerWidth - 32);
+      const popH = 360;
+      setPlacement({
+        alignRight: rect.left + popW > window.innerWidth - 8 && rect.right - popW >= 8,
+        openUp: rect.bottom + popH > window.innerHeight && rect.top > popH,
+      });
+    }
+    setOpen(true);
+  }
 
   // Re-centre the calendar on the selected date (or min) each time it opens
   useEffect(() => {
@@ -131,7 +146,7 @@ export function DatePickerDMY({
       {name && <input type="hidden" name={name} value={value} />}
       <button
         type="button"
-        onClick={() => (open ? close() : setOpen(true))}
+        onClick={() => (open ? close() : openCalendar())}
         className={`input flex w-full items-center justify-between bg-white text-left ${
           invalid ? 'border-coral-400 focus:ring-coral-400 bg-coral-50/20' : ''
         } ${className}`}
@@ -139,17 +154,19 @@ export function DatePickerDMY({
         aria-expanded={open}
         aria-invalid={invalid}
       >
-        <span className={value ? 'text-ink-900' : 'text-ink-400'}>
+        <span className={`min-w-0 truncate ${value ? 'text-ink-900' : 'text-ink-400'}`}>
           {value ? formatIsoAsDMY(value) : placeholder}
         </span>
-        <Calendar className="h-4 w-4 text-ink-400" />
+        <Calendar className="h-4 w-4 shrink-0 text-ink-400" />
       </button>
 
       {open && (
         <div
           role="dialog"
           aria-label="Choose travel date"
-          className="absolute z-50 mt-1 w-72 max-w-[calc(100vw-2rem)] rounded-xl border border-ink-200 bg-white p-3 shadow-lg"
+          className={`absolute z-50 w-72 max-w-[calc(100vw-2rem)] rounded-xl border border-ink-200 bg-white p-3 shadow-lg ${
+            placement.alignRight ? 'right-0' : 'left-0'
+          } ${placement.openUp ? 'bottom-full mb-1' : 'top-full mt-1'}`}
         >
           {/* Month / year controls */}
           <div className="mb-2 flex items-center gap-1">

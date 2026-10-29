@@ -6,25 +6,77 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { requireProfile } from '@/lib/supabase/auth-helpers';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
-import { saveStaffPagePermissions } from '@/app/travinco_dashboard/role-management/actions';
+import { validateFullName, validateEmailAddress } from '@/lib/validations/contact-rules';
 
-const MODULES = [
-  'packages', 'destinations', 'enquiries', 'offers', 'gallery', 'blog', 'settings', 'users',
-] as const;
+const passwordSchema = z
+  .string()
+  .min(7, 'Password must be at least 7 characters')
+  .max(72, 'Password is too long')
+  .regex(/[A-Z]/, 'Password must include at least one capital letter')
+  .regex(/[a-z]/, 'Password must include at least one lowercase letter')
+  .regex(/[0-9]/, 'Password must include at least one number')
+  .regex(/[^A-Za-z0-9]/, 'Password must include at least one symbol');
+
+const nameSchema = z
+  .string()
+  .trim()
+  .superRefine((v, ctx) => {
+    const err = validateFullName(v);
+    if (err) ctx.addIssue({ code: 'custom', message: err });
+  });
 
 const createUserSchema = z.object({
-  full_name: z.string().min(1, 'Name is required'),
-  email: z.string().email('Enter a valid email'),
-  password: z
+  full_name: nameSchema,
+  email: z
     .string()
-    .min(7, 'Password must be at least 7 characters')
-    .regex(/[A-Z]/, 'Password must include at least one capital letter')
-    .regex(/[a-z]/, 'Password must include at least one lowercase letter')
-    .regex(/[0-9]/, 'Password must include at least one number')
-    .regex(/[^A-Za-z0-9]/, 'Password must include at least one symbol'),
-  role: z.string().min(1, 'Role name is required'),
-  permissions: z.array(z.string()).optional(),
+    .trim()
+    .superRefine((v, ctx) => {
+      const err = validateEmailAddress(v);
+      if (err) ctx.addIssue({ code: 'custom', message: err });
+    }),
+  password: passwordSchema,
+  role_id: z.string().uuid('Please choose a role'),
 });
+
+type RoleRecord = { id: string; name: string; is_system: boolean };
+
+/** Loads the chosen role and works out the system access tier it maps to. */
+async function resolveRole(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  roleId: string,
+  requesterRole: string
+): Promise<{ role?: RoleRecord; baseRole?: 'admin' | 'sales_staff'; error?: string }> {
+  const { data: role, error } = await supabase
+    .from('staff_roles')
+    .select('id, name, is_system')
+    .eq('id', roleId)
+    .maybeSingle();
+  if (error) {
+    return { error: 'Roles are not set up yet. Run supabase/roles_and_users_migration.sql in Supabase first.' };
+  }
+  if (!role) return { error: 'The selected role no longer exists. Please choose another.' };
+  // The built-in Admin role grants full access; everything else is staff-level
+  const baseRole = role.is_system ? 'admin' : 'sales_staff';
+  if (baseRole === 'admin' && requesterRole !== 'super_admin') {
+    return { error: 'Only the Super Admin can give someone the Admin role.' };
+  }
+  return { role, baseRole };
+}
+
+/** Stores the admin-issued temporary password (cleared automatically when the user changes it). */
+async function storeTempPassword(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  profileId: string,
+  password: string,
+  setBy: string
+) {
+  const { error } = await supabase
+    .from('staff_temp_passwords')
+    .upsert({ profile_id: profileId, temp_password: password, set_by: setBy, created_at: new Date().toISOString() }, {
+      onConflict: 'profile_id',
+    });
+  if (error) console.error('Could not store temporary password:', error.message);
+}
 
 /**
  * Creates a new staff account.
@@ -40,21 +92,13 @@ export async function createStaffUser(raw: unknown) {
     return { error: parsed.error.issues[0]?.message ?? 'Please check the form.' };
   }
 
-  const rawRole = parsed.data.role.trim();
-  const lowerRole = rawRole.toLowerCase();
-
-  let baseRole: 'admin' | 'sales_staff' | 'accounts_staff' = 'sales_staff';
-  if (lowerRole === 'admin' || lowerRole === 'administrator') {
-    baseRole = 'admin';
-  } else if (lowerRole.includes('account') || lowerRole.includes('finance')) {
-    baseRole = 'accounts_staff';
-  }
-
-  if (baseRole === 'admin' && requester.role !== 'super_admin') {
-    return { error: 'Only the Super Admin can create Admin accounts.' };
-  }
-
   const supabase = await createClient();
+  const resolved = await resolveRole(supabase, parsed.data.role_id, requester.role);
+  if (resolved.error || !resolved.role || !resolved.baseRole) return { error: resolved.error };
+  const roleId = resolved.role.id;
+  const rawRole = resolved.role.name;
+  const baseRole = resolved.baseRole;
+
   const normalizedEmail = parsed.data.email.trim().toLowerCase();
 
   // Check if a profile with this email already exists (active or soft-deleted)
@@ -66,30 +110,27 @@ export async function createStaffUser(raw: unknown) {
 
   if (existingProfile) {
     if ((existingProfile as any).is_deleted || (existingProfile as any).role_title === '[DELETED]') {
-      // Re-activate soft-deleted user
+      // Re-activate a soft-deleted user with the new role and temporary password
       await supabase
         .from('profiles')
         .update({
           full_name: parsed.data.full_name,
           role: baseRole,
           role_title: rawRole,
+          role_id: roleId,
           is_active: true,
           is_deleted: false,
         } as any)
         .eq('id', existingProfile.id);
-
       try {
-        await supabase.from('website_settings').upsert(
-          {
-            key: `custom_role_${existingProfile.id}`,
-            value: { role_title: rawRole },
-          },
-          { onConflict: 'key' }
-        );
+        await supabase.from('website_settings').delete().eq('key', `deleted_user_${existingProfile.id}`);
       } catch {}
+      const pw = await setAuthPassword(existingProfile.id, parsed.data.password);
+      if (pw.error) return { error: pw.error };
+      await storeTempPassword(supabase, existingProfile.id, parsed.data.password, requester.id);
 
+      revalidatePath('/travinco_dashboard', 'layout');
       revalidatePath('/travinco_dashboard/users');
-      revalidatePath('/travinco_dashboard/role-management/page-access');
       return { id: existingProfile.id };
     }
     return { error: 'A staff member with this email address already exists.' };
@@ -175,6 +216,7 @@ export async function createStaffUser(raw: unknown) {
     .update({
       role: baseRole,
       role_title: rawRole,
+      role_id: roleId,
       full_name: parsed.data.full_name,
       is_active: true,
       is_deleted: false,
@@ -205,92 +247,105 @@ export async function createStaffUser(raw: unknown) {
         email: normalizedEmail,
         full_name: parsed.data.full_name,
         role: baseRole,
+        role_title: rawRole,
+        role_id: roleId,
         is_active: true,
-      },
+      } as any,
       { onConflict: 'id' }
     );
   }
 
-  // Persist custom role title in website_settings fallback
-  try {
-    await supabase.from('website_settings').upsert(
-      {
-        key: `custom_role_${newUserId}`,
-        value: { role_title: rawRole },
-      },
-      { onConflict: 'key' }
-    );
-  } catch (roleErr) {
-    console.error('Failed to save custom role in website_settings:', roleErr);
-  }
-
-  // 4. Save assigned page access permissions if provided
-  if (parsed.data.permissions && parsed.data.permissions.length >= 0) {
-    try {
-      await saveStaffPagePermissions(newUserId, parsed.data.permissions);
-    } catch (permSaveErr) {
-      console.error('Failed to save page access permissions during user creation:', permSaveErr);
-    }
-  }
+  // 4. Remember the temporary password so the admin can share it (until the user changes it)
+  await storeTempPassword(supabase, newUserId, parsed.data.password, requester.id);
 
   revalidatePath('/travinco_dashboard', 'layout');
   revalidatePath('/travinco_dashboard/users');
-  revalidatePath('/travinco_dashboard/role-management/page-access');
+  revalidatePath('/travinco_dashboard/role-management/roles');
   return { id: newUserId };
 }
 
-export async function updateStaffRole(profileId: string, role: string) {
+/** Sets a user's sign-in password (service role). */
+async function setAuthPassword(profileId: string, password: string): Promise<{ error?: string }> {
+  try {
+    const serviceClient = createServiceClient();
+    const { error } = await serviceClient.auth.admin.updateUserById(profileId, { password });
+    if (error) return { error: error.message || 'Could not set the password.' };
+    return {};
+  } catch {
+    return { error: 'Password changes need the Supabase service role key to be configured on the server.' };
+  }
+}
+
+/** Edits a user's name and role from the Users page. Email stays fixed (it is the sign-in id). */
+export async function updateStaffUser(profileId: string, raw: { full_name: string; role_id: string }) {
   const requester = await requireProfile();
   if (requester.role !== 'admin' && requester.role !== 'super_admin') {
-    return { error: 'Only administrators can change roles.' };
-  }
-  if (requester.id === profileId) {
-    return { error: 'You cannot change your own role.' };
+    return { error: 'Only administrators can edit users.' };
   }
 
-  const rawRole = role.trim();
-  const lowerRole = rawRole.toLowerCase();
-
-  let baseRole: 'admin' | 'sales_staff' | 'accounts_staff' = 'sales_staff';
-  if (lowerRole === 'admin' || lowerRole === 'administrator') {
-    baseRole = 'admin';
-  } else if (lowerRole.includes('account') || lowerRole.includes('finance')) {
-    baseRole = 'accounts_staff';
-  }
-
-  if (baseRole === 'admin' && requester.role !== 'super_admin') {
-    return { error: 'Only the Super Admin can assign the Admin role.' };
-  }
+  const parsed = z.object({ full_name: nameSchema, role_id: z.string().uuid('Please choose a role') }).safeParse(raw);
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Please check the form.' };
 
   const supabase = await createClient();
-  let { error } = await supabase
+  const { data: target } = await supabase.from('profiles').select('id, role, role_id').eq('id', profileId).maybeSingle();
+  if (!target) return { error: 'User not found.' };
+  if (target.role === 'super_admin') return { error: 'The Super Admin account cannot be changed here.' };
+  if (target.role === 'admin' && requester.role !== 'super_admin') {
+    return { error: 'Only the Super Admin can change an Admin account.' };
+  }
+
+  const roleChanged = (target as { role_id?: string | null }).role_id !== parsed.data.role_id;
+  if (roleChanged && requester.id === profileId) return { error: 'You cannot change your own role.' };
+
+  const resolved = await resolveRole(supabase, parsed.data.role_id, requester.role);
+  if (resolved.error || !resolved.role || !resolved.baseRole) return { error: resolved.error };
+
+  const { error } = await supabase
     .from('profiles')
-    .update({ role_title: rawRole, role: baseRole })
+    .update({
+      full_name: parsed.data.full_name.replace(/\s+/g, ' '),
+      role_id: resolved.role.id,
+      role_title: resolved.role.name,
+      // Keep your own tier when editing yourself (admins can't demote themselves)
+      ...(requester.id === profileId ? {} : { role: resolved.baseRole }),
+    } as any)
     .eq('id', profileId);
-
-  if (error) {
-    const fallback = await supabase.from('profiles').update({ role: baseRole }).eq('id', profileId);
-    if (fallback.error) return { error: 'Could not update role: ' + (error.message || fallback.error.message) };
-  }
-
-  // Persist custom role title in website_settings fallback
-  try {
-    await supabase.from('website_settings').upsert(
-      {
-        key: `custom_role_${profileId}`,
-        value: { role_title: rawRole },
-      },
-      { onConflict: 'key' }
-    );
-  } catch (roleErr) {
-    console.error('Failed to update custom role in website_settings:', roleErr);
-  }
+  if (error) return { error: 'Could not update the user.' };
 
   revalidatePath('/travinco_dashboard', 'layout');
   revalidatePath('/travinco_dashboard/users');
   revalidatePath(`/travinco_dashboard/users/${profileId}`);
-  revalidatePath('/travinco_dashboard/role-management/page-access');
+  revalidatePath('/travinco_dashboard/role-management/roles');
   return {};
+}
+
+/**
+ * Issues a new temporary password for a user (e.g. they forgot theirs).
+ * The admin sees it on the Users page until the user changes it.
+ */
+export async function resetStaffTempPassword(profileId: string, password: string) {
+  const requester = await requireProfile();
+  if (requester.role !== 'admin' && requester.role !== 'super_admin') {
+    return { error: 'Only administrators can reset passwords.' };
+  }
+  const parsed = passwordSchema.safeParse(password);
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Please choose a stronger password.' };
+
+  const supabase = await createClient();
+  const { data: target } = await supabase.from('profiles').select('id, role').eq('id', profileId).maybeSingle();
+  if (!target) return { error: 'User not found.' };
+  if (target.role === 'super_admin') return { error: 'The Super Admin password cannot be reset here.' };
+  if (target.role === 'admin' && requester.role !== 'super_admin') {
+    return { error: 'Only the Super Admin can reset an Admin password.' };
+  }
+
+  // Order matters: changing the password clears any old temp entry (DB trigger), then the new one is stored
+  const pw = await setAuthPassword(profileId, parsed.data);
+  if (pw.error) return { error: pw.error };
+  await storeTempPassword(supabase, profileId, parsed.data, requester.id);
+
+  revalidatePath('/travinco_dashboard/users');
+  return { success: true };
 }
 
 export async function setStaffActive(profileId: string, isActive: boolean) {
@@ -310,7 +365,6 @@ export async function setStaffActive(profileId: string, isActive: boolean) {
   if (error) return { error: 'Could not update status.' };
 
   revalidatePath('/travinco_dashboard/users');
-  revalidatePath('/travinco_dashboard/role-management/page-access');
   return { success: true };
 }
 
@@ -388,43 +442,5 @@ export async function deleteStaffUser(profileId: string) {
 
   revalidatePath('/travinco_dashboard', 'layout');
   revalidatePath('/travinco_dashboard/users');
-  revalidatePath('/travinco_dashboard/role-management/page-access');
   return { success: true };
-}
-
-/**
- * Replaces all of a staff member's per-module permission rows in one
- * call. permissions is keyed by module name; a module left out of the
- * map is deleted (falls back to role-based access only).
- */
-export async function setStaffPermissions(
-  profileId: string,
-  permissions: Record<string, { can_view: boolean; can_edit: boolean }>
-) {
-  const requester = await requireProfile();
-  if (requester.role !== 'super_admin') {
-    return { error: 'Only the main admin can change permissions.' };
-  }
-
-  const supabase = await createClient();
-
-  await supabase.from('staff_permissions').delete().eq('profile_id', profileId);
-
-  const rows = MODULES.filter((m) => Boolean(permissions[m])).map((m) => {
-    const entry = permissions[m]!;
-    return {
-      profile_id: profileId,
-      module: m,
-      can_view: entry.can_view,
-      can_edit: entry.can_edit,
-    };
-  });
-
-  if (rows.length > 0) {
-    const { error } = await supabase.from('staff_permissions').insert(rows);
-    if (error) return { error: 'Could not update permissions.' };
-  }
-
-  revalidatePath(`/travinco_dashboard/users/${profileId}`);
-  return {};
 }

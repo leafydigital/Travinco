@@ -2,7 +2,7 @@
 
 import { useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
+import { toast } from '@/lib/admin-alert';
 import { setEventStatus, deleteEvent } from '../content-actions';
 import type { ContentStatus } from '@/types/database';
 

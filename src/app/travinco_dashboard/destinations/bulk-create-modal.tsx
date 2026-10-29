@@ -15,7 +15,7 @@ import {
   ChevronDown,
   ChevronUp,
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/admin-alert';
 import { HField, CountryInput } from '@/components/admin/horizontal-field';
 import { bulkCreateDestinations, getFeaturedDestinations, type BulkDestinationInput } from './actions';
 import {

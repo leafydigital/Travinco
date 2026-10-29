@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { sanitizeCookies } from '@/lib/supabase/cookie-sanitizer';
 import { ADMIN_AUTH_COOKIE, CUSTOMER_AUTH_COOKIE } from '@/lib/supabase/server';
 import { STAFF_CONTEXT_HEADER, encodeStaffContext } from '@/lib/supabase/staff-context';
+import { PROFILE_WITH_ROLE_SELECT, roleInfoFromProfile } from '@/lib/staff-roles';
 
 /** Sanitizes and validates a redirect path to prevent open redirect vulnerabilities. */
 function getSafeRedirectPath(rawPath: string | null | undefined, fallback: string): string {
@@ -145,10 +146,11 @@ export async function middleware(request: NextRequest) {
         // Confirm staff role in public.profiles and ensure it isn't a customer account.
         // On dashboard routes the permission rows are loaded in the same parallel round
         // and forwarded to the page (saves the page two sequential DB round trips).
-        const [{ data: profile }, { data: custAccount }, permsRes, settingRes] = await Promise.all([
+        const [profileRes, { data: custAccount }, permsRes, settingRes] = await Promise.all([
+          // Profile together with its role's pages (one query)
           adminSupabase
             .from('profiles')
-            .select('*')
+            .select(PROFILE_WITH_ROLE_SELECT)
             .eq('id', userId)
             .maybeSingle(),
           adminSupabase
@@ -167,6 +169,15 @@ export async function middleware(request: NextRequest) {
                 .maybeSingle()
             : Promise.resolve(null),
         ]);
+
+        // Before the roles migration is run the embedded select fails — fall back to the plain profile
+        let profile = profileRes.data as Record<string, any> | null;
+        if (profileRes.error) {
+          const plain = await adminSupabase.from('profiles').select('*').eq('id', userId).maybeSingle();
+          profile = plain.data;
+        }
+        const role = profileRes.error ? null : roleInfoFromProfile(profile);
+        if (profile) delete profile.staff_roles;
 
         if (
           profile &&
@@ -188,7 +199,7 @@ export async function middleware(request: NextRequest) {
           if (isAdminRoute && !isCustomerMeta && permsRes && !permsRes.error && !settingRes?.error) {
             const encoded = encodeStaffContext({
               profile,
-              perms: { rows: permsRes.data ?? [], settingValue: settingRes?.data?.value ?? null },
+              perms: { rows: permsRes.data ?? [], settingValue: settingRes?.data?.value ?? null, role },
             });
             if (encoded) {
               request.headers.set(STAFF_CONTEXT_HEADER, encoded);

@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
+import { toast } from '@/lib/admin-alert';
 import { acceptEnquiry, rejectEnquiry } from '../actions';
 import { CheckCircle2, XCircle } from 'lucide-react';
 

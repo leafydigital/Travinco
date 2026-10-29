@@ -15,7 +15,7 @@ import {
   ChevronUp,
   ArrowRightLeft,
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/admin-alert';
 import { bulkCreateDistances, type CreatedDistanceItem } from './actions';
 import { ModalPortal } from '@/components/ui/modal-portal';
 

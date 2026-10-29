@@ -3,6 +3,14 @@
 import { createClient } from '@/lib/supabase/server';
 import { headers } from 'next/headers';
 import { z } from 'zod';
+import { isValidPhoneNumber } from 'libphonenumber-js/mobile';
+import {
+  validateFullName,
+  validateEmailAddress,
+  containsBadWords,
+  badWordsError,
+} from '@/lib/validations/contact-rules';
+import { isFakePhone } from '@/lib/validations/phone';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -22,29 +30,39 @@ const contactSchema = z.object({
     .trim()
     .min(1, 'Enter valid full name')
     .max(120, 'Full name must be under 120 characters')
-    .refine((val) => !/\d/.test(val), {
-      message: 'Enter valid full name',
-    })
-    .refine((val) => /^[a-zA-Z\s'.\-]+$/.test(val), {
-      message: 'Enter valid full name',
+    .superRefine((val, ctx) => {
+      const err = validateFullName(val);
+      if (err) ctx.addIssue({ code: 'custom', message: err });
     }),
-  phone: z.string().max(30).optional().or(z.literal('')),
+  phone: z
+    .string({ required_error: 'Phone number is required' })
+    .trim()
+    .min(1, 'Phone number is required')
+    .max(30)
+    .refine((val) => isValidPhoneNumber(val) && !isFakePhone(val), {
+      message: 'Please enter a valid phone number',
+    }),
   whatsapp_number: z.string().max(30).optional().or(z.literal('')),
   email: z
     .string({ required_error: 'Please enter a valid email address' })
     .trim()
     .min(1, 'Please enter a valid email address')
-    .email('Please enter a valid email address'),
+    .superRefine((val, ctx) => {
+      const err = validateEmailAddress(val);
+      if (err) ctx.addIssue({ code: 'custom', message: err });
+    }),
   subject: z
     .string({ required_error: 'Subject is required' })
     .trim()
     .min(1, 'Subject is required')
-    .max(200),
+    .max(200)
+    .refine((val) => !containsBadWords(val), { message: badWordsError('Subject') }),
   message: z
     .string({ required_error: 'Message is required' })
     .trim()
     .min(1, 'Message is required')
-    .max(2000),
+    .max(2000)
+    .refine((val) => !containsBadWords(val), { message: badWordsError('Message') }),
   website: z.string().max(0).optional().or(z.literal('')), // honeypot
 });
 
@@ -122,7 +140,7 @@ export async function submitContactMessage(
   // came from the Contact page rather than a package enquiry.
   const { error } = await supabase.from('enquiries').insert({
     customer_name: parsed.data.name,
-    phone: parsed.data.phone || 'Not provided',
+    phone: parsed.data.phone,
     whatsapp_number: parsed.data.whatsapp_number || null,
     email: parsed.data.email || null,
     message: `[Contact form${parsed.data.subject ? ` — ${parsed.data.subject}` : ''}] ${parsed.data.message}`,

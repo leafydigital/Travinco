@@ -498,8 +498,8 @@ export function quote(ctx: EngineCtx, inputs: QuoteInputs, which: 1 | 2): QuoteC
   const gst = ((net + markup) * gstPct) / 100;
   const rnd = num(ctx.m.settings.round_to) || 1;
   const total = Math.round((net + markup + gst) / rnd) * rnd;
-  const warn = [...vehicle.warn, ...stays.flatMap((s) => s.warn)];
-  if (!vehicle.total) warn.unshift('Vehicle cost is zero – select a vehicle or check its amount.');
+  // Only hotel/rate notes are surfaced; vehicle details are optional and shown in the Transport section
+  const warn = stays.flatMap((s) => s.warn);
   return {
     which, stays, hotels, vehicle, other, net, markupPct: mp, markup, gstPct, gst, total,
     perPerson: total / Math.max(1, inputs.adults), warn,

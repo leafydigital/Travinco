@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
+import { toast } from '@/lib/admin-alert';
 import { HField } from '@/components/admin/horizontal-field';
 import { slugify } from '@/lib/validations/package';
 import type { BlogPostFormValues } from '@/lib/validations/content';

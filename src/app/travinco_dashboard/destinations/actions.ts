@@ -70,7 +70,7 @@ export async function createDestination(raw: unknown) {
   }
   const { data, error } = await supabase
     .from('destinations')
-    .insert({ ...parsed.data, cover_image_url: parsed.data.cover_image_url || null, status: 'draft' })
+    .insert({ ...parsed.data, cover_image_url: parsed.data.cover_image_url || null, status: 'published' })
     .select('id')
     .single();
 

@@ -174,22 +174,22 @@ export const PAGE_CATALOG: PageDefinition[] = [
 
   // --- Role Management ---
   {
-    key: 'page_access',
-    label: 'Page Access Management',
-    href: '/travinco_dashboard/role-management/page-access',
+    key: 'roles',
+    label: 'Roles',
+    href: '/travinco_dashboard/role-management/roles',
     icon: 'ShieldCheck',
     category: 'Role Management',
-    description: 'Granular checkbox-based page access configuration for staff members',
+    description: 'Create roles and choose the pages each role can open',
     adminOnly: true,
     defaultRoles: ['super_admin', 'admin'],
   },
   {
     key: 'users',
-    label: 'Staff Users',
+    label: 'Users',
     href: '/travinco_dashboard/users',
     icon: 'Users',
     category: 'Role Management',
-    description: 'Staff account provisioning, passwords, status, and role assignments',
+    description: 'Create staff accounts, assign roles, and manage temporary passwords',
     adminOnly: true,
     defaultRoles: ['super_admin', 'admin'],
   },

@@ -402,7 +402,7 @@ export async function updatePackage(
   });
 
   revalidatePath('/travinco_dashboard/packages');
-  revalidatePath(`/admin/packages/${id}`);
+  revalidatePath(`/travinco_dashboard/packages/${id}`);
   if (before?.slug) revalidatePath(`/packages/${before.slug}`);
   if (before?.is_featured !== parsed.data.is_featured) revalidatePath('/');
   return {};

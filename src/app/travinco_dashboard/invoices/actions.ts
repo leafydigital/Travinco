@@ -157,7 +157,7 @@ export async function convertQuotationToInvoice(quotationId: string, option: 1 |
 
   revalidatePath('/travinco_dashboard/invoices');
   revalidatePath('/travinco_dashboard/quotations');
-  revalidatePath(`/admin/quotations/${q.id}`);
+  revalidatePath(`/travinco_dashboard/quotations/${q.id}`);
   return { id: inv.id };
 }
 
@@ -263,7 +263,7 @@ export async function updateInvoice(id: string, raw: unknown): Promise<{ error?:
     value: { markup_pct: markupPct, markup_amount: markupAmount },
   }, { onConflict: 'key' });
 
-  revalidatePath(`/admin/invoices/${id}`);
+  revalidatePath(`/travinco_dashboard/invoices/${id}`);
   revalidatePath(`/travinco_dashboard/invoices/${id}`);
   revalidatePath('/travinco_dashboard/invoices');
   revalidatePath('/travinco_dashboard');
@@ -364,7 +364,7 @@ export async function addInvoicePayment(
     .eq('id', invoiceId);
 
   revalidatePath(`/travinco_dashboard/invoices/${invoiceId}`);
-  revalidatePath(`/admin/invoices/${invoiceId}`);
+  revalidatePath(`/travinco_dashboard/invoices/${invoiceId}`);
   revalidatePath('/travinco_dashboard/invoices');
   revalidatePath('/travinco_dashboard/income');
   return { info, payment: paymentRow };
@@ -417,7 +417,7 @@ export async function deleteInvoicePayment(invoiceId: string, paymentId: string)
   }
 
   revalidatePath(`/travinco_dashboard/invoices/${invoiceId}`);
-  revalidatePath(`/admin/invoices/${invoiceId}`);
+  revalidatePath(`/travinco_dashboard/invoices/${invoiceId}`);
   revalidatePath('/travinco_dashboard/invoices');
   revalidatePath('/travinco_dashboard/income');
   return {};
@@ -435,7 +435,7 @@ export async function cancelInvoice(id: string) {
   if (error) return { error: 'Could not cancel the invoice.' };
   if (inv.quotation_id) await s.supabase.from('quotations').update({ status: 'accepted' }).eq('id', inv.quotation_id);
   revalidatePath(`/travinco_dashboard/invoices/${id}`);
-  revalidatePath(`/admin/invoices/${id}`);
+  revalidatePath(`/travinco_dashboard/invoices/${id}`);
   revalidatePath('/travinco_dashboard/invoices');
   return {};
 }
@@ -497,13 +497,13 @@ export async function deleteInvoice(id: string): Promise<{ error?: string }> {
   // 6. If quotation was marked as invoiced, revert quotation status to accepted
   if (inv.quotation_id) {
     await supabase.from('quotations').update({ status: 'accepted' }).eq('id', inv.quotation_id);
-    revalidatePath(`/admin/quotations/${inv.quotation_id}`);
+    revalidatePath(`/travinco_dashboard/quotations/${inv.quotation_id}`);
   }
 
   revalidatePath('/travinco_dashboard/invoices');
   revalidatePath(`/travinco_dashboard/invoices/${id}`);
-  revalidatePath('/admin/invoices');
-  revalidatePath(`/admin/invoices/${id}`);
+  revalidatePath('/travinco_dashboard/invoices');
+  revalidatePath(`/travinco_dashboard/invoices/${id}`);
   revalidatePath('/travinco_dashboard/quotations');
   revalidatePath('/travinco_dashboard/income');
   return {};

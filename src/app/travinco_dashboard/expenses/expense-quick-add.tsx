@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
+import { toast } from '@/lib/admin-alert';
 import { Plus } from 'lucide-react';
 import { createExpense } from '../finance-actions';
 import { blockNonNumericKeys, parseNonNegative } from '@/components/admin/package-fields';

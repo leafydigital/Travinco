@@ -28,7 +28,7 @@ import {
   Download,
   Loader2,
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/admin-alert';
 import { ModalPortal } from '@/components/ui/modal-portal';
 
 interface MasterClientProps {

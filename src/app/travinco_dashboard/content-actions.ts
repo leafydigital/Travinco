@@ -48,7 +48,7 @@ export async function updateEvent(id: string, raw: unknown) {
 
   if (error) return { error: 'Could not update event.' };
   revalidatePath('/travinco_dashboard/events');
-  revalidatePath(`/admin/events/${id}`);
+  revalidatePath(`/travinco_dashboard/events/${id}`);
   revalidatePath('/events');
   return {};
 }
@@ -144,7 +144,7 @@ export async function updateOffer(id: string, raw: unknown) {
 
   if (error) return { error: 'Could not update offer.' };
   revalidatePath('/travinco_dashboard/offers');
-  revalidatePath(`/admin/offers/${id}`);
+  revalidatePath(`/travinco_dashboard/offers/${id}`);
   revalidatePath('/offers');
   return {};
 }

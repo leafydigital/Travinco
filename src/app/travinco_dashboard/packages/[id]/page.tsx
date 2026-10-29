@@ -69,19 +69,24 @@ export default async function EditPackagePage({ params }: { params: { id: string
   if (!pkg) notFound();
 
   return (
-    <div className="space-y-8 pb-16">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl font-semibold text-ink-900">{pkg.title}</h1>
-            <StatusBadge status={pkg.status} />
+    <div className="space-y-6 pb-16">
+      <div className="sticky top-0 z-30 -mx-3.5 border-b border-ink-200 bg-ink-50/95 px-3.5 py-3 backdrop-blur-md sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <h1 className="truncate text-xl font-semibold text-ink-900">{pkg.title}</h1>
+              <StatusBadge status={pkg.status} />
+            </div>
+            <p className="text-sm text-ink-500">/packages/{pkg.slug}</p>
           </div>
-          <p className="text-sm text-ink-500">/packages/{pkg.slug}</p>
+          <div className="flex shrink-0 items-center gap-2">
+            <Link href="/travinco_dashboard/packages" className="btn-outline inline-flex items-center gap-1.5">
+              <ArrowLeft className="h-4 w-4" />
+              <span>Back to packages</span>
+            </Link>
+            <PackageSaveCard formId="package-form" />
+          </div>
         </div>
-        <Link href="/travinco_dashboard/packages" className="btn-outline inline-flex items-center gap-1.5">
-          <ArrowLeft className="h-4 w-4" />
-          <span>Back to packages</span>
-        </Link>
       </div>
 
       <PackageForm
@@ -166,8 +171,6 @@ export default async function EditPackagePage({ params }: { params: { id: string
           <PackageVideosManager packageId={pkg.id} videos={videos ?? []} />
         </div>
       </div>
-
-      <PackageSaveCard formId="package-form" />
     </div>
   );
 }

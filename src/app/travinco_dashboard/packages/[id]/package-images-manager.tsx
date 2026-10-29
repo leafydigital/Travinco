@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
+import { toast } from '@/lib/admin-alert';
 import Image from 'next/image';
 import { X, Star, ArrowUp, ArrowDown } from 'lucide-react';
 import { addPackageImage, removePackageImage, setCoverImage, reorderPackageImage } from '../sub-resource-actions';
 import { uploadPackageImage } from '../upload-actions';
+import { StagedImagePicker } from '@/components/admin/staged-image-picker';
 import type { Tables } from '@/types/database';
 
 export function PackageImagesManager({
@@ -17,34 +18,32 @@ export function PackageImagesManager({
   images: Tables<'package_images'>[];
 }) {
   const router = useRouter();
-  const [isUploading, setIsUploading] = useState(false);
   const [isPending, startTransition] = useTransition();
 
-  async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files ?? []);
-    if (files.length === 0) return;
-    setIsUploading(true);
+  /** Runs only when the admin clicks "Save photos". Returns files that failed so they stay selected. */
+  async function uploadPhotos(files: File[]) {
     let addedCount = 0;
+    const failed: File[] = [];
+    const errorsList: string[] = [];
     for (const file of files) {
       const formData = new FormData();
       formData.set('file', file);
       const uploadResult = await uploadPackageImage(formData);
-      if (uploadResult.error) {
-        toast.error(`${file.name}: ${uploadResult.error}`);
+      if (uploadResult.error || !uploadResult.url) {
+        failed.push(file);
+        errorsList.push(`${file.name}: ${uploadResult.error ?? 'Upload failed'}`);
         continue;
       }
-      if (uploadResult.url) {
-        const saveResult = await addPackageImage(packageId, uploadResult.url, false);
-        if (saveResult.error) toast.error(saveResult.error);
-        else addedCount += 1;
-      }
+      const saveResult = await addPackageImage(packageId, uploadResult.url, false);
+      if (saveResult.error) {
+        failed.push(file);
+        errorsList.push(saveResult.error);
+      } else addedCount += 1;
     }
-    setIsUploading(false);
-    e.target.value = '';
-    if (addedCount > 0) {
-      toast.success(addedCount === 1 ? 'Image uploaded' : `${addedCount} images uploaded`);
-      router.refresh();
-    }
+    if (errorsList.length > 0) toast.error(errorsList.join(' • '));
+    else if (addedCount > 0) toast.success(addedCount === 1 ? 'Photo uploaded' : `${addedCount} photos uploaded`);
+    if (addedCount > 0) router.refresh();
+    return failed;
   }
 
   function remove(id: string) {
@@ -76,8 +75,8 @@ export function PackageImagesManager({
   return (
     <div className="space-y-4">
       <p className="text-xs text-ink-400">
-        Upload JPG, PNG or WEBP photos directly — select multiple files at once to add several
-        together. Use the arrows to reorder, the star to set the cover image shown on the public
+        Choose JPG, PNG or WEBP photos (several at once is fine), then click “Save photos” to upload
+        them. Use the arrows to reorder, the star to set the cover image shown on the public
         site.
       </p>
 
@@ -138,17 +137,7 @@ export function PackageImagesManager({
         </div>
       )}
 
-      <div>
-        <input
-          type="file"
-          accept="image/jpeg,image/png,image/webp"
-          multiple
-          onChange={handleFileSelect}
-          disabled={isUploading}
-          className="block w-full text-sm text-ink-600 file:mr-3 file:rounded-full file:border-0 file:bg-brand-50 file:px-4 file:py-2 file:text-sm file:font-medium file:text-brand-700 hover:file:bg-brand-100"
-        />
-        {isUploading && <p className="mt-1.5 text-xs text-brand-600">Uploading…</p>}
-      </div>
+      <StagedImagePicker onSave={uploadPhotos} disabled={isPending} />
     </div>
   );
 }

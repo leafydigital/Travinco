@@ -26,7 +26,7 @@ import {
   Trash2,
   Check,
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/admin-alert';
 import type {
   AboutPageContent,
   AboutHeroPillar,

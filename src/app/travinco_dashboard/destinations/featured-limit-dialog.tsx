@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Star, X, Loader2 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/admin-alert';
 import { unfeatureDestination } from './actions';
 import { ModalPortal } from '@/components/ui/modal-portal';
 

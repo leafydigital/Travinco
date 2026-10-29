@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react';
 import { X, Loader2, Save } from 'lucide-react';
 import { updateLead, type LeadStatus } from './actions';
-import { toast } from 'sonner';
+import { toast } from '@/lib/admin-alert';
 import { useRouter } from 'next/navigation';
 import { ModalPortal } from '@/components/ui/modal-portal';
 

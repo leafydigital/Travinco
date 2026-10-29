@@ -9,6 +9,7 @@ import {
   validatePhoneNumberLength,
   type CountryCode,
 } from 'libphonenumber-js/mobile';
+import { isRepeatedOrSequentialDigits } from '@/lib/validations/phone';
 import { COUNTRY_NAMES } from '@/lib/country-names';
 
 /**
@@ -78,8 +79,13 @@ export function PhoneInput({
   onValidityChange,
   value: controlledValue,
   onChange: controlledOnChange,
+  disabled,
+  compact,
 }: {
   name: string;
+  disabled?: boolean;
+  /** Narrow country picker that shows only the dial code (e.g. "+91"), leaving more room for the number. */
+  compact?: boolean;
   required?: boolean;
   placeholder?: string;
   defaultDialCode?: string;
@@ -138,6 +144,9 @@ export function PhoneInput({
   const { isValid, errorMessage } = useMemo(() => {
     if (!digitsOnly) return { isValid: false, errorMessage: null as string | null };
     if (/^0+$/.test(digitsOnly)) return { isValid: false, errorMessage: 'Enter a valid mobile number' };
+    if (isRepeatedOrSequentialDigits(digitsOnly.replace(/^0+/, '') || digitsOnly)) {
+      return { isValid: false, errorMessage: 'Enter a valid mobile number' };
+    }
 
     if (isValidPhoneNumber(digitsOnly, countryIso)) return { isValid: true, errorMessage: null };
 
@@ -173,25 +182,45 @@ export function PhoneInput({
   return (
     <div>
       <div className="flex gap-2">
-        <select
-          value={countryIso}
-          onChange={(e) => {
-            setCountry(e.target.value as CountryCode);
-            setTouched(false);
-          }}
-          className={`input w-28 shrink-0 text-base ${showError ? 'border-coral-400 focus:ring-coral-400' : ''}`}
-          aria-label="Country code"
-        >
-          {COUNTRY_PHONE_CODES.map((c) => (
-            <option key={c.iso} value={c.iso}>
-              {c.code} {c.country}
-            </option>
-          ))}
-        </select>
+        <div className={`relative shrink-0 ${compact ? 'w-[4.75rem]' : 'w-28'}`}>
+          <select
+            value={countryIso}
+            onChange={(e) => {
+              setCountry(e.target.value as CountryCode);
+              setTouched(false);
+            }}
+            disabled={disabled}
+            title={countryName}
+            className={`input w-full text-base disabled:cursor-not-allowed disabled:bg-ink-50 disabled:opacity-100 ${
+              compact
+                ? // Only the overlay below shows the code — the select's own "+91 India" stays hidden, even when disabled
+                  'pl-2 pr-6 text-transparent disabled:text-transparent [-webkit-text-fill-color:transparent] bg-[position:right_0.3rem_center]'
+                : 'disabled:text-ink-700'
+            } ${showError ? 'border-coral-400 focus:ring-coral-400' : ''}`}
+            aria-label="Country code"
+          >
+            {COUNTRY_PHONE_CODES.map((c) => (
+              <option key={c.iso} value={c.iso} className="text-ink-900 [-webkit-text-fill-color:theme(colors.ink.900)]">
+                {c.code} {c.country}
+              </option>
+            ))}
+          </select>
+          {/* Compact mode: the closed picker shows only the dial code; the list keeps country names */}
+          {compact && (
+            <span
+              className={`pointer-events-none absolute inset-y-0 left-2 flex items-center text-sm ${
+                disabled ? 'text-ink-700' : 'text-ink-900'
+              }`}
+            >
+              {dialCode}
+            </span>
+          )}
+        </div>
         <input
           type="tel"
           inputMode="numeric"
           required={required}
+          disabled={disabled}
           placeholder={placeholder}
           value={number}
           onChange={(e) => setNumber(e.target.value.replace(/[^\d]/g, ''))}
@@ -207,7 +236,7 @@ export function PhoneInput({
           // Larger, bolder text specifically for phone numbers — these
           // get mistyped easily, so legibility matters more here than
           // on most fields.
-          className={`input flex-1 text-base font-medium tracking-wide ${showError ? 'border-coral-400 focus:ring-coral-400' : ''}`}
+          className={`input flex-1 text-base font-medium tracking-wide disabled:cursor-not-allowed disabled:bg-ink-50 disabled:text-ink-700 disabled:opacity-100 disabled:[-webkit-text-fill-color:theme(colors.ink.700)] ${showError ? 'border-coral-400 focus:ring-coral-400' : ''}`}
         />
       </div>
       {showError && errorMessage && (

@@ -1,457 +1,289 @@
 'use client';
 
-import { useState, useTransition, useMemo } from 'react';
+import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
-import {
-  Check,
-  X,
-  ShieldCheck,
-  CheckSquare,
-  Square,
-  Briefcase,
-  LayoutDashboard,
-  Package,
-  MapPin,
-  Inbox,
-  CalendarCheck,
-  UsersRound,
-  FileText,
-  ReceiptText,
-  Hotel,
-  Car,
-  MapPinned,
-  Landmark,
-  Tag,
-  Image as ImageIcon,
-  BookOpen,
-  TrendingUp,
-  Receipt,
-  Database,
-  Settings,
-  Users,
-  type LucideIcon,
-  RotateCcw,
-} from 'lucide-react';
-import { createStaffUser } from './actions';
-import { PAGE_CATALOG, CATEGORIES, type PageCategory } from '@/lib/admin-pages';
+import { Check, CheckCircle2, Circle, Eye, EyeOff, Loader2, Lock, RefreshCw, ShieldCheck, X } from 'lucide-react';
+import { toast } from '@/lib/admin-alert';
+import { cn } from '@/lib/utils/cn';
+import { validateFullName, validateEmailAddress } from '@/lib/validations/contact-rules';
+import { PASSWORD_RULES, generateTempPassword, passwordMeetsRules } from '@/lib/temp-password';
+import { ASSIGNABLE_PAGE_GROUPS } from '@/lib/staff-roles';
+import { createStaffUser, updateStaffUser } from './actions';
+import type { RoleOption } from './users-table';
 
-const iconMap: Record<string, LucideIcon> = {
-  LayoutDashboard,
-  Package,
-  MapPin,
-  Inbox,
-  CalendarCheck,
-  UsersRound,
-  FileText,
-  ReceiptText,
-  Hotel,
-  Car,
-  MapPinned,
-  Landmark,
-  Tag,
-  ImageIcon,
-  BookOpen,
-  TrendingUp,
-  Receipt,
-  Database,
-  Settings,
-  ShieldCheck,
-  Users,
-};
+type Props =
+  | { mode: 'create'; roles: RoleOption[] }
+  | {
+      mode: 'edit';
+      roles: RoleOption[];
+      userId: string;
+      initial: { full_name: string; email: string; role_id: string | null };
+      /** Editing your own account: role can't be changed */
+      isSelf?: boolean;
+    };
 
-function PasswordRule({ met, label }: { met: boolean; label: string }) {
+/** Read-only list of the pages a role allows, grouped like the sidebar. */
+function RolePagesPreview({ role }: { role: RoleOption | undefined }) {
+  if (!role) {
+    return (
+      <div className="rounded-xl border border-dashed border-ink-200 bg-ink-50/40 p-4 text-center text-sm text-ink-400">
+        Choose a role to see the pages this user can access.
+      </div>
+    );
+  }
+  if (role.isSystem) {
+    return (
+      <div className="flex items-center gap-2 rounded-xl border border-purple-200 bg-purple-50 p-4 text-sm text-purple-800">
+        <ShieldCheck className="h-4 w-4 shrink-0" />
+        Admin — full access to every page, including Roles and Users.
+      </div>
+    );
+  }
+  const allowed = new Set(role.pages);
   return (
-    <li className={`flex items-center gap-1.5 text-xs ${met ? 'text-brand-600 font-medium' : 'text-ink-400'}`}>
-      {met ? <Check className="h-3.5 w-3.5 text-emerald-600 shrink-0" /> : <X className="h-3.5 w-3.5 text-ink-300 shrink-0" />}
-      <span>{label}</span>
-    </li>
+    <div className="grid gap-3 sm:grid-cols-2">
+      {ASSIGNABLE_PAGE_GROUPS.map((group) => {
+        const pages = group.pages.filter((p) => allowed.has(p.key));
+        if (pages.length === 0) return null;
+        return (
+          <div key={group.category} className="rounded-xl border border-ink-100 bg-ink-50/40 p-3">
+            <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-ink-500">{group.category}</p>
+            <ul className="space-y-1">
+              {pages.map((p) => (
+                <li key={p.key} className="flex items-center gap-1.5 text-sm text-ink-800">
+                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                  {p.label}
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
-export function UserForm() {
+export function UserForm(props: Props) {
   const router = useRouter();
+  const isEdit = props.mode === 'edit';
   const [isPending, startTransition] = useTransition();
 
-  // User details
-  const [fullName, setFullName] = useState('');
-  const [email, setEmail] = useState('');
+  const [fullName, setFullName] = useState(isEdit ? props.initial.full_name : '');
+  const [email, setEmail] = useState(isEdit ? props.initial.email : '');
+  const [roleId, setRoleId] = useState(isEdit ? props.initial.role_id ?? '' : '');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState('');
+  const [showPassword, setShowPassword] = useState(true);
+  const [errors, setErrors] = useState<Record<string, string | null>>({});
 
-  // Page access permissions: default to all operational pages selected
-  const defaultSelectedPages = useMemo(() => {
-    return new Set(
-      PAGE_CATALOG.filter(
-        (p) => !p.adminOnly && (p.category === 'Core Operations' || p.category === 'Tour Operations')
-      ).map((p) => p.key)
-    );
-  }, []);
+  const selectedRole = useMemo(() => props.roles.find((r) => r.id === roleId), [props.roles, roleId]);
+  const isSelf = isEdit && Boolean(props.isSelf);
 
-  const [selectedPages, setSelectedPages] = useState<Set<string>>(defaultSelectedPages);
-
-  const rules = {
-    length: password.length >= 7,
-    upper: /[A-Z]/.test(password),
-    lower: /[a-z]/.test(password),
-    number: /[0-9]/.test(password),
-    symbol: /[^A-Za-z0-9]/.test(password),
-  };
-  const allRulesMet = Object.values(rules).every(Boolean);
-
-  // Toggle single page
-  function togglePage(key: string) {
-    setSelectedPages((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) {
-        next.delete(key);
-      } else {
-        next.add(key);
-      }
-      return next;
-    });
-  }
-
-  // Toggle category
-  function toggleCategory(cat: PageCategory) {
-    const catPages = PAGE_CATALOG.filter((p) => p.category === cat);
-    const allSelected = catPages.every((p) => selectedPages.has(p.key));
-
-    setSelectedPages((prev) => {
-      const next = new Set(prev);
-      for (const p of catPages) {
-        if (allSelected) {
-          next.delete(p.key);
-        } else {
-          next.add(p.key);
-        }
-      }
-      return next;
-    });
-  }
-
-  // Quick selects
-  function selectAll() {
-    setSelectedPages(new Set(PAGE_CATALOG.map((p) => p.key)));
-  }
-
-  function selectOperational() {
-    setSelectedPages(
-      new Set(
-        PAGE_CATALOG.filter(
-          (p) => p.category === 'Core Operations' || p.category === 'Tour Operations'
-        ).map((p) => p.key)
-      )
-    );
-  }
-
-  function clearAll() {
-    setSelectedPages(new Set());
+  function validate(): string | null {
+    const next: Record<string, string | null> = {
+      full_name: validateFullName(fullName),
+      email: isEdit ? null : validateEmailAddress(email),
+      role: roleId ? null : 'Please choose a role',
+      password: isEdit ? null : passwordMeetsRules(password) ? null : 'Password does not meet all the rules',
+    };
+    setErrors(next);
+    return Object.values(next).find(Boolean) ?? null;
   }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!role.trim()) {
-      toast.error('Please enter a role or designation name.');
-      return;
-    }
+    const err = validate();
+    if (err) return void toast.error(err);
 
     startTransition(async () => {
-      const permissionsArray = Array.from(selectedPages);
-      const result = await createStaffUser({
-        full_name: fullName.trim(),
-        email: email.trim(),
-        password,
-        role: role.trim(),
-        permissions: permissionsArray,
+      const res = isEdit
+        ? await updateStaffUser(props.userId, { full_name: fullName.trim(), role_id: roleId })
+        : await createStaffUser({ full_name: fullName.trim(), email: email.trim(), role_id: roleId, password });
+      if (res.error) return void toast.error(res.error);
+      await toast.success(isEdit ? 'Updated successfully' : 'User created successfully', {
+        description: isEdit
+          ? undefined
+          : `Share the temporary password with ${fullName.trim()}. It's shown on the Users page until they change it.`,
       });
-
-      if (result.error) {
-        toast.error(result.error);
-        return;
-      }
-
-      toast.success(`Staff user "${fullName}" created with ${permissionsArray.length} assigned pages!`);
+      router.push('/travinco_dashboard/users');
       router.refresh();
-      // Navigate directly to role management page access so admin can see user and permissions immediately
-      router.push('/travinco_dashboard/role-management/page-access');
     });
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      {/* ── Section 1: User Account Details ── */}
-      <div className="card p-6 shadow-xs space-y-5 bg-white border-ink-100">
-        <div>
-          <h2 className="text-base font-bold text-ink-900 flex items-center gap-2">
-            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-brand-100 text-brand-700 text-xs font-bold">
-              1
-            </span>
-            Staff Member Account Details
-          </h2>
-          <p className="text-xs text-ink-500 mt-0.5 ml-8">
-            Enter the personal and login credentials for this staff member.
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 pt-1">
-          {/* Full Name */}
-          <div>
-            <label className="label">
-              Full Name <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              required
-              placeholder="e.g. Rahul Sharma"
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              className="input text-sm"
-            />
-          </div>
-
-          {/* Email */}
-          <div>
-            <label className="label">
-              Email Address <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="email"
-              required
-              placeholder="e.g. rahul@travinco.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="input text-sm"
-            />
-          </div>
-
-          {/* Custom Role / Designation (No predefined Sales/Accounts dropdown) */}
-          <div className="sm:col-span-2">
-            <label className="label flex items-center justify-between">
-              <span>
-                User Role / Designation <span className="text-red-500">*</span>
-              </span>
-              <span className="text-xs font-normal text-ink-400">
-                Enter any custom title (no predefined role required)
-              </span>
-            </label>
-            <input
-              type="text"
-              required
-              value={role}
-              onChange={(e) => setRole(e.target.value)}
-              placeholder="e.g. Tour Coordinator, Holiday Planner, Reservation Lead, Manager"
-              className="input text-sm"
-            />
-            {/* Suggestion Pills */}
-            <div className="mt-2 flex flex-wrap items-center gap-1.5">
-              <span className="text-[11px] text-ink-400">Suggestions:</span>
-              {[
-                'Tour Coordinator',
-                'Travel Consultant',
-                'Operations Lead',
-                'Reservation Specialist',
-                'Holiday Planner',
-                'Account Manager',
-                'Administrator',
-              ].map((suggestion) => (
-                <button
-                  key={suggestion}
-                  type="button"
-                  onClick={() => setRole(suggestion)}
-                  className={`rounded-md border px-2.5 py-0.5 text-xs transition-colors ${
-                    role.toLowerCase() === suggestion.toLowerCase()
-                      ? 'border-brand-500 bg-brand-50 font-semibold text-brand-700'
-                      : 'border-ink-200 bg-white text-ink-600 hover:border-ink-300 hover:bg-ink-50'
-                  }`}
-                >
-                  {suggestion}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Password */}
-          <div className="sm:col-span-2">
-            <label className="label">
-              Temporary Password <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Set a secure temporary password"
-              className="input text-sm"
-            />
-            <ul className="mt-2.5 grid grid-cols-2 sm:grid-cols-5 gap-2 rounded-lg bg-ink-50/70 p-3 border border-ink-100">
-              <PasswordRule met={rules.length} label="7+ characters" />
-              <PasswordRule met={rules.upper} label="1 uppercase" />
-              <PasswordRule met={rules.lower} label="1 lowercase" />
-              <PasswordRule met={rules.number} label="1 number" />
-              <PasswordRule met={rules.symbol} label="1 symbol" />
-            </ul>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Section 2: Page Access & Module Permissions ── */}
-      <div className="card p-6 shadow-xs space-y-6 bg-white border-ink-100">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-ink-100 pb-4">
-          <div>
-            <h2 className="text-base font-bold text-ink-900 flex items-center gap-2">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-brand-100 text-brand-700 text-xs font-bold">
-                2
-              </span>
-              Assign Page & Module Access Permissions
-            </h2>
-            <p className="text-xs text-ink-500 mt-0.5 ml-8">
-              Select which pages will appear in this staff member&apos;s sidebar. Unchecked pages remain completely hidden and restricted.
-            </p>
-          </div>
-
-          {/* Quick Select Buttons */}
-          <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
-            <button
-              type="button"
-              onClick={selectAll}
-              className="btn-outline text-xs py-1 px-2.5 h-8 flex items-center gap-1.5"
-            >
-              <CheckSquare className="h-3.5 w-3.5 text-brand-600" />
-              Select All
-            </button>
-            <button
-              type="button"
-              onClick={selectOperational}
-              className="btn-outline text-xs py-1 px-2.5 h-8 flex items-center gap-1.5"
-            >
-              <Briefcase className="h-3.5 w-3.5 text-amber-500" />
-              Operational Only
-            </button>
-            <button
-              type="button"
-              onClick={clearAll}
-              className="btn-outline text-xs py-1 px-2.5 h-8 flex items-center gap-1.5 text-ink-600 hover:text-red-600"
-            >
-              <RotateCcw className="h-3.5 w-3.5" />
-              Clear
-            </button>
-          </div>
-        </div>
-
-        {/* Selected count badge */}
-        <div className="flex items-center justify-between bg-brand-50/60 border border-brand-100 rounded-lg px-4 py-2.5 text-xs text-brand-900">
-          <div className="flex items-center gap-2 font-medium">
-            <ShieldCheck className="h-4 w-4 text-brand-600" />
-            <span>
-              <strong>{selectedPages.size}</strong> of {PAGE_CATALOG.length} pages granted access
-            </span>
-          </div>
-          <span className="text-[11px] text-brand-700">
-            {selectedPages.size === 0 ? 'User will have no accessible pages' : 'Sidebar will render granted items only'}
-          </span>
-        </div>
-
-        {/* Categories Checkbox Grid */}
-        <div className="space-y-6">
-          {CATEGORIES.map((cat) => {
-            const pages = PAGE_CATALOG.filter((p) => p.category === cat);
-            if (pages.length === 0) return null;
-
-            const selectedCount = pages.filter((p) => selectedPages.has(p.key)).length;
-            const allCatSelected = selectedCount === pages.length;
-
-            return (
-              <div key={cat} className="rounded-xl border border-ink-100 bg-ink-50/30 p-4 space-y-3">
-                {/* Category Header */}
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold uppercase tracking-wider text-ink-700">
-                      {cat}
-                    </span>
-                    <span className="rounded-full bg-white border border-ink-200 px-2 py-0.2 text-[10px] font-semibold text-ink-500">
-                      {selectedCount}/{pages.length}
-                    </span>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => toggleCategory(cat)}
-                    className="text-xs font-medium text-brand-700 hover:text-brand-900 flex items-center gap-1 transition-colors"
-                  >
-                    {allCatSelected ? (
-                      <>
-                        <Square className="h-3 w-3" />
-                        Deselect category
-                      </>
-                    ) : (
-                      <>
-                        <CheckSquare className="h-3 w-3 text-brand-600" />
-                        Select category
-                      </>
-                    )}
-                  </button>
-                </div>
-
-                {/* Grid of Compact Checkboxes */}
-                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
-                  {pages.map((page) => {
-                    const isChecked = selectedPages.has(page.key);
-                    const IconComponent = iconMap[page.icon] || LayoutDashboard;
-
-                    return (
-                      <label
-                        key={page.key}
-                        className={`flex items-start gap-3 rounded-lg border p-3 text-left transition-all cursor-pointer select-none ${
-                          isChecked
-                            ? 'border-brand-300 bg-white shadow-2xs ring-1 ring-brand-400/40 text-ink-900'
-                            : 'border-ink-150 bg-white/70 hover:bg-white hover:border-ink-300 text-ink-600'
-                        }`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={() => togglePage(page.key)}
-                          className="mt-0.5 h-4 w-4 rounded border-ink-300 text-brand-600 focus:ring-brand-500 cursor-pointer"
-                        />
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5">
-                            <IconComponent
-                              className={`h-4 w-4 shrink-0 ${
-                                isChecked ? 'text-brand-600' : 'text-ink-400'
-                              }`}
-                            />
-                            <span className="font-semibold text-xs truncate">
-                              {page.label}
-                            </span>
-                          </div>
-                          <p className="text-[11px] text-ink-400 line-clamp-1 mt-0.5">
-                            {page.description}
-                          </p>
-                        </div>
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* ── Submit Button Bar ── */}
-      <div className="card p-4 bg-white border-ink-100 flex items-center justify-between gap-4">
-        <p className="text-xs text-ink-500">
-          User account will be provisioned and assigned permissions will take effect immediately.
-        </p>
-
+    <form onSubmit={handleSubmit} noValidate className="space-y-4">
+      {/* Actions on top */}
+      <div className="flex justify-end gap-2">
+        <button
+          type="button"
+          onClick={() => router.push('/travinco_dashboard/users')}
+          disabled={isPending}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-red-700 disabled:opacity-50"
+        >
+          <X className="h-3.5 w-3.5" /> Cancel
+        </button>
         <button
           type="submit"
-          disabled={isPending || !allRulesMet || !fullName.trim() || !email.trim() || !role.trim()}
-          className="btn-primary px-6 py-2.5 text-sm font-semibold shadow-sm shrink-0"
+          disabled={isPending}
+          data-confirm-save="true"
+          data-confirm-label={isEdit ? 'Update' : 'Create user'}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:opacity-50"
         >
-          {isPending ? 'Creating User & Saving Permissions…' : 'Create User & Assign Permissions'}
+          {isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+          {isPending ? (isEdit ? 'Updating...' : 'Creating...') : isEdit ? 'Update' : 'Create user'}
         </button>
+      </div>
+
+      <div className="card grid gap-4 p-5 sm:grid-cols-2">
+        <div>
+          <label htmlFor="user-name" className="mb-1 block text-sm font-medium text-ink-700">
+            Full name <span className="text-red-500">*</span>
+          </label>
+          <input
+            id="user-name"
+            maxLength={120}
+            value={fullName}
+            onChange={(e) => {
+              const v = e.target.value.replace(/\d/g, '');
+              setFullName(v);
+              if (v !== e.target.value) setErrors((x) => ({ ...x, full_name: 'Numbers are not allowed in the name' }));
+              else if (errors.full_name) setErrors((x) => ({ ...x, full_name: validateFullName(v) }));
+            }}
+            onBlur={() => setErrors((x) => ({ ...x, full_name: validateFullName(fullName) }))}
+            placeholder="e.g. Rahul Sharma"
+            className={cn('input', errors.full_name && 'border-red-400 focus:border-red-500')}
+          />
+          {errors.full_name && <p className="field-error">{errors.full_name}</p>}
+        </div>
+
+        <div>
+          <label htmlFor="user-email" className="mb-1 block text-sm font-medium text-ink-700">
+            Email address <span className="text-red-500">*</span>
+          </label>
+          <div className="relative">
+            <input
+              id="user-email"
+              type="email"
+              value={email}
+              disabled={isEdit}
+              onChange={(e) => {
+                setEmail(e.target.value.trim());
+                if (errors.email) setErrors((x) => ({ ...x, email: validateEmailAddress(e.target.value) }));
+              }}
+              onBlur={() => !isEdit && setErrors((x) => ({ ...x, email: validateEmailAddress(email) }))}
+              placeholder="e.g. rahul@travinco.in"
+              className={cn(
+                'input disabled:cursor-not-allowed disabled:bg-ink-50 disabled:text-ink-600',
+                isEdit && 'pr-9',
+                errors.email && 'border-red-400 focus:border-red-500'
+              )}
+            />
+            {isEdit && <Lock className="absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-400" />}
+          </div>
+          {errors.email ? (
+            <p className="field-error">{errors.email}</p>
+          ) : (
+            isEdit && <p className="mt-1 text-xs text-ink-400">The email is the sign-in ID and can&apos;t be changed.</p>
+          )}
+        </div>
+
+        <div>
+          <label htmlFor="user-role" className="mb-1 block text-sm font-medium text-ink-700">
+            User role <span className="text-red-500">*</span>
+          </label>
+          <select
+            id="user-role"
+            value={roleId}
+            disabled={isSelf}
+            onChange={(e) => {
+              setRoleId(e.target.value);
+              setErrors((x) => ({ ...x, role: null }));
+            }}
+            className={cn('input disabled:cursor-not-allowed disabled:bg-ink-50', errors.role && 'border-red-400')}
+          >
+            <option value="">— Choose a role —</option>
+            {props.roles.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
+                {r.isSystem ? ' (full access)' : ` (${r.pages.length} pages)`}
+              </option>
+            ))}
+          </select>
+          {errors.role ? (
+            <p className="field-error">{errors.role}</p>
+          ) : isSelf ? (
+            <p className="mt-1 text-xs text-ink-400">You can&apos;t change your own role.</p>
+          ) : props.roles.length === 0 ? (
+            <p className="mt-1 text-xs text-amber-700">No roles yet — create one on the Roles page first.</p>
+          ) : null}
+        </div>
+
+        {!isEdit && (
+          <div>
+            <label htmlFor="user-password" className="mb-1 block text-sm font-medium text-ink-700">
+              Temporary password <span className="text-red-500">*</span>
+            </label>
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <input
+                  id="user-password"
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="new-password"
+                  maxLength={72}
+                  value={password}
+                  onChange={(e) => {
+                    setPassword(e.target.value.replace(/\s/g, ''));
+                    if (errors.password) setErrors((x) => ({ ...x, password: null }));
+                  }}
+                  className={cn('input pr-9 font-mono', errors.password && 'border-red-400 focus:border-red-500')}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-400 hover:text-ink-600"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+              <button
+                type="button"
+                data-no-confirm-save="true"
+                onClick={() => {
+                  setPassword(generateTempPassword());
+                  setErrors((x) => ({ ...x, password: null }));
+                }}
+                className="btn-outline whitespace-nowrap px-3 text-xs"
+                title="Generate a strong temporary password"
+              >
+                <RefreshCw className="h-3.5 w-3.5" /> Generate
+              </button>
+            </div>
+            <ul className="mt-2 grid grid-cols-2 gap-1 text-[11px]">
+              {PASSWORD_RULES.map((r) => {
+                const ok = r.test(password);
+                return (
+                  <li key={r.key} className={cn('flex items-center gap-1.5', ok ? 'text-emerald-700' : 'text-ink-400')}>
+                    {ok ? <Check className="h-3 w-3" /> : <Circle className="h-3 w-3" />}
+                    {r.label}
+                  </li>
+                );
+              })}
+            </ul>
+            <p className="mt-1.5 text-[11px] text-ink-400">
+              Shown on the Users page until the user changes it.
+            </p>
+          </div>
+        )}
+      </div>
+
+      <div className="card space-y-3 p-5">
+        <div>
+          <h2 className="text-sm font-semibold text-ink-800">Pages this user can access</h2>
+          <p className="text-xs text-ink-500">
+            Comes from the selected role. To change it, edit the role on the Roles page.
+          </p>
+        </div>
+        <RolePagesPreview role={selectedRole} />
       </div>
     </form>
   );

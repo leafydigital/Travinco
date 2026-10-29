@@ -1,8 +1,7 @@
 'use client';
 
-import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { createPortal } from 'react-dom';
-import { Save, X, AlertCircle } from 'lucide-react';
+import React, { useEffect, useCallback, useRef } from 'react';
+import { confirmAlert } from '@/lib/admin-alert';
 
 interface PendingSaveAction {
   element: HTMLElement;
@@ -11,35 +10,32 @@ interface PendingSaveAction {
   form?: HTMLFormElement;
 }
 
+/** Words that just mean "the changes" — the popup then reads naturally without quoting them. */
+const GENERIC_CONTEXT = /^(changes?|all changes|details|information|info|data|it|now)$/i;
+
+/** "Save Package Info" → 'Are you sure you want to save "Package Info"? …'; "Save Changes" → generic wording. */
+function describeSave(buttonText: string, confirmLabel?: string) {
+  const tail = 'Any updates made will be applied immediately.';
+  if (confirmLabel) return `Are you sure you want to ${confirmLabel.toLowerCase()}?`;
+  const context = buttonText.replace(/^save\s*/i, '').trim();
+  if (!context || context.length > 50 || GENERIC_CONTEXT.test(context)) {
+    return `Are you sure you want to save? ${tail}`;
+  }
+  return `Are you sure you want to save "${context}"? ${tail}`;
+}
+
 /**
  * Global Save Confirmation Provider for all Admin Dashboard pages.
  * Listens for save button clicks and form submissions across the dashboard
- * and prompts the admin with a confirmation popup before executing the save.
+ * and prompts the admin with a SweetAlert confirmation popup before executing the save.
  */
 export function SaveConfirmationProvider({ children }: { children?: React.ReactNode }) {
-  const [mounted, setMounted] = useState(false);
-  const [isOpen, setIsOpen] = useState(false);
-  const [actionInfo, setActionInfo] = useState<{ title: string; description: string }>({
-    title: 'Confirm Save Changes',
-    description: 'Are you sure you want to save these changes?',
-  });
   const pendingActionRef = useRef<PendingSaveAction | null>(null);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  const handleClose = useCallback(() => {
-    pendingActionRef.current = null;
-    setIsOpen(false);
-  }, []);
+  const openRef = useRef(false);
 
   const handleConfirm = useCallback(() => {
     const pending = pendingActionRef.current;
-    if (!pending) {
-      setIsOpen(false);
-      return;
-    }
+    if (!pending) return;
 
     const targetEl = pending.element;
     const targetForm =
@@ -99,8 +95,27 @@ export function SaveConfirmationProvider({ children }: { children?: React.ReactN
     }, 1200);
 
     pendingActionRef.current = null;
-    setIsOpen(false);
   }, []);
+
+  const openConfirm = useCallback(
+    (info: { title: string; description: string; confirmText?: string }) => {
+      if (openRef.current) return;
+      openRef.current = true;
+      void confirmAlert({
+        title: info.title,
+        text: info.description,
+        confirmText: info.confirmText || 'Yes, save changes',
+        cancelText: 'Cancel',
+        confirmColor: '#16a34a', // green
+        cancelColor: '#dc2626', // red
+      }).then((ok) => {
+        openRef.current = false;
+        if (ok) handleConfirm();
+        else pendingActionRef.current = null;
+      });
+    },
+    [handleConfirm]
+  );
 
   // Intercept clicks on Save buttons at capture phase
   useEffect(() => {
@@ -130,8 +145,8 @@ export function SaveConfirmationProvider({ children }: { children?: React.ReactN
         return;
       }
 
-      // If inside our own confirmation modal, ignore
-      if (button.closest('#global-save-confirmation-dialog')) {
+      // If inside a SweetAlert popup (our own confirmation), ignore
+      if (button.closest('.swal2-container')) {
         return;
       }
 
@@ -156,8 +171,8 @@ export function SaveConfirmationProvider({ children }: { children?: React.ReactN
         return;
       }
 
-      // Must have "save" as a standalone word
-      const hasSaveWord = /\bsave\b/i.test(combined);
+      // Must have "save" as a standalone word, or opt in with data-confirm-save (e.g. "Update")
+      const hasSaveWord = /\bsave\b/i.test(combined) || button.dataset.confirmSave === 'true';
 
       // Exclude cancel, delete, discard, remove, close
       const isNegativeOrDelete = /\b(cancel|delete|remove|discard|close|exit|back)\b/i.test(combined);
@@ -175,17 +190,9 @@ export function SaveConfirmationProvider({ children }: { children?: React.ReactN
         button.type === 'submit' ||
         (form !== null && button.getAttribute('type') !== 'button');
 
-      // Determine human-friendly description
-      let displayContext = text.replace(/^save\s*/i, '').trim();
-      if (!displayContext || displayContext.length > 50) {
-        displayContext = 'these changes';
-      }
-
-      const modalTitle = text && text.length < 40 ? text : 'Save Changes';
-      const descriptionText =
-        displayContext === 'these changes'
-          ? 'Are you sure you want to save your changes? Any updates made will be applied immediately.'
-          : `Are you sure you want to save "${displayContext}"? Any updates made will be applied immediately.`;
+      const confirmLabel = button.dataset.confirmLabel;
+      const modalTitle = confirmLabel || (text && text.length < 40 ? text : 'Save Changes');
+      const descriptionText = describeSave(text, confirmLabel);
 
       pendingActionRef.current = {
         element: button,
@@ -194,12 +201,11 @@ export function SaveConfirmationProvider({ children }: { children?: React.ReactN
         form: form || undefined,
       };
 
-      setActionInfo({
+      openConfirm({
         title: modalTitle,
         description: descriptionText,
+        confirmText: confirmLabel,
       });
-
-      setIsOpen(true);
     };
 
     // Capture phase intercepts before component onClick handlers
@@ -208,7 +214,7 @@ export function SaveConfirmationProvider({ children }: { children?: React.ReactN
     return () => {
       document.removeEventListener('click', handleDocumentClick, true);
     };
-  }, []);
+  }, [openConfirm]);
 
   // Intercept form submissions (e.g. Enter key pressed in an input)
   useEffect(() => {
@@ -228,7 +234,7 @@ export function SaveConfirmationProvider({ children }: { children?: React.ReactN
         return;
       }
 
-      if (form.closest('#global-save-confirmation-dialog')) {
+      if (form.closest('.swal2-container')) {
         return;
       }
 
@@ -241,15 +247,11 @@ export function SaveConfirmationProvider({ children }: { children?: React.ReactN
         : '';
       const combined = text.toLowerCase();
 
-      if (/\bsave\b/i.test(combined)) {
+      const confirmLabel = (submitter as HTMLElement | null)?.dataset?.confirmLabel;
+      if (/\bsave\b/i.test(combined) || (submitter as HTMLElement | null)?.dataset?.confirmSave === 'true') {
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
-
-        let displayContext = text.replace(/^save\s*/i, '').trim();
-        if (!displayContext || displayContext.length > 50) {
-          displayContext = 'these changes';
-        }
 
         pendingActionRef.current = {
           element: submitter || form,
@@ -258,12 +260,11 @@ export function SaveConfirmationProvider({ children }: { children?: React.ReactN
           form: form,
         };
 
-        setActionInfo({
-          title: text && text.length < 40 ? text : 'Save Changes',
-          description: `Are you sure you want to save ${displayContext === 'these changes' ? 'your changes' : `"${displayContext}"`}? Any updates made will be applied immediately.`,
+        openConfirm({
+          title: confirmLabel || (text && text.length < 40 ? text : 'Save Changes'),
+          description: describeSave(text, confirmLabel),
+          confirmText: confirmLabel,
         });
-
-        setIsOpen(true);
       }
     };
 
@@ -271,110 +272,7 @@ export function SaveConfirmationProvider({ children }: { children?: React.ReactN
     return () => {
       document.removeEventListener('submit', handleDocumentSubmit, true);
     };
-  }, []);
+  }, [openConfirm]);
 
-  // Keyboard shortcut listener (Esc to close, Enter to confirm)
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        handleClose();
-      } else if (e.key === 'Enter') {
-        e.preventDefault();
-        handleConfirm();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      document.body.style.overflow = prevOverflow;
-    };
-  }, [isOpen, handleClose, handleConfirm]);
-
-  return (
-    <>
-      {children}
-
-      {/* ── Global Save Confirmation Modal Dialog ── */}
-      {mounted &&
-        isOpen &&
-        createPortal(
-          <div
-            id="global-save-confirmation-dialog"
-            className="fixed inset-0 bg-ink-950/50 z-[99999] flex items-center justify-center p-4 select-none animate-in fade-in duration-150"
-            onClick={handleClose}
-            role="dialog"
-            aria-modal="true"
-            aria-label="Save Confirmation"
-          >
-            <div
-              className="relative w-full max-w-md bg-white rounded-3xl shadow-lg shadow-ink-900/5 overflow-hidden border border-brand-200/80 animate-in zoom-in-95 duration-150 p-6 sm:p-7 space-y-5"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {/* Header with Save Icon & Close button */}
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-brand-50 border border-brand-200/80 text-brand-700 shadow-xs">
-                    <Save className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <h3 className="font-display text-base sm:text-lg font-bold text-ink-950 tracking-tight leading-snug">
-                      {actionInfo.title}
-                    </h3>
-                    <p className="text-xs text-brand-700 font-semibold mt-0.5 flex items-center gap-1">
-                      <AlertCircle className="h-3.5 w-3.5" />
-                      Confirmation Required
-                    </p>
-                  </div>
-                </div>
-  
-                <button
-                  type="button"
-                  onClick={handleClose}
-                  className="flex h-8 w-8 items-center justify-center rounded-full bg-ink-100 text-ink-600 hover:bg-ink-200 hover:text-ink-900 transition cursor-pointer focus:outline-hidden"
-                  aria-label="Cancel and close dialog"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-  
-              {/* Message Body */}
-              <div className="rounded-2xl bg-sand-50/70 border border-sand-200/80 p-4">
-                <p className="text-xs sm:text-sm text-ink-700 leading-relaxed font-medium">
-                  {actionInfo.description}
-                </p>
-              </div>
-  
-              {/* Buttons */}
-              <div className="flex items-center justify-end gap-3 pt-1">
-                <button
-                  type="button"
-                  onClick={handleClose}
-                  className="rounded-xl border border-ink-200 bg-white px-4 py-2.5 text-xs font-semibold text-ink-700 hover:bg-ink-50 transition shadow-2xs cursor-pointer focus:outline-hidden"
-                >
-                  Cancel
-                </button>
-  
-                <button
-                  type="button"
-                  onClick={handleConfirm}
-                  autoFocus
-                  className="btn-primary inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-xs font-bold shadow-sm cursor-pointer focus:outline-hidden"
-                >
-                  <Save className="h-3.5 w-3.5" />
-                  <span>Yes, Save Changes</span>
-                </button>
-              </div>
-            </div>
-          </div>,
-          document.body
-        )}
-    </>
-  );
+  return <>{children}</>;
 }

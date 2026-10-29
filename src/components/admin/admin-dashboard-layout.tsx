@@ -97,7 +97,7 @@ export function AdminDashboardLayout({
       )}
 
       {/* Main Content Area: Expands to full screen width when collapsed! */}
-      <div className="flex-1 min-w-0 overflow-x-hidden transition-all duration-300 ease-in-out">
+      <div className="flex-1 min-w-0 overflow-x-clip transition-all duration-300 ease-in-out">
         <main
           className={cn(
             'mx-auto px-3.5 py-4 sm:px-6 sm:py-6 lg:px-8 print:max-w-none print:p-0 transition-all duration-300',

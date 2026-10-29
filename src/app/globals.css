@@ -143,3 +143,17 @@
     scrollbar-width: none;
   }
 }
+/* SweetAlert2 — keep popups above admin modals and match the dashboard font */
+.swal2-container.tv-swal {
+  z-index: 100000 !important;
+}
+.tv-swal .tv-swal-popup {
+  font-family: var(--font-inter), system-ui, sans-serif;
+  border-radius: 1.25rem;
+}
+.tv-swal .swal2-title {
+  font-size: 1.15rem;
+}
+.tv-swal .swal2-html-container {
+  font-size: 0.9rem;
+}

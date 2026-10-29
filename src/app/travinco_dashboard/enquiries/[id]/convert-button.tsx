@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
+import { toast } from '@/lib/admin-alert';
 import { convertEnquiryToBooking } from '../actions';
 import { formatCurrency } from '@/lib/utils/format';
 import { ArrowRightCircle, X } from 'lucide-react';

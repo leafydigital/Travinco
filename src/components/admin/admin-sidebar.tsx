@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
-import { toast } from 'sonner';
+import { toast } from '@/lib/admin-alert';
 import { cn } from '@/lib/utils/cn';
 import type { NavSection, IconName } from '@/lib/admin-nav';
 import {

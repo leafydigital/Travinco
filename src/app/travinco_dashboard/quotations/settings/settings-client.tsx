@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
+import { toast } from '@/lib/admin-alert';
 import { RefreshCw, Trash2 } from 'lucide-react';
 import { saveTourSettings, deleteQuotationTemplate, toggleQuotationTemplate, rebuildRateDateWindows } from '@/lib/tour/master-actions';
 import type { TourSettings } from '@/lib/tour/types';

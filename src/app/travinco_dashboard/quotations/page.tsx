@@ -23,6 +23,7 @@ function QuotationsTableSkeleton() {
             <th className="px-5 py-3">Quotation</th>
             <th className="px-5 py-3">Guest</th>
             <th className="px-5 py-3">Trip</th>
+            <th className="px-5 py-3">Source</th>
             <th className="px-5 py-3 text-right">Total</th>
             <th className="px-5 py-3">Status</th>
             <th className="px-5 py-3">Created</th>
@@ -43,6 +44,9 @@ function QuotationsTableSkeleton() {
               <td className="px-5 py-3.5">
                 <div className="h-4 w-24 rounded bg-ink-200/70 mb-2" />
                 <div className="h-3 w-32 rounded bg-ink-100" />
+              </td>
+              <td className="px-5 py-3.5">
+                <div className="h-5 w-16 rounded-full bg-ink-100" />
               </td>
               <td className="px-5 py-3.5 text-right">
                 <div className="h-4 w-20 rounded bg-ink-200/70 ml-auto mb-2" />
@@ -103,6 +107,7 @@ async function QuotationsTableContent({
               <th className="px-5 py-3">Quotation</th>
               <th className="px-5 py-3">Guest</th>
               <th className="px-5 py-3">Trip</th>
+              <th className="px-5 py-3">Source</th>
               <th className="px-5 py-3 text-right">Total</th>
               <th className="px-5 py-3">Status</th>
               <th className="px-5 py-3">Created</th>
@@ -112,7 +117,7 @@ async function QuotationsTableContent({
           <tbody>
             {visibleRows.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-5 py-10 text-center text-ink-400">
+                <td colSpan={8} className="px-5 py-10 text-center text-ink-400">
                   No quotations yet.{' '}
                   <Link
                     href="/travinco_dashboard/quotations/new"
@@ -152,6 +157,17 @@ async function QuotationsTableContent({
                     <p className="text-xs text-ink-400">
                       {r.nights + 1}D/{r.nights}N · {r.adults} adult{r.adults > 1 ? 's' : ''}
                     </p>
+                  </td>
+                  <td className="px-5 py-3">
+                    <span
+                      className={`badge ${
+                        r.source === 'website'
+                          ? 'bg-ocean-50 text-ocean-700 ring-1 ring-ocean-200'
+                          : 'bg-ink-100 text-ink-600 ring-1 ring-ink-200'
+                      }`}
+                    >
+                      {r.source === 'website' ? 'Website' : 'Direct'}
+                    </span>
                   </td>
                   <td className="px-5 py-3 text-right tabular-nums">
                     <p className="font-medium text-ink-800">

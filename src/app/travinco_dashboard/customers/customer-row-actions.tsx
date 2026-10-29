@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
+import { toast } from '@/lib/admin-alert';
 import { Pencil, Trash2 } from 'lucide-react';
 import { ConfirmDeleteDialog } from '@/components/admin/confirm-delete-dialog';
 import { CustomerEditModal } from './customer-edit-modal';

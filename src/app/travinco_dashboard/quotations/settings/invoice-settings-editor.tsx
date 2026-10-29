@@ -13,7 +13,7 @@ import {
   type RefObject,
 } from 'react';
 import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
+import { toast } from '@/lib/admin-alert';
 import {
   Building2,
   QrCode,

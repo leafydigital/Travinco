@@ -1,5 +1,6 @@
 import { cn } from '@/lib/utils/cn';
 import { COUNTRY_NAMES } from '@/lib/country-names';
+import { ComboInput } from '@/components/ui/combo-input';
 
 /**
  * Horizontal form row: label on the left, control on the right (stacks on mobile).
@@ -49,7 +50,7 @@ const COUNTRY_OPTIONS = Array.from(new Set(Object.values(COUNTRY_NAMES))).sort((
   a.localeCompare(b)
 );
 
-/** Free-text country input with a dropdown of every country (native datalist). */
+/** Country input with a styled (light) dropdown of every country; typing filters the list. */
 export function CountryInput({
   id,
   value,
@@ -57,6 +58,8 @@ export function CountryInput({
   className,
   placeholder = 'Select or type a country',
   disabled,
+  required,
+  invalid,
 }: {
   id: string;
   value: string;
@@ -64,25 +67,20 @@ export function CountryInput({
   className?: string;
   placeholder?: string;
   disabled?: boolean;
+  required?: boolean;
+  invalid?: boolean;
 }) {
-  const listId = `${id}-countries`;
   return (
-    <>
-      <input
-        id={id}
-        list={listId}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        autoComplete="off"
-        disabled={disabled}
-        className={cn('input', className)}
-      />
-      <datalist id={listId}>
-        {COUNTRY_OPTIONS.map((c) => (
-          <option key={c} value={c} />
-        ))}
-      </datalist>
-    </>
+    <ComboInput
+      id={id}
+      value={value}
+      onChange={onChange}
+      options={COUNTRY_OPTIONS}
+      placeholder={placeholder}
+      disabled={disabled}
+      required={required}
+      emptyText="No matching country"
+      className={cn(invalid && 'border-red-400 focus:border-red-500 focus:ring-red-200', className)}
+    />
   );
 }

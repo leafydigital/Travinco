@@ -2,11 +2,27 @@
 
 import { useState, useEffect, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
-import { X, Save, Loader2 } from 'lucide-react';
-import { updateCustomer, getCustomerById } from './actions';
+import { toast } from '@/lib/admin-alert';
+import { X, Loader2, CheckCircle2 } from 'lucide-react';
+import { updateCustomerDetails, getCustomerById } from './actions';
 import { HField } from '@/components/admin/horizontal-field';
 import { ModalPortal } from '@/components/ui/modal-portal';
+import { PhoneInput, COUNTRY_PHONE_CODES } from '@/components/public/phone-input';
+import { validateFullName, validateEmailAddress } from '@/lib/validations/contact-rules';
+
+type PhoneValue = { dialCode: string; number: string; country?: string };
+
+function splitPhone(stored?: string | null): PhoneValue {
+  if (!stored) return { dialCode: '+91', number: '' };
+  if (!stored.startsWith('+')) return { dialCode: '+91', number: stored.replace(/\D/g, '') };
+  const sorted = [...COUNTRY_PHONE_CODES].sort((a, b) => b.code.length - a.code.length);
+  for (const c of sorted) {
+    if (stored.startsWith(c.code)) return { dialCode: c.code, number: stored.slice(c.code.length).replace(/\D/g, '') };
+  }
+  return { dialCode: '+91', number: stored.replace(/\D/g, '') };
+}
+
+const joinPhone = (p: PhoneValue) => (p.number ? `${p.dialCode}${p.number}` : '');
 
 interface CustomerEditModalProps {
   isOpen: boolean;
@@ -26,11 +42,15 @@ export function CustomerEditModal({
   const [isLoading, setIsLoading] = useState(true);
 
   const [fullName, setFullName] = useState(initialName);
-  const [phone, setPhone] = useState('');
-  const [whatsappNumber, setWhatsappNumber] = useState('');
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [phone, setPhone] = useState<PhoneValue>({ dialCode: '+91', number: '' });
+  const [phoneValid, setPhoneValid] = useState(false);
+  const [hasWhatsapp, setHasWhatsapp] = useState(false);
+  const [whatsapp, setWhatsapp] = useState<PhoneValue>({ dialCode: '+91', number: '' });
+  const [whatsappValid, setWhatsappValid] = useState(true);
   const [email, setEmail] = useState('');
-  const [city, setCity] = useState('');
-  const [state, setState] = useState('');
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [address, setAddress] = useState('');
   const [source, setSource] = useState('website');
   const [notes, setNotes] = useState('');
 
@@ -43,11 +63,15 @@ export function CustomerEditModal({
         if (cancelled) return;
         if (res.data) {
           setFullName(res.data.full_name || '');
-          setPhone(res.data.phone || '');
-          setWhatsappNumber(res.data.whatsapp_number || '');
+          setNameError(null);
+          setPhone(splitPhone(res.data.phone));
+          // Show the WhatsApp field only when a different WhatsApp number is saved
+          const wa = res.data.whatsapp_number || '';
+          setHasWhatsapp(Boolean(wa) && wa !== res.data.phone);
+          setWhatsapp(splitPhone(wa));
           setEmail(res.data.email || '');
-          setCity(res.data.city || '');
-          setState(res.data.state || '');
+          setEmailError(null);
+          setAddress((res.data as { address?: string | null }).address || '');
           setSource(res.data.source || 'website');
           setNotes(res.data.notes || '');
         } else if (res.error) {
@@ -63,17 +87,52 @@ export function CustomerEditModal({
 
   if (!isOpen) return null;
 
+  function handleNameChange(raw: string) {
+    // Digits are never accepted in a name
+    const value = raw.replace(/\d/g, '');
+    setFullName(value);
+    if (value !== raw) setNameError('Numbers are not allowed in the name');
+    else if (nameError) setNameError(validateFullName(value));
+  }
+
+  function validate(): string | null {
+    const nErr = validateFullName(fullName);
+    if (nErr) {
+      setNameError(nErr);
+      return nErr;
+    }
+    if (!phone.number) return 'Phone number is required';
+    if (!phoneValid) return 'Please enter a valid phone number';
+    if (hasWhatsapp) {
+      if (!whatsapp.number) return 'Please enter the WhatsApp number or untick the WhatsApp box';
+      if (!whatsappValid) return 'Please enter a valid WhatsApp number';
+    }
+    if (email.trim()) {
+      const eErr = validateEmailAddress(email);
+      if (eErr) {
+        setEmailError(eErr);
+        return eErr;
+      }
+    }
+    return null;
+  }
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    const error = validate();
+    if (error) {
+      toast.error(error);
+      return;
+    }
     startTransition(async () => {
-      const res = await updateCustomer(customerId, {
+      const phoneFull = joinPhone(phone);
+      const res = await updateCustomerDetails(customerId, {
         full_name: fullName.trim(),
-        phone: phone.trim(),
-        whatsapp_number: whatsappNumber.trim() || null,
+        phone: phoneFull,
+        whatsapp_number: hasWhatsapp ? joinPhone(whatsapp) : phoneFull,
         email: email.trim() || null,
-        city: city.trim() || null,
-        state: state.trim() || null,
-        source: source as any,
+        address: address.trim() || null,
+        source,
         notes: notes.trim() || null,
       });
 
@@ -82,9 +141,9 @@ export function CustomerEditModal({
         return;
       }
 
-      toast.success('Customer updated successfully');
       onClose();
       router.refresh();
+      toast.success('Updated successfully');
     });
   }
 
@@ -149,73 +208,102 @@ export function CustomerEditModal({
           ) : (
             /* Form Body */
             <form onSubmit={handleSubmit} className="p-6 space-y-3">
-              <HField label="Full name" required htmlFor="edit-cust-name" labelWidth="sm:w-28" fieldClassName="sm:max-w-sm">
+              <HField
+                label="Full name"
+                required
+                htmlFor="edit-cust-name"
+                labelWidth="sm:w-28"
+                fieldClassName="sm:max-w-[15rem]"
+                error={nameError ?? undefined}
+              >
                 <input
                   id="edit-cust-name"
                   type="text"
                   required
+                  maxLength={120}
                   value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  className="input text-sm"
+                  onChange={(e) => handleNameChange(e.target.value)}
+                  onBlur={() => setNameError(validateFullName(fullName))}
+                  aria-invalid={Boolean(nameError)}
+                  className={`input text-sm ${nameError ? 'border-red-400 focus:border-red-500' : ''}`}
                   placeholder="e.g. Rahul Sharma"
                 />
               </HField>
-  
-              <HField label="Phone" htmlFor="edit-cust-phone" labelWidth="sm:w-28" fieldClassName="sm:max-w-[15rem]">
-                <input
-                  id="edit-cust-phone"
-                  type="tel"
+
+              <HField label="Phone" required labelWidth="sm:w-28" fieldClassName="sm:max-w-[15rem]">
+                <PhoneInput
+                  compact
+                  name="phone"
+                  required
+                  placeholder="Phone number"
                   value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  className="input text-sm"
-                  placeholder="Enter number"
+                  onValidityChange={setPhoneValid}
+                  onChange={setPhone}
                 />
               </HField>
-  
-              <HField label="WhatsApp" htmlFor="edit-cust-wa" labelWidth="sm:w-28" fieldClassName="sm:max-w-[15rem]">
-                <input
-                  id="edit-cust-wa"
-                  type="tel"
-                  value={whatsappNumber}
-                  onChange={(e) => setWhatsappNumber(e.target.value)}
-                  className="input text-sm"
-                  placeholder="Enter number"
-                />
+
+              <HField label="WhatsApp" labelWidth="sm:w-28" fieldClassName="sm:max-w-[15rem]">
+                <label className="flex items-center gap-2 pt-2 text-sm text-ink-700">
+                  <input
+                    type="checkbox"
+                    checked={hasWhatsapp}
+                    onChange={(e) => {
+                      setHasWhatsapp(e.target.checked);
+                      if (e.target.checked && !whatsapp.number) setWhatsapp({ dialCode: phone.dialCode, number: '' });
+                    }}
+                    className="h-4 w-4 rounded border-ink-300 text-brand-600 focus:ring-brand-500"
+                  />
+                  Add a different WhatsApp number
+                </label>
+                {/* Always visible; enabled only when the box is ticked */}
+                <div className="mt-2">
+                  <PhoneInput
+                  compact
+                    name="whatsapp_number"
+                    placeholder={hasWhatsapp ? 'WhatsApp number' : 'Same as phone'}
+                    // While disabled it mirrors the phone number, so it's clear what WhatsApp will use
+                    value={hasWhatsapp ? whatsapp : phone}
+                    disabled={!hasWhatsapp}
+                    onValidityChange={setWhatsappValid}
+                    onChange={setWhatsapp}
+                  />
+                </div>
               </HField>
-  
-              <HField label="Email" htmlFor="edit-cust-email" labelWidth="sm:w-28" fieldClassName="sm:max-w-sm">
+
+              <HField
+                label="Email"
+                htmlFor="edit-cust-email"
+                labelWidth="sm:w-28"
+                fieldClassName="sm:max-w-[15rem]"
+                error={emailError ?? undefined}
+              >
                 <input
                   id="edit-cust-email"
                   type="email"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="input text-sm"
+                  onChange={(e) => {
+                    setEmail(e.target.value.trim());
+                    if (emailError) setEmailError(e.target.value.trim() ? validateEmailAddress(e.target.value) : null);
+                  }}
+                  onBlur={() => setEmailError(email.trim() ? validateEmailAddress(email) : null)}
+                  aria-invalid={Boolean(emailError)}
+                  className={`input text-sm ${emailError ? 'border-red-400 focus:border-red-500' : ''}`}
                   placeholder="e.g. customer@example.com"
                 />
               </HField>
-  
-              <HField label="City" htmlFor="edit-cust-city" labelWidth="sm:w-28" fieldClassName="sm:max-w-[15rem]">
-                <input
-                  id="edit-cust-city"
-                  type="text"
-                  value={city}
-                  onChange={(e) => setCity(e.target.value)}
-                  className="input text-sm"
-                  placeholder="e.g. Mumbai"
+
+              <HField label="Address" htmlFor="edit-cust-address" labelWidth="sm:w-28">
+                <textarea
+                  id="edit-cust-address"
+                  value={address}
+                  onChange={(e) => setAddress(e.target.value)}
+                  rows={2}
+                  maxLength={500}
+                  className="input text-sm resize-none"
+                  placeholder="House / street, area, city, state, PIN"
                 />
               </HField>
-  
-              <HField label="State" htmlFor="edit-cust-state" labelWidth="sm:w-28" fieldClassName="sm:max-w-[15rem]">
-                <input
-                  id="edit-cust-state"
-                  type="text"
-                  value={state}
-                  onChange={(e) => setState(e.target.value)}
-                  className="input text-sm"
-                  placeholder="e.g. Maharashtra"
-                />
-              </HField>
-  
+
               <HField label="Source" htmlFor="edit-cust-source" labelWidth="sm:w-28" fieldClassName="sm:max-w-[15rem]">
                 <select
                   id="edit-cust-source"
@@ -250,21 +338,23 @@ export function CustomerEditModal({
                   type="button"
                   onClick={onClose}
                   disabled={isPending}
-                  className="btn-outline text-xs px-3 py-1.5"
+                  className="inline-flex items-center rounded-lg bg-red-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-red-700 disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isPending}
-                  className="btn-primary text-xs px-3.5 py-1.5 flex items-center gap-1.5"
+                  data-confirm-save="true"
+                  data-confirm-label="Update"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:opacity-50"
                 >
                   {isPending ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   ) : (
-                    <Save className="h-3.5 w-3.5" />
+                    <CheckCircle2 className="h-3.5 w-3.5" />
                   )}
-                  <span>Save Changes</span>
+                  <span>{isPending ? 'Updating...' : 'Update'}</span>
                 </button>
               </div>
             </form>

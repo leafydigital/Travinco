@@ -39,7 +39,7 @@ export async function replaceItineraryDay(
     return { error: 'Could not save the itinerary day.' };
   }
 
-  revalidatePath(`/admin/packages/${packageId}`);
+  revalidatePath(`/travinco_dashboard/packages/${packageId}`);
   return {};
 }
 
@@ -49,7 +49,7 @@ export async function deleteItineraryDay(packageId: string, dayId: string) {
   const supabase = await createClient();
   const { error } = await supabase.from('package_itineraries').delete().eq('id', dayId);
   if (error) return { error: 'Could not delete the itinerary day.' };
-  revalidatePath(`/admin/packages/${packageId}`);
+  revalidatePath(`/travinco_dashboard/packages/${packageId}`);
   return {};
 }
 
@@ -66,7 +66,7 @@ export async function addInclusion(packageId: string, raw: unknown) {
     .from('package_inclusions')
     .insert({ package_id: packageId, item: parsed.data.item });
   if (error) return { error: 'Could not add inclusion.' };
-  revalidatePath(`/admin/packages/${packageId}`);
+  revalidatePath(`/travinco_dashboard/packages/${packageId}`);
   return {};
 }
 
@@ -86,7 +86,7 @@ export async function addInclusionsBulk(packageId: string, items: string[]) {
     .from('package_inclusions')
     .insert(cleaned.map((item) => ({ package_id: packageId, item })));
   if (error) return { error: 'Could not add inclusions.' };
-  revalidatePath(`/admin/packages/${packageId}`);
+  revalidatePath(`/travinco_dashboard/packages/${packageId}`);
   return {};
 }
 
@@ -102,7 +102,7 @@ export async function updateInclusion(packageId: string, id: string, raw: unknow
     .update({ item: parsed.data.item })
     .eq('id', id);
   if (error) return { error: 'Could not update inclusion.' };
-  revalidatePath(`/admin/packages/${packageId}`);
+  revalidatePath(`/travinco_dashboard/packages/${packageId}`);
   return {};
 }
 
@@ -112,7 +112,7 @@ export async function removeInclusion(packageId: string, id: string) {
   const supabase = await createClient();
   const { error } = await supabase.from('package_inclusions').delete().eq('id', id);
   if (error) return { error: 'Could not remove inclusion.' };
-  revalidatePath(`/admin/packages/${packageId}`);
+  revalidatePath(`/travinco_dashboard/packages/${packageId}`);
   return {};
 }
 
@@ -127,7 +127,7 @@ export async function addExclusion(packageId: string, raw: unknown) {
     .from('package_exclusions')
     .insert({ package_id: packageId, item: parsed.data.item });
   if (error) return { error: 'Could not add exclusion.' };
-  revalidatePath(`/admin/packages/${packageId}`);
+  revalidatePath(`/travinco_dashboard/packages/${packageId}`);
   return {};
 }
 
@@ -142,7 +142,7 @@ export async function addExclusionsBulk(packageId: string, items: string[]) {
     .from('package_exclusions')
     .insert(cleaned.map((item) => ({ package_id: packageId, item })));
   if (error) return { error: 'Could not add exclusions.' };
-  revalidatePath(`/admin/packages/${packageId}`);
+  revalidatePath(`/travinco_dashboard/packages/${packageId}`);
   return {};
 }
 
@@ -158,7 +158,7 @@ export async function updateExclusion(packageId: string, id: string, raw: unknow
     .update({ item: parsed.data.item })
     .eq('id', id);
   if (error) return { error: 'Could not update exclusion.' };
-  revalidatePath(`/admin/packages/${packageId}`);
+  revalidatePath(`/travinco_dashboard/packages/${packageId}`);
   return {};
 }
 
@@ -168,7 +168,7 @@ export async function removeExclusion(packageId: string, id: string) {
   const supabase = await createClient();
   const { error } = await supabase.from('package_exclusions').delete().eq('id', id);
   if (error) return { error: 'Could not remove exclusion.' };
-  revalidatePath(`/admin/packages/${packageId}`);
+  revalidatePath(`/travinco_dashboard/packages/${packageId}`);
   return {};
 }
 
@@ -209,7 +209,7 @@ export async function addPackageImage(packageId: string, imageUrl: string, isCov
       .eq('id', packageId);
   }
 
-  revalidatePath(`/admin/packages/${packageId}`);
+  revalidatePath(`/travinco_dashboard/packages/${packageId}`);
   return {};
 }
 
@@ -228,7 +228,7 @@ export async function setCoverImage(packageId: string, imageId: string, imageUrl
 
   await supabase.from('travel_packages').update({ cover_image_url: imageUrl }).eq('id', packageId);
 
-  revalidatePath(`/admin/packages/${packageId}`);
+  revalidatePath(`/travinco_dashboard/packages/${packageId}`);
   return {};
 }
 
@@ -270,7 +270,7 @@ export async function reorderPackageImage(
 
   if (err1 || err2) return { error: 'Could not reorder images.' };
 
-  revalidatePath(`/admin/packages/${packageId}`);
+  revalidatePath(`/travinco_dashboard/packages/${packageId}`);
   return {};
 }
 
@@ -280,7 +280,7 @@ export async function removePackageImage(packageId: string, id: string) {
   const supabase = await createClient();
   const { error } = await supabase.from('package_images').delete().eq('id', id);
   if (error) return { error: 'Could not remove image.' };
-  revalidatePath(`/admin/packages/${packageId}`);
+  revalidatePath(`/travinco_dashboard/packages/${packageId}`);
   return {};
 }
 
@@ -301,7 +301,7 @@ export async function addPackageVideo(packageId: string, videoUrl: string) {
   });
 
   if (error) return { error: 'Could not add video.' };
-  revalidatePath(`/admin/packages/${packageId}`);
+  revalidatePath(`/travinco_dashboard/packages/${packageId}`);
   return {};
 }
 
@@ -311,7 +311,7 @@ export async function removePackageVideo(packageId: string, id: string) {
   const supabase = await createClient();
   const { error } = await supabase.from('package_videos').delete().eq('id', id);
   if (error) return { error: 'Could not remove video.' };
-  revalidatePath(`/admin/packages/${packageId}`);
+  revalidatePath(`/travinco_dashboard/packages/${packageId}`);
   return {};
 }
 
@@ -353,7 +353,7 @@ export async function reorderPackageVideo(
 
   if (err1 || err2) return { error: 'Could not reorder videos.' };
 
-  revalidatePath(`/admin/packages/${packageId}`);
+  revalidatePath(`/travinco_dashboard/packages/${packageId}`);
   return {};
 }
 
@@ -385,7 +385,7 @@ export async function addFaq(
   });
 
   if (error) return { error: 'Could not add FAQ.' };
-  revalidatePath(`/admin/packages/${packageId}`);
+  revalidatePath(`/travinco_dashboard/packages/${packageId}`);
   return {};
 }
 
@@ -409,7 +409,7 @@ export async function updateFaq(
     .eq('id', id);
 
   if (error) return { error: 'Could not update FAQ.' };
-  revalidatePath(`/admin/packages/${packageId}`);
+  revalidatePath(`/travinco_dashboard/packages/${packageId}`);
   return {};
 }
 
@@ -419,7 +419,7 @@ export async function removeFaq(packageId: string, id: string) {
   const supabase = await createClient();
   const { error } = await supabase.from('package_faqs').delete().eq('id', id);
   if (error) return { error: 'Could not remove FAQ.' };
-  revalidatePath(`/admin/packages/${packageId}`);
+  revalidatePath(`/travinco_dashboard/packages/${packageId}`);
   return {};
 }
 

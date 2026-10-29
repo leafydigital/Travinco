@@ -132,7 +132,7 @@ export async function saveQuotation(
 
   revalidatePath('/travinco_dashboard/quotations');
   revalidatePath(`/travinco_dashboard/quotations/${res.data.id}`);
-  revalidatePath(`/admin/quotations/${res.data.id}`);
+  revalidatePath(`/travinco_dashboard/quotations/${res.data.id}`);
   return { id: res.data.id };
 }
 
@@ -154,7 +154,7 @@ export async function setQuotationStatus(id: string, status: Status) {
   }
   revalidatePath('/travinco_dashboard/quotations');
   revalidatePath(`/travinco_dashboard/quotations/${id}`);
-  revalidatePath(`/admin/quotations/${id}`);
+  revalidatePath(`/travinco_dashboard/quotations/${id}`);
   return {};
 }
 
@@ -215,7 +215,7 @@ export async function deleteQuotation(id: string): Promise<{ error?: string }> {
   revalidatePath('/travinco_dashboard/quotations');
   revalidatePath('/travinco_dashboard');
   revalidatePath(`/travinco_dashboard/quotations/${id}`);
-  revalidatePath(`/admin/quotations/${id}`);
+  revalidatePath(`/travinco_dashboard/quotations/${id}`);
   return {};
 }
 
@@ -262,6 +262,8 @@ export interface QuotationTableItem {
   valid_until: string | null;
   created_at: string;
   created_by_name?: string | null;
+  /** 'website' when built from an enquiry, 'direct' when created manually. */
+  source: 'website' | 'direct';
 }
 
 export interface QuotationsTableQueryResult {
@@ -302,7 +304,7 @@ export async function getQuotationsTableList({
   let query = supabase
     .from('quotations')
     .select(
-      'id, quote_number, status, guest_name, guest_phone, title, start_date, nights, adults, total_amount, total_amount2, valid_until, created_at, is_deleted, profiles:created_by(full_name)',
+      'id, quote_number, status, guest_name, guest_phone, title, start_date, nights, adults, total_amount, total_amount2, valid_until, created_at, enquiry_id, is_deleted, profiles:created_by(full_name)',
       { count: 'exact' }
     )
     .order('created_at', { ascending: false });
@@ -329,7 +331,7 @@ export async function getQuotationsTableList({
     let fallbackQuery = supabase
       .from('quotations')
       .select(
-        'id, quote_number, status, guest_name, guest_phone, title, start_date, nights, adults, total_amount, total_amount2, valid_until, created_at, profiles:created_by(full_name)',
+        'id, quote_number, status, guest_name, guest_phone, title, start_date, nights, adults, total_amount, total_amount2, valid_until, created_at, enquiry_id, profiles:created_by(full_name)',
         { count: 'exact' }
       )
       .order('created_at', { ascending: false });
@@ -379,6 +381,8 @@ export async function getQuotationsTableList({
       valid_until: r.valid_until || null,
       created_at: r.created_at,
       created_by_name: by?.full_name || null,
+      // Quotations built from an enquiry came in via the website; the rest were created directly
+      source: r.enquiry_id ? 'website' : 'direct',
     };
   });
 

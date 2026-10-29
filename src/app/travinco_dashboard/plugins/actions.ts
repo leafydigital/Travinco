@@ -43,7 +43,7 @@ function revalidatePluginCaches() {
   try {
     revalidatePath('/');
     revalidatePath('/travinco_dashboard/plugins');
-    revalidatePath('/admin/plugins');
+    revalidatePath('/travinco_dashboard/plugins');
   } catch (err) {
     console.warn('Revalidation warning:', err);
   }

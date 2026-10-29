@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
+import { toast } from '@/lib/admin-alert';
 import { Ban, FileDown, Pencil, Plus, Printer, Trash2, X } from 'lucide-react';
 import { addInvoicePayment, cancelInvoice, deleteInvoice, deleteInvoicePayment, updateInvoice } from '../actions';
 import { downloadPdf, downloadWord, printAsPdf } from '@/components/tour/doc-tools';

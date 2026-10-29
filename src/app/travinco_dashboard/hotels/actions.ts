@@ -80,7 +80,7 @@ export async function saveHotel(id: number | null, raw: Record<string, unknown>)
   }
   revalidatePath('/travinco_dashboard/hotels');
   revalidatePath(`/travinco_dashboard/hotels/${data.id}`);
-  revalidatePath(`/admin/hotels/${data.id}`);
+  revalidatePath(`/travinco_dashboard/hotels/${data.id}`);
   return { id: data.id };
 }
 
@@ -91,7 +91,7 @@ export async function addHotelFollowup(hotelId: number, issue: string, action: s
   const { error } = await supabase.from('hotel_followups').insert({ hotel_id: hotelId, issue: issue.trim().slice(0, 2000), action: action.trim().slice(0, 2000) || null });
   if (error) return { error: 'Could not add the follow-up.' };
   revalidatePath(`/travinco_dashboard/hotels/${hotelId}`);
-  revalidatePath(`/admin/hotels/${hotelId}`);
+  revalidatePath(`/travinco_dashboard/hotels/${hotelId}`);
   return {};
 }
 
@@ -101,7 +101,7 @@ export async function setHotelFollowupStatus(hotelId: number, id: number, status
   const { error } = await supabase.from('hotel_followups').update({ status }).eq('id', id);
   if (error) return { error: 'Could not update the follow-up.' };
   revalidatePath(`/travinco_dashboard/hotels/${hotelId}`);
-  revalidatePath(`/admin/hotels/${hotelId}`);
+  revalidatePath(`/travinco_dashboard/hotels/${hotelId}`);
   return {};
 }
 

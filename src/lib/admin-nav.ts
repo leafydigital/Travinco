@@ -130,14 +130,14 @@ export const adminNav: NavSection[] = [
     title: 'Role Management',
     items: [
       {
-        label: 'Page Access Management',
-        href: '/travinco_dashboard/role-management/page-access',
+        label: 'Roles',
+        href: '/travinco_dashboard/role-management/roles',
         icon: 'ShieldCheck',
-        pageKey: 'page_access',
+        pageKey: 'roles',
         roles: ['admin', 'super_admin'],
       },
       {
-        label: 'Staff Users',
+        label: 'Users',
         href: '/travinco_dashboard/users',
         icon: 'Users',
         pageKey: 'users',
@@ -169,7 +169,7 @@ export function navForProfile(
         if (profile.role === 'super_admin') return true;
 
         // 2. Role Management & system configuration items are strictly restricted to admin & super_admin
-        if (item.pageKey === 'page_access' || item.pageKey === 'users' || item.pageKey === 'plugins') {
+        if (item.pageKey === 'roles' || item.pageKey === 'users' || item.pageKey === 'plugins') {
           return profile.role === 'admin';
         }
 
@@ -192,7 +192,7 @@ export function navForProfile(
 
         // 5. Default role baselines
         if (profile.role === 'sales_staff') {
-          const disallowedForSales = ['income', 'expenses', 'settings', 'users', 'page_access'];
+          const disallowedForSales = ['income', 'expenses', 'settings', 'users', 'roles'];
           return !disallowedForSales.includes(item.pageKey);
         }
 

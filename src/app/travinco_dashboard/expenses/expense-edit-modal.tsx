@@ -3,7 +3,7 @@
 import { useState, useTransition, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
+import { toast } from '@/lib/admin-alert';
 import { X, Loader2, Receipt } from 'lucide-react';
 import { updateExpense } from '../finance-actions';
 import { blockNonNumericKeys, parseNonNegative } from '@/components/admin/package-fields';

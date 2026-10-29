@@ -8,7 +8,7 @@ import { Trash2, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, CheckSq
 import { LeadStatusSelect, LeadRowActions } from './lead-row-actions';
 import { bulkDeleteLeads, bulkUpdateLeadStatus, type LeadStatus } from './actions';
 import { DeleteConfirmModal } from './delete-confirm-modal';
-import { toast } from 'sonner';
+import { toast } from '@/lib/admin-alert';
 
 export interface LeadItem {
   id: string;

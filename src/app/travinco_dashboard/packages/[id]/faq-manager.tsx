@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
+import { toast } from '@/lib/admin-alert';
 import { X, Plus, Pencil, Check } from 'lucide-react';
 import type { Tables } from '@/types/database';
 

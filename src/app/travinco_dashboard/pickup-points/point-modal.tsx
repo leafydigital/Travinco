@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useTransition } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/admin-alert';
 import { Loader2, X } from 'lucide-react';
 import { savePickupPoint } from '@/lib/tour/master-actions';
 import { getPickupPointById, type FullPickupPoint, type LocationOption } from './actions';

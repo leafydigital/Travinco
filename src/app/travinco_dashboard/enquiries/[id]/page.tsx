@@ -1,14 +1,9 @@
 import { createClient } from '@/lib/supabase/server';
 import { requireProfile, assertModulePermission, checkModulePermission } from '@/lib/supabase/auth-helpers';
 import { notFound } from 'next/navigation';
-import { StatusBadge } from '@/components/ui/status-badge';
-import { formatCurrency, formatDate, formatDateTime } from '@/lib/utils/format';
-import { EnquiryControls } from './enquiry-controls';
+import { formatDateTime } from '@/lib/utils/format';
 import { NotesPanel } from './notes-followups';
-import { EnquiryDetailsEditForm } from './enquiry-details-edit-form';
-import { EnquiryStatusSelector } from '../enquiry-status-selector';
-import { Phone, Mail, MessageCircle } from 'lucide-react';
-import Link from 'next/link';
+import { EnquiryDetailCard } from './enquiry-detail-card';
 
 export default async function EnquiryDetailPage({
   params,
@@ -46,148 +41,40 @@ export default async function EnquiryDetailPage({
     | { title: string; slug: string; base_price: number | null; discount_price: number | null }[]
     | null;
   const pkg = Array.isArray(pkgRaw) ? pkgRaw[0] ?? null : pkgRaw;
-  const computedAmount = pkg
-    ? (pkg.discount_price ?? pkg.base_price ?? 0) *
-      Math.max(enquiry.number_of_adults + enquiry.number_of_children, 1)
-    : 0;
-
   return (
-    <div className="space-y-6 pb-16">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl font-semibold text-ink-900">{enquiry.enquiry_number}</h1>
-            <EnquiryStatusSelector
-              enquiryId={enquiry.id}
-              currentStatus={enquiry.status}
-              canEdit={canEdit}
-            />
-          </div>
-          <p className="text-sm text-ink-500">{enquiry.customer_name}</p>
-        </div>
-        <div className="flex gap-2">
-          <Link href={`/travinco_dashboard/quotations/new?enquiry=${enquiry.id}`} className="btn-outline">
-            Create quotation
-          </Link>
-          <Link href="/travinco_dashboard/enquiries" className="btn-outline">
-            Back to enquiries
-          </Link>
-        </div>
-      </div>
+    <EnquiryDetailCard
+      enquiry={enquiry}
+      packageTitle={pkg?.title ?? null}
+      staff={staff ?? []}
+      canEdit={canEdit}
+      initialEditing={isEditing}
+    >
+      <div className="grid gap-6 lg:grid-cols-2">
+        <NotesPanel enquiryId={enquiry.id} notes={enquiry.notes} />
 
-      <EnquiryDetailsEditForm
-        enquiry={enquiry}
-        canEdit={canEdit}
-        initialEditing={isEditing}
-      />
-
-      <div className="grid gap-6 lg:grid-cols-3">
-        <div className="space-y-6 lg:col-span-2">
-          <div className="card space-y-4 p-5">
-            <h2 className="text-sm font-semibold text-ink-800">Enquiry details</h2>
-            <EnquiryControls
-              enquiryId={enquiry.id}
-              currentStatus={enquiry.status}
-              currentPriority={enquiry.priority}
-              currentAssignee={enquiry.assigned_staff}
-              currentFollowupDate={enquiry.next_followup_date}
-              staff={staff ?? []}
-              canEdit={canEdit}
-            />
-
-            <dl className="grid grid-cols-2 gap-4 border-t border-ink-100 pt-4 text-sm sm:grid-cols-3">
-              <div>
-                <dt className="text-ink-400">Package</dt>
-                <dd className="text-ink-700">{pkg?.title ?? '—'}</dd>
-              </div>
-              <div>
-                <dt className="text-ink-400">Destination</dt>
-                <dd className="text-ink-700">{enquiry.destination ?? '—'}</dd>
-              </div>
-              <div>
-                <dt className="text-ink-400">Travel date</dt>
-                <dd className="text-ink-700">{formatDate(enquiry.travel_date)}</dd>
-              </div>
-              <div>
-                <dt className="text-ink-400">Adults / Children</dt>
-                <dd className="text-ink-700">
-                  {enquiry.number_of_adults} / {enquiry.number_of_children}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-ink-400">Budget (per person)</dt>
-                <dd className="text-ink-700">
-                  {enquiry.budget ? formatCurrency(enquiry.budget) : '—'}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-ink-400">Source</dt>
-                <dd className="capitalize text-ink-700">{enquiry.source.replace('_', ' ')}</dd>
-              </div>
-            </dl>
-
-            {enquiry.message && (
-              <div className="border-t border-ink-100 pt-4">
-                <dt className="mb-1 text-sm text-ink-400">Message</dt>
-                <dd className="text-sm text-ink-700">{enquiry.message}</dd>
-              </div>
-            )}
-          </div>
-
-          <NotesPanel enquiryId={enquiry.id} notes={enquiry.notes} />
-
-          <div className="card space-y-3 p-5">
-            <h2 className="text-sm font-semibold text-ink-800">Activity timeline</h2>
-            <ul className="space-y-3">
-              {(activities ?? []).length === 0 && (
-                <p className="text-sm text-ink-400">No activity yet.</p>
-              )}
-              {(activities ?? []).map((a) => (
-                <li key={a.id} className="flex gap-3 text-sm">
-                  <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-500" />
-                  <div>
-                    <p className="text-ink-700">{a.description}</p>
-                    <p className="text-xs text-ink-400">
-                      {formatDateTime(a.created_at)}
-                      {(() => {
-                        const prof = a.profiles as { full_name: string } | { full_name: string }[] | null;
-                        const name = Array.isArray(prof) ? prof[0]?.full_name : prof?.full_name;
-                        return name && ` · ${name}`;
-                      })()}
-                    </p>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-
-        <div className="space-y-6">
-          <div className="card space-y-3 p-5">
-            <h2 className="text-sm font-semibold text-ink-800">Contact</h2>
-            <div className="space-y-2 text-sm">
-              <a href={`tel:${enquiry.phone}`} className="flex items-center gap-2 text-ink-700 hover:text-brand-700">
-                <Phone className="h-4 w-4" /> {enquiry.phone}
-              </a>
-              {enquiry.whatsapp_number && (
-                <a
-                  href={`https://wa.me/${enquiry.whatsapp_number.replace(/\D/g, '')}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-2 text-ink-700 hover:text-brand-700"
-                >
-                  <MessageCircle className="h-4 w-4" /> {enquiry.whatsapp_number}
-                </a>
-              )}
-              {enquiry.email && (
-                <a href={`mailto:${enquiry.email}`} className="flex items-center gap-2 text-ink-700 hover:text-brand-700">
-                  <Mail className="h-4 w-4" /> {enquiry.email}
-                </a>
-              )}
-            </div>
-          </div>
+        <div className="card space-y-3 p-5">
+          <h2 className="text-sm font-semibold text-ink-800">Activity timeline</h2>
+          <ul className="space-y-3">
+            {(activities ?? []).length === 0 && <p className="text-sm text-ink-400">No activity yet.</p>}
+            {(activities ?? []).map((a) => (
+              <li key={a.id} className="flex gap-3 text-sm">
+                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-500" />
+                <div>
+                  <p className="text-ink-700">{a.description}</p>
+                  <p className="text-xs text-ink-400">
+                    {formatDateTime(a.created_at)}
+                    {(() => {
+                      const prof = a.profiles as { full_name: string } | { full_name: string }[] | null;
+                      const name = Array.isArray(prof) ? prof[0]?.full_name : prof?.full_name;
+                      return name && ` · ${name}`;
+                    })()}
+                  </p>
+                </div>
+              </li>
+            ))}
+          </ul>
         </div>
       </div>
-    </div>
+    </EnquiryDetailCard>
   );
 }

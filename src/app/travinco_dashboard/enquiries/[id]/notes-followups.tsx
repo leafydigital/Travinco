@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
+import { toast } from '@/lib/admin-alert';
 import { addEnquiryNote, scheduleFollowup, completeFollowup } from '../actions';
 import { formatDate } from '@/lib/utils/format';
 import { Check } from 'lucide-react';

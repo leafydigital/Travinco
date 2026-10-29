@@ -2,7 +2,7 @@
 
 import { useTransition, useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
+import { toast } from '@/lib/admin-alert';
 import { Trash2, Edit2, ChevronDown, Check, Loader2 } from 'lucide-react';
 import { updateLeadStatus, deleteLead, type LeadStatus } from './actions';
 import { LeadEditModal, type LeadRecord } from './lead-edit-modal';

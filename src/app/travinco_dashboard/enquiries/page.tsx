@@ -1,7 +1,7 @@
 import { Suspense, cache } from 'react';
 import { requireProfile, assertModulePermission, checkModulePermission } from '@/lib/supabase/auth-helpers';
 import { StatusBadge } from '@/components/ui/status-badge';
-import { formatDate } from '@/lib/utils/format';
+import { formatDate, formatTime } from '@/lib/utils/format';
 import Link from 'next/link';
 import { Search, ArrowLeft, RotateCcw, AlertCircle } from 'lucide-react';
 import { EnquiryRowActions } from './enquiry-row-actions';
@@ -286,7 +286,10 @@ async function EnquiriesTableContent({
                   </td>
 
                   {/* 8. Date */}
-                  <td className="px-5 py-3 text-ink-500">{formatDate(e.created_at)}</td>
+                  <td className="whitespace-nowrap px-5 py-3 text-ink-500">
+                    <div>{formatDate(e.created_at)}</div>
+                    <div className="text-xs text-ink-400">{formatTime(e.created_at)}</div>
+                  </td>
 
                   {/* 9. Actions */}
                   <td className="px-5 py-3 text-right">

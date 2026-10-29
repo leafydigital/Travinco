@@ -16,7 +16,7 @@ import {
   Image as ImageIcon,
   X,
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/admin-alert';
 import type {
   BlogPageContent,
   BlogHeroPillar,

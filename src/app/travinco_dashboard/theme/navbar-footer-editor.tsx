@@ -22,7 +22,7 @@ import {
   Layout,
   User,
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/admin-alert';
 import {
   type NavbarFooterContent,
   type NavPageLink,

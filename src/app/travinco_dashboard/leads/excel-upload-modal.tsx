@@ -2,7 +2,7 @@
 
 import { useRef, useState, useTransition } from 'react';
 import { X, Upload, FileSpreadsheet, AlertCircle, CheckCircle2, Loader2, Download } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/admin-alert';
 import type { LeadImportRow } from './actions';
 import { importLeads } from './actions';
 import { ModalPortal } from '@/components/ui/modal-portal';

@@ -25,7 +25,7 @@ export default async function EditCustomerPage({ params }: { params: { id: strin
     <div className="max-w-4xl space-y-5 pb-16">
       <div className="flex items-center gap-2">
         <Link
-          href={`/admin/customers/${customer.id}`}
+          href={`/travinco_dashboard/customers/${customer.id}`}
           className="inline-flex items-center gap-1 text-sm font-medium text-ink-500 hover:text-brand-700 transition-colors"
         >
           <ArrowLeft className="h-4 w-4" /> Back to customer

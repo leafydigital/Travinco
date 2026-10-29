@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
+import { toast } from '@/lib/admin-alert';
 import { X, Plus, ArrowUp, ArrowDown, Play } from 'lucide-react';
 import { addPackageVideo, removePackageVideo, reorderPackageVideo } from '../sub-resource-actions';
 import { getVideoEmbedUrl } from '@/lib/utils/format';
