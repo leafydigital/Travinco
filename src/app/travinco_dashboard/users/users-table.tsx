@@ -97,9 +97,13 @@ export function UsersTable({ initialUsers, currentUserId, currentUserRole, roles
     ...(roleCounts.none ? [{ value: 'none', label: 'No role' }] : []),
   ].map((o) => ({ ...o, label: `${o.label} (${roleCounts[o.value] ?? 0})` }));
 
-  /** Admins can't manage the Super Admin, and only the Super Admin manages other admins. */
+  /** Edit: your own account, any account for the Super Admin, otherwise staff (not admins). */
   const canManage = (u: Tables<'profiles'>) =>
-    u.role !== 'super_admin' && !(u.role === 'admin' && currentUserRole !== 'super_admin');
+    u.id === currentUserId ||
+    currentUserRole === 'super_admin' ||
+    (u.role !== 'super_admin' && u.role !== 'admin');
+  /** Deactivate / delete: never yourself or a Super Admin account. */
+  const canRemove = (u: Tables<'profiles'>) => u.id !== currentUserId && u.role !== 'super_admin' && canManage(u);
 
   async function handleToggleActive(user: Tables<'profiles'>) {
     if (user.id === currentUserId && user.is_active) return void toast.error('You cannot deactivate your own account.');
@@ -340,7 +344,7 @@ export function UsersTable({ initialUsers, currentUserId, currentUserRole, roles
                             <button
                               type="button"
                               onClick={() => handleToggleActive(u)}
-                              disabled={isSelf || !manageable || pendingActiveId === u.id}
+                              disabled={!canRemove(u) || pendingActiveId === u.id}
                               title={isSelf ? 'You cannot deactivate your own account' : u.is_active ? 'Deactivate user' : 'Activate user'}
                               className={cn(
                                 'inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40',
@@ -377,7 +381,7 @@ export function UsersTable({ initialUsers, currentUserId, currentUserRole, roles
                               type="button"
                               data-no-confirm-save="true"
                               onClick={() => handleDelete(u)}
-                              disabled={isSelf || !manageable || deletingId === u.id}
+                              disabled={!canRemove(u) || deletingId === u.id}
                               title={isSelf ? 'You cannot delete yourself' : 'Delete user'}
                               className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-medium text-red-600 transition-colors hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40"
                             >

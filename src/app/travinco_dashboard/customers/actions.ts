@@ -273,43 +273,6 @@ export async function deleteCustomer(id: string) {
   return {};
 }
 
-/** Customers soft-deleted before deletes became permanent (still in the database). */
-async function loadSoftDeletedCustomers() {
-  const supabase = await createClient();
-  const [{ data: flagged, error }, { data: markers }] = await Promise.all([
-    supabase.from('customers').select('*').eq('is_deleted', true),
-    supabase.from('website_settings').select('key').like('key', 'deleted_customer_%'),
-  ]);
-  const byId = new Map<string, Record<string, any>>();
-  if (!error) (flagged ?? []).forEach((c: any) => byId.set(c.id, c));
-  const markerIds = (markers ?? []).map((m) => m.key.replace('deleted_customer_', '')).filter((mid) => !byId.has(mid));
-  if (markerIds.length > 0) {
-    const { data } = await supabase.from('customers').select('*').in('id', markerIds);
-    (data ?? []).forEach((c: any) => byId.set(c.id, c));
-  }
-  return Array.from(byId.values());
-}
-
-export async function countSoftDeletedCustomers(): Promise<number> {
-  const profile = await requireProfile();
-  if (!['admin', 'super_admin'].includes(profile.role)) return 0;
-  return (await loadSoftDeletedCustomers()).length;
-}
-
-/** One-off clean-up of customers deleted before deletes became permanent. */
-export async function purgeSoftDeletedCustomers(): Promise<{ error?: string; count?: number }> {
-  const profile = await requireProfile();
-  if (!['admin', 'super_admin'].includes(profile.role)) {
-    return { error: 'Only admins can delete customers.' };
-  }
-  const targets = await loadSoftDeletedCustomers();
-  if (targets.length === 0) return { count: 0 };
-
-  const res = await archiveAndDeleteCustomers(profile, targets);
-  revalidatePath('/travinco_dashboard/customers');
-  return res.error ? { error: res.error, count: res.deleted } : { count: res.deleted };
-}
-
 export interface CustomerTableItem {
   id: string;
   full_name: string;

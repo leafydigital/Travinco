@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { Check, CheckCircle2, Circle, Eye, EyeOff, Loader2, Lock, RefreshCw, ShieldCheck, X } from 'lucide-react';
+import { Check, CheckCircle2, Circle, Eye, EyeOff, Loader2, RefreshCw, ShieldCheck, X } from 'lucide-react';
 import { toast } from '@/lib/admin-alert';
 import { cn } from '@/lib/utils/cn';
 import { validateFullName, validateEmailAddress } from '@/lib/validations/contact-rules';
@@ -92,17 +92,16 @@ export function UserForm(props: Props) {
 
   const selectedRole = useMemo(() => props.roles.find((r) => r.id === roleId), [props.roles, roleId]);
   const isSelf = isEdit && Boolean(props.isSelf);
-  // Admins set other people's passwords here; their own goes through Profile / Reset password
-  const showPasswordField = !isEdit || !isSelf;
   const passwordChanged = isEdit && password !== initialPassword && password !== '';
 
   function validate(): string | null {
     const next: Record<string, string | null> = {
       full_name: validateFullName(fullName),
-      email: isEdit ? null : validateEmailAddress(email),
+      email: validateEmailAddress(email),
       username: validateStaffUsername(username),
       phone: !phone.number ? 'Phone number is required' : phoneValid ? null : 'Please enter a valid phone number',
-      role: roleId ? null : 'Please choose a role',
+      // Your own role can't be changed (the Super Admin may have none)
+      role: isSelf || roleId ? null : 'Please choose a role',
       password:
         isEdit && !passwordChanged
           ? null
@@ -122,7 +121,7 @@ export function UserForm(props: Props) {
     startTransition(async () => {
       const details = { full_name: fullName.trim(), username: username.trim(), phone: joinPhone(phone), role_id: roleId };
       const res = isEdit
-        ? await updateStaffUser(props.userId, details)
+        ? await updateStaffUser(props.userId, { ...details, email: email.trim() })
         : await createStaffUser({ ...details, email: email.trim(), password });
       if (res.error) return void toast.error(res.error);
       if (isEdit && passwordChanged) {
@@ -132,7 +131,9 @@ export function UserForm(props: Props) {
       await toast.success(isEdit ? 'Updated successfully' : 'User created successfully', {
         description: isEdit
           ? passwordChanged
-            ? `Share the new password with ${fullName.trim()}.`
+            ? isSelf
+              ? 'Your password has been changed. Use it the next time you sign in.'
+              : `Share the new password with ${fullName.trim()}.`
             : undefined
           : `Share the temporary password with ${fullName.trim()}. It's shown on the Users page until they change it.`,
       });
@@ -196,25 +197,19 @@ export function UserForm(props: Props) {
               id="user-email"
               type="email"
               value={email}
-              disabled={isEdit}
               onChange={(e) => {
                 setEmail(e.target.value.trim());
                 if (errors.email) setErrors((x) => ({ ...x, email: validateEmailAddress(e.target.value) }));
               }}
-              onBlur={() => !isEdit && setErrors((x) => ({ ...x, email: validateEmailAddress(email) }))}
+              onBlur={() => setErrors((x) => ({ ...x, email: validateEmailAddress(email) }))}
               placeholder="e.g. rahul@travinco.in"
-              className={cn(
-                'input disabled:cursor-not-allowed disabled:bg-ink-50 disabled:text-ink-600',
-                isEdit && 'pr-9',
-                errors.email && 'border-red-400 focus:border-red-500'
-              )}
+              className={cn('input', errors.email && 'border-red-400 focus:border-red-500')}
             />
-            {isEdit && <Lock className="absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-400" />}
           </div>
           {errors.email ? (
             <p className="field-error">{errors.email}</p>
           ) : (
-            isEdit && <p className="mt-1 text-xs text-ink-400">The email is the sign-in ID and can&apos;t be changed.</p>
+            isEdit && <p className="mt-1 text-xs text-ink-400">This is the sign-in email. Changing it changes how the user signs in.</p>
           )}
         </div>
 
@@ -294,10 +289,9 @@ export function UserForm(props: Props) {
           ) : null}
         </div>
 
-        {showPasswordField && (
-          <div>
+        <div>
             <label htmlFor="user-password" className="mb-1 block text-sm font-medium text-ink-700">
-              {isEdit ? 'Password' : 'Temporary password'} {!isEdit && <span className="text-red-500">*</span>}
+              {isSelf ? 'New password' : isEdit ? 'Password' : 'Temporary password'} {!isEdit && <span className="text-red-500">*</span>}
             </label>
             <div className="flex gap-2">
               <div className="relative flex-1">
@@ -311,7 +305,9 @@ export function UserForm(props: Props) {
                     setPassword(e.target.value.replace(/\s/g, ''));
                     if (errors.password) setErrors((x) => ({ ...x, password: null }));
                   }}
-                  placeholder={isEdit && !initialPassword ? 'Changed by user — type a new one to reset' : undefined}
+                  placeholder={
+                    isSelf ? 'Type a new password to change yours' : isEdit && !initialPassword ? 'Changed by user — type a new one to reset' : undefined
+                  }
                   className={cn('input pr-9 font-mono', errors.password && 'border-red-400 focus:border-red-500')}
                 />
                 <button
@@ -350,14 +346,15 @@ export function UserForm(props: Props) {
             </ul>
             )}
             <p className="mt-1.5 text-[11px] text-ink-400">
-              {isEdit
+              {isSelf
+                ? 'Leave empty to keep your current password. Your own password is never shown on the Users page.'
+                : isEdit
                 ? initialPassword
                   ? 'Edit it and press Update to set a new password. Shown on the Users page until the user changes it.'
                   : 'The user has set their own password, so it can’t be shown. Type a new one and press Update to reset it.'
                 : 'Shown on the Users page until the user changes it.'}
             </p>
           </div>
-        )}
       </div>
 
       <div className="card space-y-3 p-5">

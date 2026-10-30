@@ -302,59 +302,94 @@ async function setAuthPassword(profileId: string, password: string): Promise<{ e
   }
 }
 
-/** Edits a user's name, username, phone and role from the Users page. Email stays fixed. */
+/**
+ * Who may edit (details or password of) an account: the Super Admin edits
+ * anyone, everyone edits their own account, and other admins edit staff only.
+ */
+function canEditAccount(requester: CurrentProfile, target: { id: string; role: string }) {
+  if (requester.role === 'super_admin' || requester.id === target.id) return true;
+  return target.role !== 'super_admin' && target.role !== 'admin';
+}
+
+/** Edits a user's name, email, username, phone and role from the Users page. */
 export async function updateStaffUser(
   profileId: string,
-  raw: { full_name: string; username: string; phone: string; role_id: string }
+  raw: { full_name: string; email: string; username: string; phone: string; role_id: string }
 ) {
   const requester = await requireProfile();
   if (requester.role !== 'admin' && requester.role !== 'super_admin') {
     return { error: 'Only administrators can edit users.' };
   }
 
+  const isSelf = requester.id === profileId;
   const parsed = z
     .object({
       full_name: nameSchema,
+      email: createUserSchema.shape.email,
       username: staffUsernameSchema,
       phone: staffPhoneSchema,
-      role_id: z.string().uuid('Please choose a role'),
+      // Your own role can't be changed, so it isn't required when editing yourself
+      role_id: isSelf ? z.string().optional() : z.string().uuid('Please choose a role'),
     })
     .safeParse(raw);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Please check the form.' };
 
   const supabase = await createClient();
-  const { data: target } = await supabase.from('profiles').select('id, role, role_id').eq('id', profileId).maybeSingle();
+  const { data: target } = await supabase.from('profiles').select('id, role, role_id, email').eq('id', profileId).maybeSingle();
   if (!target) return { error: 'User not found.' };
-  if (target.role === 'super_admin') return { error: 'The Super Admin account cannot be changed here.' };
-  if (target.role === 'admin' && requester.role !== 'super_admin') {
-    return { error: 'Only the Super Admin can change an Admin account.' };
+  if (!canEditAccount(requester, target)) {
+    return { error: target.role === 'super_admin' ? 'Only the Super Admin can change this account.' : 'Only the Super Admin can change an Admin account.' };
   }
 
-  const roleChanged = (target as { role_id?: string | null }).role_id !== parsed.data.role_id;
-  if (roleChanged && requester.id === profileId) return { error: 'You cannot change your own role.' };
+  // Role: unchanged when editing yourself
+  let roleUpdate: Record<string, unknown> = {};
+  if (!isSelf) {
+    const resolved = await resolveRole(supabase, parsed.data.role_id!, requester.role);
+    if (resolved.error || !resolved.role || !resolved.baseRole) return { error: resolved.error };
+    roleUpdate = { role_id: resolved.role.id, role_title: resolved.role.name, role: resolved.baseRole };
+  }
 
-  const resolved = await resolveRole(supabase, parsed.data.role_id, requester.role);
-  if (resolved.error || !resolved.role || !resolved.baseRole) return { error: resolved.error };
-
-  const conflict = await findStaffIdentityConflict(createServiceClient(), {
+  const email = parsed.data.email.trim().toLowerCase();
+  const emailChanged = email !== String(target.email ?? '').toLowerCase();
+  const service = createServiceClient();
+  const conflict = await findStaffIdentityConflict(service, {
     username: parsed.data.username,
+    email: emailChanged ? email : undefined,
     excludeId: profileId,
   });
   if (conflict) return { error: conflict };
+
+  // The email is the sign-in ID, so the sign-in account changes first
+  if (emailChanged) {
+    try {
+      const { error: authError } = await service.auth.admin.updateUserById(profileId, { email, email_confirm: true });
+      if (authError) {
+        return {
+          error: /already|registered|exists/i.test(authError.message)
+            ? 'This email address is already used by another account.'
+            : authError.message || 'Could not change the email.',
+        };
+      }
+    } catch {
+      return { error: 'Changing the email needs the Supabase service role key to be configured on the server.' };
+    }
+  }
 
   const { error } = await supabase
     .from('profiles')
     .update({
       full_name: parsed.data.full_name.replace(/\s+/g, ' '),
+      email,
       username: parsed.data.username,
       phone: parsed.data.phone,
-      role_id: resolved.role.id,
-      role_title: resolved.role.name,
-      // Keep your own tier when editing yourself (admins can't demote themselves)
-      ...(requester.id === profileId ? {} : { role: resolved.baseRole }),
+      ...roleUpdate,
     } as any)
     .eq('id', profileId);
-  if (error) return { error: 'Could not update the user.' };
+  if (error) {
+    // Keep the sign-in email and the profile in step
+    if (emailChanged && target.email) await service.auth.admin.updateUserById(profileId, { email: target.email, email_confirm: true });
+    return { error: 'Could not update the user.' };
+  }
 
   revalidatePath('/travinco_dashboard', 'layout');
   revalidatePath('/travinco_dashboard/users');
@@ -364,8 +399,8 @@ export async function updateStaffUser(
 }
 
 /**
- * Issues a new temporary password for a user (e.g. they forgot theirs).
- * The admin sees it on the Users page until the user changes it.
+ * Sets a new password. For someone else it is a temporary password the admin
+ * sees on the Users page until the user changes it; your own is never shown.
  */
 export async function resetStaffTempPassword(profileId: string, password: string) {
   const requester = await requireProfile();
@@ -378,15 +413,14 @@ export async function resetStaffTempPassword(profileId: string, password: string
   const supabase = await createClient();
   const { data: target } = await supabase.from('profiles').select('id, role').eq('id', profileId).maybeSingle();
   if (!target) return { error: 'User not found.' };
-  if (target.role === 'super_admin') return { error: 'The Super Admin password cannot be reset here.' };
-  if (target.role === 'admin' && requester.role !== 'super_admin') {
-    return { error: 'Only the Super Admin can reset an Admin password.' };
+  if (!canEditAccount(requester, target)) {
+    return { error: target.role === 'super_admin' ? 'Only the Super Admin can change this password.' : 'Only the Super Admin can reset an Admin password.' };
   }
 
   // Order matters: changing the password clears any old temp entry (DB trigger), then the new one is stored
   const pw = await setAuthPassword(profileId, parsed.data);
   if (pw.error) return { error: pw.error };
-  await storeTempPassword(supabase, profileId, parsed.data, requester.id);
+  if (requester.id !== profileId) await storeTempPassword(supabase, profileId, parsed.data, requester.id);
 
   revalidatePath('/travinco_dashboard/users');
   return { success: true };
@@ -410,11 +444,6 @@ export async function setStaffActive(profileId: string, isActive: boolean) {
 
   revalidatePath('/travinco_dashboard/users');
   return { success: true };
-}
-
-/** Was this profile soft-deleted by the old delete (before deletes became permanent)? */
-function isSoftDeleted(p: Record<string, any>, markerIds: Set<string>) {
-  return p.is_deleted === true || p.role_title === '[DELETED]' || markerIds.has(p.id);
 }
 
 /**
@@ -492,34 +521,4 @@ export async function deleteStaffUser(profileId: string) {
   revalidatePath('/travinco_dashboard', 'layout');
   revalidatePath('/travinco_dashboard/users');
   return { success: true };
-}
-
-/**
- * One-off clean-up: users deleted before deletes became permanent are still in
- * the database. Saves them to the "Users" sheet and removes them for good.
- */
-export async function purgeSoftDeletedUsers(): Promise<{ error?: string; count?: number }> {
-  const requester = await requireProfile();
-  if (requester.role !== 'admin' && requester.role !== 'super_admin') {
-    return { error: 'Only administrators can delete staff accounts.' };
-  }
-
-  const supabase = await createClient();
-  const [{ data: profiles }, { data: markers }] = await Promise.all([
-    supabase.from('profiles').select('*'),
-    supabase.from('website_settings').select('key').like('key', 'deleted_user_%'),
-  ]);
-  const markerIds = new Set((markers ?? []).map((m) => m.key.replace('deleted_user_', '')));
-  const targets = (profiles ?? []).filter(
-    (p: any) =>
-      isSoftDeleted(p, markerIds) &&
-      p.id !== requester.id &&
-      p.role !== 'super_admin' &&
-      !(p.role === 'admin' && requester.role !== 'super_admin')
-  );
-  if (targets.length === 0) return { count: 0 };
-
-  const res = await archiveAndDeleteUsers(requester, targets);
-  revalidatePath('/travinco_dashboard/users');
-  return res.error ? { error: res.error, count: res.deleted } : { count: res.deleted };
 }

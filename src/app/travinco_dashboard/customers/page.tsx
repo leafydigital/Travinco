@@ -4,9 +4,8 @@ import Link from 'next/link';
 import { Search, Plus, ArrowLeft } from 'lucide-react';
 import { CustomerRowActions } from './customer-row-actions';
 import { CustomerStatusBadge } from './customer-status-badge';
-import { PurgeDeletedBanner } from '@/components/admin/purge-deleted-banner';
 import { StatusFilterSelect } from './status-filter-select';
-import { getCustomersTableList, countSoftDeletedCustomers, purgeSoftDeletedCustomers } from './actions';
+import { getCustomersTableList } from './actions';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -162,13 +161,6 @@ async function CustomersTableContent({
   );
 }
 
-/** Customers deleted before deletes became permanent: offer a one-off clean-up. */
-async function LeftoverDeletedCustomers() {
-  const count = await countSoftDeletedCustomers();
-  if (count === 0) return null;
-  return <PurgeDeletedBanner count={count} entity="customer" sheetTab="Customers" action={purgeSoftDeletedCustomers} />;
-}
-
 export default async function AdminCustomersPage({
   searchParams,
 }: {
@@ -200,12 +192,6 @@ export default async function AdminCustomersPage({
           <Plus className="h-4 w-4" /> New customer
         </Link>
       </div>
-
-      {isAdmin && (
-        <Suspense fallback={null}>
-          <LeftoverDeletedCustomers />
-        </Suspense>
-      )}
 
       {/* 2. Filter Form Structure (Renders Instantly) */}
       <form className="flex flex-wrap sm:flex-nowrap items-center gap-3" method="get">

@@ -271,47 +271,38 @@ export async function FinancialOverviewSection({ month }: { month: MonthInfo }) 
 /* 3. Top selling packages (chart)                                     */
 /* ------------------------------------------------------------------ */
 
-const TOP_PACKAGES = 8;
+/** Only the 5 best-selling packages are charted */
+const TOP_PACKAGES = 5;
 
 export async function TopSellingPackagesSection({ month }: { month: MonthInfo }) {
   const supabase = await createClient();
 
-  const [enquiries, { data: bookings }] = await Promise.all([
-    enquiriesInMonth(month, 'package_id, destination'),
-    supabase
-      .from('bookings')
-      .select('package_id, total_amount')
-      .neq('booking_status', 'cancelled')
-      .gte('created_at', month.startTs)
-      .lte('created_at', month.endTs),
-  ]);
+  // Bookings made in the month (cancelled ones don't count)
+  const { data: bookings } = await supabase
+    .from('bookings')
+    .select('package_id, total_amount')
+    .neq('booking_status', 'cancelled')
+    .gte('created_at', month.startTs)
+    .lte('created_at', month.endTs);
 
-  const packageIds = Array.from(
-    new Set([...enquiries.map((e) => e.package_id), ...(bookings ?? []).map((b: any) => b.package_id)].filter(Boolean))
-  ) as string[];
-  const { data: packages } = packageIds.length
-    ? await supabase.from('travel_packages').select('id, title').in('id', packageIds)
+  const byPackage = new Map<string, { bookings: number; revenue: number }>();
+  for (const b of (bookings ?? []) as any[]) {
+    if (!b.package_id) continue;
+    const row = byPackage.get(b.package_id) ?? { bookings: 0, revenue: 0 };
+    row.bookings += 1;
+    row.revenue += Number(b.total_amount || 0);
+    byPackage.set(b.package_id, row);
+  }
+
+  const top = Array.from(byPackage.entries())
+    .sort(([, a], [, b]) => b.bookings - a.bookings || b.revenue - a.revenue)
+    .slice(0, TOP_PACKAGES);
+  const { data: packages } = top.length
+    ? await supabase.from('travel_packages').select('id, title').in('id', top.map(([id]) => id))
     : { data: [] as { id: string; title: string }[] };
   const titles = new Map((packages ?? []).map((p: any) => [p.id as string, p.title as string]));
 
-  // Website enquiries link a package; uploaded ones only have the package name typed in
-  const stats = new Map<string, PackageStat>();
-  const bump = (name: string | null | undefined, field: 'enquiries' | 'bookings', revenue = 0) => {
-    const label = name?.trim();
-    if (!label) return;
-    const k = label.toLowerCase();
-    const row = stats.get(k) ?? { name: label, enquiries: 0, bookings: 0, revenue: 0 };
-    row[field] += 1;
-    row.revenue += revenue;
-    stats.set(k, row);
-  };
-  for (const e of enquiries) bump(e.package_id ? titles.get(e.package_id) : e.destination, 'enquiries');
-  for (const b of (bookings ?? []) as any[]) bump(titles.get(b.package_id), 'bookings', Number(b.total_amount || 0));
-
-  const data = Array.from(stats.values())
-    .sort((a, b) => b.bookings - a.bookings || b.enquiries - a.enquiries || b.revenue - a.revenue)
-    .slice(0, TOP_PACKAGES);
-
+  const data: PackageStat[] = top.map(([id, stat]) => ({ name: titles.get(id) ?? 'Removed package', ...stat }));
   return <TopPackagesChart data={data} monthName={month.name} />;
 }
 
