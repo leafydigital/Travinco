@@ -1,4 +1,3 @@
-import { containsBadWords, badWordsError } from './contact-rules';
 import { z } from 'zod';
 
 export const enquiryFormSchema = z.object({
@@ -83,7 +82,7 @@ export const enquiryFormSchema = z.object({
   message: z
     .string()
     .max(2000)
-    .refine((val) => !containsBadWords(val), { message: badWordsError('Special Requests / Notes') })
+    // Inappropriate words are accepted and stored; staff screens mask them (maskBadWords)
     .optional()
     .or(z.literal('')),
   // Honeypot field — real users never fill this in; bots often do.

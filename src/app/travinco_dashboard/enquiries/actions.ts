@@ -9,6 +9,7 @@ import { createServiceClient } from '@/lib/supabase/service';
 import { z } from 'zod';
 import { parsePhoneNumberFromString } from 'libphonenumber-js';
 import { addYearsIso, toIsoDate } from '@/lib/utils/iso-date';
+import { maskBadWords } from '@/lib/validations/contact-rules';
 import type { EnquiryStatus, FollowupType } from '@/types/database';
 
 async function checkEnquiryEditPermission() {
@@ -192,6 +193,17 @@ export async function updateEnquiryDetails(enquiryId: string, raw: unknown) {
   }
 
   const supabase = await createClient();
+
+  // Staff see the message with inappropriate words masked. If they saved it unchanged,
+  // keep the original text instead of overwriting it with the asterisks.
+  let message = parsed.data.message || null;
+  if (message) {
+    const { data: current } = await supabase.from('enquiries').select('message').eq('id', enquiryId).maybeSingle();
+    if (current?.message && maskBadWords(current.message).trim() === message.trim()) {
+      message = current.message;
+    }
+  }
+
   const { error } = await supabase
     .from('enquiries')
     .update({
@@ -204,7 +216,7 @@ export async function updateEnquiryDetails(enquiryId: string, raw: unknown) {
       number_of_children: parsed.data.number_of_children,
       number_of_infants: parsed.data.number_of_infants,
       budget: parsed.data.budget ?? null,
-      message: parsed.data.message || null,
+      message,
     })
     .eq('id', enquiryId);
 
@@ -759,7 +771,7 @@ export async function clearAndArchiveEnquiries(): Promise<{ error?: string; coun
     const rows = enquiries.map((e) => [
       e.id, e.enquiry_number, e.customer_name, e.phone, e.whatsapp_number, e.email, e.destination,
       e.travel_date, e.return_date, e.number_of_adults, e.number_of_children, e.number_of_infants,
-      e.budget, e.message, e.source, e.status, e.priority,
+      e.budget, maskBadWords(e.message), e.source, e.status, e.priority,
       e.assigned_staff ? staffNames.get(e.assigned_staff) ?? e.assigned_staff : null,
       e.last_contacted_at, e.next_followup_date, e.notes, e.created_at, clearedAt, clearedBy,
     ]);

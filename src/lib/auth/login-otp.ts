@@ -18,6 +18,7 @@ import {
   decryptTicket,
   maskEmail,
 } from '@/lib/auth/otp-crypto';
+import { getCustomerAccountStatus, accountStatusMessage } from '@/lib/auth/account-status';
 
 const LOGIN_OTP_TTL_MINUTES = 10;
 const MAX_OTP_ATTEMPTS = 5;
@@ -146,15 +147,17 @@ export async function initiateCustomerLoginFlow(
 
   // 4. Account checks (in parallel): deactivated customer, or a staff account
   try {
-    const [custRecordRes, profileRes, accountRes] = await Promise.all([
-      serviceSupabase.from('customers').select('id, is_active').eq('email', resolvedEmail).limit(1),
+    const [status, profileRes, accountRes] = await Promise.all([
+      getCustomerAccountStatus(resolvedEmail),
       serviceSupabase.from('profiles').select('id').eq('id', userId).maybeSingle(),
       serviceSupabase.from('customer_accounts').select('id').eq('id', userId).maybeSingle(),
     ]);
 
-    if (custRecordRes.data?.[0]?.is_active === false) {
+    // Deactivated or deleted by the Travinco team: no sign-in
+    const blocked = accountStatusMessage(status);
+    if (blocked) {
       await customerSupabase.auth.signOut();
-      return { error: 'Your account is currently inactive. Please contact our support team.' };
+      return { error: blocked };
     }
 
     if (profileRes.data && !accountRes.data) {

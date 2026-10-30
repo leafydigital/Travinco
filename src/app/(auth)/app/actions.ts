@@ -9,9 +9,13 @@ import {
 } from '@/lib/auth/login-limiter';
 import { z } from 'zod';
 import {
-  sendResetPasswordOtpWithNewPassword,
-  verifyOtpAndSavePasswordFlow,
+  sendPasswordOtp,
+  resendPasswordOtp,
+  verifyResetOtp,
+  readVerifiedTicket,
+  saveResetPassword,
 } from '@/lib/auth/password-reset-otp';
+import { getStaffAccountStatus, accountStatusMessage } from '@/lib/auth/account-status';
 import { escapeLike } from '@/lib/auth/signup-rules';
 
 const STAFF_ROLES = ['super_admin', 'admin', 'sales_staff', 'accounts_staff'];
@@ -103,17 +107,23 @@ export async function staffLogin(raw: unknown): Promise<StaffLoginResult> {
   // Must be an active staff profile and not a customer account
   const service = createServiceClient();
   const [{ data: profile }, { data: customerAccount }] = await Promise.all([
-    service.from('profiles').select('id, role, is_active').eq('id', authData.user.id).maybeSingle(),
+    service.from('profiles').select('*').eq('id', authData.user.id).maybeSingle(),
     service.from('customer_accounts').select('id').eq('id', authData.user.id).maybeSingle(),
   ]);
+
+  // Deleted or deactivated by an administrator: no sign-in (checked before the role,
+  // since a deleted profile may no longer look like a staff account)
+  if (profile) {
+    const blocked = accountStatusMessage(await getStaffAccountStatus(profile));
+    if (blocked) {
+      await supabase.auth.signOut();
+      return { error: blocked };
+    }
+  }
 
   if (!profile || !STAFF_ROLES.includes(profile.role) || customerAccount) {
     await supabase.auth.signOut();
     return { error: 'This is not a staff account. Customers can sign in at /account/login.' };
-  }
-  if (profile.is_active === false) {
-    await supabase.auth.signOut();
-    return { error: 'This staff account has been deactivated. Contact your administrator.' };
   }
 
   await clearLoginAttempts(email, 'admin');
@@ -123,64 +133,70 @@ export async function staffLogin(raw: unknown): Promise<StaffLoginResult> {
 }
 
 // ─── Staff "Forgot password" (stays on /app) ──────────────────────────────────
-// 1. Email -> confirm it belongs to an active staff account
-// 2. New password + confirm -> a 6-digit code is emailed to that address
-// 3. Code -> password saved. The emailed code proves the person owns the mailbox,
-//    so knowing a staff email alone is never enough to change the password.
+// 1. Email -> must be an active staff account -> 6-digit code emailed
+// 2. Code -> verified
+// 3. New password + confirm -> saved. The emailed code proves the person owns the
+//    mailbox, so knowing a staff email alone is never enough to change the password.
 
 async function findActiveStaff(email: string) {
   const service = createServiceClient();
   const { data } = await service
     .from('profiles')
-    .select('id, full_name, email, role, is_active')
+    .select('*')
     .ilike('email', escapeLike(email))
     .limit(1);
   const profile = data?.[0];
-  if (!profile || !STAFF_ROLES.includes(profile.role)) return { error: 'No staff account found with this email address.' };
-  if (profile.is_active === false) {
-    return { error: 'This staff account has been deactivated. Please contact your administrator.' };
-  }
+  if (!profile) return { error: 'No team account found with this email address.' };
+
+  const blocked = accountStatusMessage(await getStaffAccountStatus(profile));
+  if (blocked) return { error: blocked };
+
+  if (!STAFF_ROLES.includes(profile.role)) return { error: 'No team account found with this email address.' };
   return { profile };
 }
 
-export async function checkStaffResetEmail(
+export async function startStaffPasswordReset(
   rawEmail: string
-): Promise<{ success: boolean; fullName?: string; error?: string }> {
+): Promise<{ success: boolean; resetTicket?: string; maskedEmail?: string; error?: string }> {
   const email = (rawEmail || '').trim().toLowerCase();
   if (!z.string().email().safeParse(email).success) {
     return { success: false, error: 'Enter a valid email address.' };
   }
   const found = await findActiveStaff(email);
   if (found.error) return { success: false, error: found.error };
-  return { success: true, fullName: found.profile!.full_name || undefined };
+  return sendPasswordOtp({ scope: 'staff', email, fullName: found.profile!.full_name || undefined });
 }
 
-export async function sendStaffResetCode(input: {
-  email: string;
-  password: string;
-  confirmPassword: string;
-}): Promise<{ success: boolean; resetTicket?: string; maskedEmail?: string; error?: string }> {
-  const email = (input.email || '').trim().toLowerCase();
-  const found = await findActiveStaff(email);
-  if (found.error) return { success: false, error: found.error };
-  return sendResetPasswordOtpWithNewPassword({
-    email,
-    password: input.password,
-    confirmPassword: input.confirmPassword,
-  });
+export async function resendStaffResetCode(
+  resetTicket: string
+): Promise<{ success: boolean; resetTicket?: string; error?: string }> {
+  return resendPasswordOtp(resetTicket, 'staff');
 }
 
 export async function verifyStaffResetCode(input: {
-  email: string;
   resetTicket: string;
   code: string;
+}): Promise<{ success?: boolean; verifiedTicket?: string; error?: string }> {
+  return verifyResetOtp(input.resetTicket, input.code, 'staff');
+}
+
+export async function saveStaffNewPassword(input: {
+  verifiedTicket: string;
+  password: string;
+  confirmPassword: string;
 }): Promise<{ success?: boolean; error?: string }> {
-  const result = await verifyOtpAndSavePasswordFlow({
-    resetTicket: input.resetTicket,
-    otpCode: input.code,
-  });
-  if (result.success && input.email) {
-    await clearLoginAttempts(input.email.trim().toLowerCase(), 'admin');
+  // Re-check: the account may have been deactivated / deleted while the code was pending
+  const ticket = await readVerifiedTicket(input?.verifiedTicket, 'staff');
+  if (ticket) {
+    const found = await findActiveStaff(ticket.email);
+    if (found.error) return { error: found.error };
   }
-  return result;
+
+  const result = await saveResetPassword({
+    verifiedTicket: input?.verifiedTicket,
+    password: input?.password,
+    confirmPassword: input?.confirmPassword,
+    scope: 'staff',
+  });
+  return result.success ? { success: true } : { error: result.error };
 }

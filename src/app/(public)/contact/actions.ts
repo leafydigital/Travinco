@@ -7,8 +7,6 @@ import { isValidPhoneNumber } from 'libphonenumber-js/mobile';
 import {
   validateFullName,
   validateEmailAddress,
-  containsBadWords,
-  badWordsError,
 } from '@/lib/validations/contact-rules';
 import { isFakePhone } from '@/lib/validations/phone';
 
@@ -55,14 +53,13 @@ const contactSchema = z.object({
     .string({ required_error: 'Subject is required' })
     .trim()
     .min(1, 'Subject is required')
-    .max(200)
-    .refine((val) => !containsBadWords(val), { message: badWordsError('Subject') }),
+    .max(200),
   message: z
     .string({ required_error: 'Message is required' })
     .trim()
     .min(1, 'Message is required')
-    .max(2000)
-    .refine((val) => !containsBadWords(val), { message: badWordsError('Message') }),
+    // Inappropriate words are accepted and stored; staff screens mask them (maskBadWords)
+    .max(2000),
   website: z.string().max(0).optional().or(z.literal('')), // honeypot
 });
 

@@ -46,3 +46,4 @@ next-env.d.ts
 *migration
 *.sql"supabase/migrations/" 
 travinco-2f6116b92768.json
+AUDIT_REPORT.md

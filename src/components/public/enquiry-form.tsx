@@ -5,7 +5,6 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { requestEnquiryOtp, verifyEnquiryOtpAndSubmit } from '@/app/(public)/actions';
 import { PhoneInput } from './phone-input';
-import { containsBadWords, badWordsError } from '@/lib/validations/contact-rules';
 import { DatePickerDMY } from './date-picker-dmy';
 import {
   CheckCircle2,
@@ -644,12 +643,6 @@ export function EnquiryForm({
       return;
     }
 
-    // Special requests / notes must not contain inappropriate language
-    if (containsBadWords(formValues.message)) {
-      setFormError(badWordsError('Special Requests / Notes'));
-      return;
-    }
-
     // Validate phone
     if (!phoneValid) {
       setFormError('Enter a valid mobile number');
@@ -1129,12 +1122,8 @@ export function EnquiryForm({
                   onChange={(e) => setFormValues((prev) => ({ ...prev, message: e.target.value }))}
                   placeholder="Destinations, hotel preferences, activities…"
                   maxLength={2000}
-                  aria-invalid={containsBadWords(formValues.message)}
-                  className={`input bg-white resize-none ${containsBadWords(formValues.message) ? 'border-coral-400 focus:ring-coral-400' : ''}`}
+                  className="input bg-white resize-none"
                 />
-                {containsBadWords(formValues.message) && (
-                  <p className="mt-1 text-xs font-medium text-coral-600">{badWordsError('Special Requests / Notes')}</p>
-                )}
               </div>
             </div>
           </div>
@@ -1358,12 +1347,8 @@ export function EnquiryForm({
             onChange={(e) => setFormValues((prev) => ({ ...prev, message: e.target.value }))}
             placeholder="Tell us a bit about your trip…"
             maxLength={2000}
-            aria-invalid={containsBadWords(formValues.message)}
-            className={`input bg-white resize-none ${containsBadWords(formValues.message) ? 'border-coral-400 focus:ring-coral-400' : ''}`}
+            className="input bg-white resize-none"
           />
-          {containsBadWords(formValues.message) && (
-            <p className="mt-1 text-xs font-medium text-coral-600">{badWordsError('Special Requests / Notes')}</p>
-          )}
         </div>
       </div>
 

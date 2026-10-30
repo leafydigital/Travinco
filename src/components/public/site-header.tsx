@@ -213,7 +213,7 @@ export function SiteHeader({
                 <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', accountMenuOpen && 'rotate-180')} />
               </button>
               {accountMenuOpen && (
-                <div className="absolute right-0 top-full z-10 w-44 pt-2">
+                <div className="absolute right-0 top-full z-10 w-52 pt-2">
                   <div className="rounded-xl2 border border-ink-100 bg-white p-1.5 shadow-lg">
                     <Link
                       href="/account/bookings"
@@ -221,6 +221,13 @@ export function SiteHeader({
                       className="block rounded-lg px-3 py-2 text-sm text-ink-700 hover:bg-ink-50"
                     >
                       {t('nav_my_bookings')}
+                    </Link>
+                    <Link
+                      href="/account/profile"
+                      onClick={() => setAccountMenuOpen(false)}
+                      className="block rounded-lg px-3 py-2 text-sm text-ink-700 hover:bg-ink-50"
+                    >
+                      {t('nav_profile')}
                     </Link>
                     <Link
                       href="/account/change-password"
@@ -346,6 +353,13 @@ export function SiteHeader({
                   className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium text-ink-700 hover:bg-brand-50 hover:text-brand-700"
                 >
                   <User className="h-4 w-4" /> {t('nav_my_bookings')}
+                </Link>
+                <Link
+                  href="/account/profile"
+                  onClick={() => setMobileOpen(false)}
+                  className="rounded-lg px-3 py-2 text-sm font-medium text-ink-700 hover:bg-brand-50 hover:text-brand-700"
+                >
+                  {t('nav_profile')}
                 </Link>
                 <Link
                   href="/account/change-password"

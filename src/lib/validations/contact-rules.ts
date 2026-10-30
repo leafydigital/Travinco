@@ -184,3 +184,74 @@ export function containsBadWords(text: string | null | undefined): boolean {
 export function badWordsError(field: string) {
   return `${field} contains inappropriate language. Please remove it and keep the message respectful.`;
 }
+
+/* ── Masking for staff views ───────────────────────────────────────────── */
+
+const BAD_WORD_RE_GLOBAL = new RegExp(BAD_WORD_RE.source, 'giu');
+
+const DEOBFUSCATE: Record<string, string> = {
+  '0': 'o', '1': 'i', '!': 'i', '3': 'e', '4': 'a', '@': 'a', '5': 's', $: 's',
+};
+const JOINER = /[.*_-]/;
+const WORD_CHAR = /\w/;
+
+/**
+ * Same de-obfuscation as normalise(), but remembers which original characters each
+ * output character came from, so a match in the normalised text can be masked in
+ * the original.
+ */
+function normaliseWithMap(text: string) {
+  const chars = Array.from(text);
+  const offsets: number[] = [];
+  let pos = 0;
+  for (const ch of chars) {
+    offsets.push(pos);
+    pos += ch.length;
+  }
+  const mapped = (ch: string) => DEOBFUSCATE[ch] ?? ch.toLowerCase();
+
+  let out = '';
+  const map: [number, number][] = [];
+  chars.forEach((ch, i) => {
+    const start = offsets[i]!;
+    const end = start + ch.length;
+    const prevOut = out.slice(-1);
+    const next = chars[i + 1];
+    // "s.e.x", "f*ck": drop separators between word characters
+    if (JOINER.test(ch) && WORD_CHAR.test(prevOut) && next !== undefined && WORD_CHAR.test(mapped(next))) return;
+    const m = mapped(ch);
+    for (let k = 0; k < m.length; k++) map.push([start, end]);
+    out += m;
+  });
+  return { out, map };
+}
+
+/**
+ * Replaces inappropriate words with asterisks (e.g. "f*ck off" -> "**** off").
+ * Customers may submit any text and it is stored unchanged; staff screens show
+ * this masked version.
+ */
+export function maskBadWords<T extends string | null | undefined>(text: T): T {
+  if (!text) return text;
+  const ranges: [number, number][] = [];
+
+  for (const m of text.matchAll(BAD_WORD_RE_GLOBAL)) {
+    ranges.push([m.index!, m.index! + m[0].length]);
+  }
+  const { out, map } = normaliseWithMap(text);
+  for (const m of out.matchAll(BAD_WORD_RE_GLOBAL)) {
+    const first = map[m.index!];
+    const last = map[m.index! + m[0].length - 1];
+    if (first && last) ranges.push([first[0], last[1]]);
+  }
+  if (ranges.length === 0) return text;
+
+  let result = '';
+  let pos = 0;
+  for (const ch of Array.from(text)) {
+    const masked = !/\s/.test(ch) && ranges.some(([s, e]) => pos >= s && pos < e);
+    result += masked ? '*' : ch;
+    pos += ch.length;
+  }
+  return result as T;
+}

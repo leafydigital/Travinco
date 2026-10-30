@@ -3,24 +3,35 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { cache } from 'react';
 import type { Tables } from '@/types/database';
+import { getCustomerAccountStatus } from '@/lib/auth/account-status';
 
 export type CurrentCustomer = Tables<'customer_accounts'>;
 
+type CustomerSession = {
+  customer: CurrentCustomer | null;
+  /** Set when the signed-in customer was deactivated or deleted by the Travinco team. */
+  blocked?: 'deactivated' | 'deleted';
+};
+
 /** Non-throwing customer session retriever. Reads strictly from customer-scoped session. */
 export const getCustomer = cache(async (): Promise<CurrentCustomer | null> => {
+  return (await getCustomerSession()).customer;
+});
+
+const getCustomerSession = cache(async (): Promise<CustomerSession> => {
   const cookieStore = await cookies();
   const hasCustomerCookie =
     cookieStore.has(CUSTOMER_AUTH_COOKIE) ||
     cookieStore.has(`${CUSTOMER_AUTH_COOKIE}.0`);
 
-  if (!hasCustomerCookie) return null;
+  if (!hasCustomerCookie) return { customer: null };
 
   const supabase = await createCustomerClient();
   // getClaims() verifies the JWT locally (ES256 signing keys) instead of a ~1s
   // round trip to the Auth server; it falls back to getUser() for symmetric keys.
   const { data: claimsData } = await supabase.auth.getClaims();
   const claims = claimsData?.claims;
-  if (!claims?.sub) return null;
+  if (!claims?.sub) return { customer: null };
 
   const user = {
     id: claims.sub as string,
@@ -29,27 +40,21 @@ export const getCustomer = cache(async (): Promise<CurrentCustomer | null> => {
   };
 
   // Verify customer_accounts and customer status in parallel
-  const [accountRes, custRecordRes] = await Promise.all([
+  const [accountRes, status] = await Promise.all([
     supabase
       .from('customer_accounts')
       .select('*')
       .eq('id', user.id)
       .maybeSingle(),
-    user.email
-      ? supabase
-          .from('customers')
-          .select('id, is_active')
-          .eq('email', user.email)
-          .maybeSingle()
-      : Promise.resolve({ data: null }),
+    user.email ? getCustomerAccountStatus(user.email).catch(() => 'active' as const) : 'active' as const,
   ]);
 
-  if (custRecordRes.data?.is_active === false) {
-    return null;
+  if (status !== 'active') {
+    return { customer: null, blocked: status };
   }
 
   const account = accountRes.data;
-  if (account) return account;
+  if (account) return { customer: account };
 
   // Fallback if customer_accounts record has not synced yet
   const isCustomerMeta =
@@ -57,7 +62,7 @@ export const getCustomer = cache(async (): Promise<CurrentCustomer | null> => {
     user.user_metadata?.is_customer_signup === 'true';
 
   if (isCustomerMeta && user.email) {
-    return {
+    const customer = {
       id: user.id,
       email: user.email,
       full_name: (user.user_metadata?.full_name as string) || user.email.split('@')[0],
@@ -65,9 +70,10 @@ export const getCustomer = cache(async (): Promise<CurrentCustomer | null> => {
       // Rare fallback path only: created_at isn't in the JWT, fetch it from Auth
       created_at: (await supabase.auth.getUser()).data.user?.created_at ?? new Date().toISOString(),
     } as CurrentCustomer;
+    return { customer };
   }
 
-  return null;
+  return { customer: null };
 });
 
 /**
@@ -76,7 +82,12 @@ export const getCustomer = cache(async (): Promise<CurrentCustomer | null> => {
  * Redirects unauthenticated users to /account/login with safe redirectTo support.
  */
 export const requireCustomer = cache(async (redirectTo?: string): Promise<CurrentCustomer> => {
-  const customer = await getCustomer();
+  const { customer, blocked } = await getCustomerSession();
+
+  // Deactivated / deleted while signed in: clear the session and explain why
+  if (blocked) {
+    redirect(`/api/auth/customer-signout?reason=${blocked}`);
+  }
 
   if (!customer) {
     const target = redirectTo

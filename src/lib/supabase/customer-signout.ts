@@ -2,9 +2,9 @@
 
 /**
  * Fast client-side customer sign out:
- * 1. Instantly wipes the customer auth cookies from document.cookie so the browser session terminates immediately.
- * 2. Fires background server signOut non-blockingly.
- * 3. Immediately navigates to /account/login with zero UI delay.
+ * 1. Wipes any script-readable customer auth cookies / localStorage tokens.
+ * 2. Navigates to /api/auth/customer-signout, which clears the httpOnly session
+ *    cookies and redirects to /account/login.
  */
 export function fastCustomerLogOut(onBeforeRedirect?: () => void) {
   if (onBeforeRedirect) {
@@ -45,16 +45,12 @@ export function fastCustomerLogOut(onBeforeRedirect?: () => void) {
     }
   } catch {}
 
-  // 3. Trigger server-side logout in background without blocking UI
-  try {
-    import('@/app/(public)/account/actions').then(({ logOutCustomer }) => {
-      logOutCustomer().catch(() => {});
-    });
-  } catch {}
-
-  // 4. Instantly redirect to login page
+  // 3. Sign out on the server and land on the login page in one round trip.
+  //    The session cookies are httpOnly (step 1 can't remove them), so the server
+  //    route clears them and redirects; going straight to /account/login would let
+  //    the middleware see the still-valid session and bounce back to /account/bookings.
   if (typeof window !== 'undefined') {
-    window.location.href = '/account/login';
+    window.location.replace('/api/auth/customer-signout');
   }
 }
 

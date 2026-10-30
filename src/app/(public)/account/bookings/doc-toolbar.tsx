@@ -1,7 +1,8 @@
 'use client';
 
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Printer, Download } from 'lucide-react';
+import { ArrowLeft, Printer, Download, Loader2 } from 'lucide-react';
 import { printAsPdf, downloadPdf } from '@/components/tour/doc-tools';
 
 export function CustomerDocToolbar({
@@ -10,13 +11,43 @@ export function CustomerDocToolbar({
   docNumber,
   elementId,
   fileName,
+  autoDownload = false,
 }: {
   title: string;
   docType: 'quotation' | 'invoice';
   docNumber: string;
   elementId: string;
   fileName: string;
+  /** Start the PDF download as soon as the document is on screen (list "Download" button). */
+  autoDownload?: boolean;
 }) {
+  const [isDownloading, setIsDownloading] = useState(false);
+  const autoStarted = useRef(false);
+
+  async function handleDownload() {
+    if (isDownloading) return;
+    setIsDownloading(true);
+    try {
+      await downloadPdf(elementId, fileName);
+    } finally {
+      setIsDownloading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!autoDownload || autoStarted.current) return;
+    // Give images in the document a moment to load before rendering the PDF
+    const t = setTimeout(() => {
+      if (autoStarted.current) return;
+      autoStarted.current = true;
+      // Drop ?download=1 so a refresh doesn't download again
+      window.history.replaceState(null, '', window.location.pathname);
+      void handleDownload();
+    }, 400);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoDownload]);
+
   return (
     <div className="mb-6 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-ink-200/80 bg-white p-4 shadow-sm print:hidden">
       <div className="flex items-center gap-3">
@@ -45,10 +76,12 @@ export function CustomerDocToolbar({
 
         <button
           type="button"
-          onClick={() => downloadPdf(elementId, fileName)}
-          className="btn-primary inline-flex items-center gap-1.5 px-3 py-1.5 text-xs"
+          onClick={handleDownload}
+          disabled={isDownloading}
+          className="btn-primary inline-flex items-center gap-1.5 px-3 py-1.5 text-xs disabled:opacity-70"
         >
-          <Download className="h-3.5 w-3.5" /> Download PDF
+          {isDownloading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+          {isDownloading ? 'Preparing PDF…' : 'Download PDF'}
         </button>
       </div>
     </div>

@@ -14,7 +14,8 @@ export const translations = {
     nav_book_with_us: 'Book with us',
     nav_view_all_destinations: 'View all destinations',
     nav_my_bookings: 'My bookings',
-    nav_change_password: 'Change password',
+    nav_profile: 'Profile',
+    nav_change_password: 'Update Password',
     nav_log_out: 'Log out',
 
     hero_tagline: 'Explore without the guesswork',
@@ -48,7 +49,8 @@ export const translations = {
     nav_book_with_us: 'हमारे साथ बुक करें',
     nav_view_all_destinations: 'सभी गंतव्य देखें',
     nav_my_bookings: 'मेरी बुकिंग',
-    nav_change_password: 'पासवर्ड बदलें',
+    nav_profile: 'प्रोफ़ाइल',
+    nav_change_password: 'पासवर्ड अपडेट करें',
     nav_log_out: 'लॉग आउट',
 
     hero_tagline: 'बिना अनुमान लगाए यात्रा की खोज करें',
@@ -82,7 +84,8 @@ export const translations = {
     nav_book_with_us: 'ഞങ്ങളോടൊപ്പം ബുക്ക് ചെയ്യുക',
     nav_view_all_destinations: 'എല്ലാ ലക്ഷ്യസ്ഥാനങ്ങളും കാണുക',
     nav_my_bookings: 'എൻ്റെ ബുക്കിംഗുകൾ',
-    nav_change_password: 'പാസ്‌വേഡ് മാറ്റുക',
+    nav_profile: 'പ്രൊഫൈൽ',
+    nav_change_password: 'പാസ്‌വേഡ് അപ്ഡേറ്റ് ചെയ്യുക',
     nav_log_out: 'ലോഗ് ഔട്ട്',
 
     hero_tagline: 'ഊഹിക്കാതെ യാത്ര പര്യവേക്ഷണം ചെയ്യുക',

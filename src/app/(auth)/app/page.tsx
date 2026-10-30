@@ -12,7 +12,8 @@ export const dynamic = 'force-dynamic';
 const REASONS: Record<string, string> = {
   not_staff: 'That account does not have access to the admin dashboard. Please sign in with a staff account.',
   forbidden: 'Access denied: you do not have permission to access that page.',
-  deactivated: 'This staff account has been deactivated. Please contact your administrator.',
+  deactivated: 'Your account is deactivated. Please contact the Travinco team.',
+  deleted: 'Unable to login. Please contact the Travinco team.',
   session_expired: 'Your session has expired. Please sign in again.',
 };
 

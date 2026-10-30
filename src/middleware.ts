@@ -136,6 +136,8 @@ export async function middleware(request: NextRequest) {
   // Retrieve admin user ONLY if visiting admin/staff-login routes AND admin cookie is present
   let adminUser = null;
   let isStaff = false;
+  // Set when the signed-in staff member was deactivated / deleted by an administrator
+  let staffBlocked: 'deactivated' | 'deleted' | null = null;
 
   if ((isAdminRoute || isStaffLoginRoute) && hasAdminCookie) {
     try {
@@ -179,8 +181,14 @@ export async function middleware(request: NextRequest) {
         const role = profileRes.error ? null : roleInfoFromProfile(profile);
         if (profile) delete profile.staff_roles;
 
+        if (profile && !custAccount && ['super_admin', 'admin', 'sales_staff', 'accounts_staff'].includes(profile.role)) {
+          if (profile.is_deleted === true || profile.role_title === '[DELETED]') staffBlocked = 'deleted';
+          else if (profile.is_active === false) staffBlocked = 'deactivated';
+        }
+
         if (
           profile &&
+          !staffBlocked &&
           profile.is_active &&
           ['super_admin', 'admin', 'sales_staff', 'accounts_staff'].includes(profile.role) &&
           !custAccount
@@ -259,6 +267,16 @@ export async function middleware(request: NextRequest) {
     }
 
     if (!isStaff) {
+      // Deactivated / deleted while signed in: end the staff session and explain why
+      if (staffBlocked) {
+        const blockedRes = createRedirect(new URL(`/app?reason=${staffBlocked}`, request.url));
+        request.cookies.getAll().forEach((c) => {
+          if (c.name.startsWith(ADMIN_AUTH_COOKIE)) {
+            blockedRes.cookies.set(c.name, '', { path: '/', maxAge: 0, expires: new Date(0) });
+          }
+        });
+        return blockedRes;
+      }
       // If customer attempts to access admin dashboard, strictly deny access
       if (isCustomer) {
         return createRedirect(new URL('/app?reason=not_staff', request.url));

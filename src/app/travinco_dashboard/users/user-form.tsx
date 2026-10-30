@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils/cn';
 import { validateFullName, validateEmailAddress } from '@/lib/validations/contact-rules';
 import { PASSWORD_RULES, generateTempPassword, passwordMeetsRules } from '@/lib/temp-password';
 import { ASSIGNABLE_PAGE_GROUPS } from '@/lib/staff-roles';
-import { createStaffUser, updateStaffUser } from './actions';
+import { createStaffUser, updateStaffUser, resetStaffTempPassword } from './actions';
 import type { RoleOption } from './users-table';
 
 type Props =
@@ -17,7 +17,8 @@ type Props =
       mode: 'edit';
       roles: RoleOption[];
       userId: string;
-      initial: { full_name: string; email: string; role_id: string | null };
+      /** password: the admin-set password, or null once the user has changed it themselves */
+      initial: { full_name: string; email: string; role_id: string | null; password: string | null };
       /** Editing your own account: role can't be changed */
       isSelf?: boolean;
     };
@@ -71,19 +72,28 @@ export function UserForm(props: Props) {
   const [fullName, setFullName] = useState(isEdit ? props.initial.full_name : '');
   const [email, setEmail] = useState(isEdit ? props.initial.email : '');
   const [roleId, setRoleId] = useState(isEdit ? props.initial.role_id ?? '' : '');
-  const [password, setPassword] = useState('');
+  const initialPassword = isEdit ? props.initial.password ?? '' : '';
+  const [password, setPassword] = useState(initialPassword);
   const [showPassword, setShowPassword] = useState(true);
   const [errors, setErrors] = useState<Record<string, string | null>>({});
 
   const selectedRole = useMemo(() => props.roles.find((r) => r.id === roleId), [props.roles, roleId]);
   const isSelf = isEdit && Boolean(props.isSelf);
+  // Admins set other people's passwords here; their own goes through Forgot password
+  const showPasswordField = !isEdit || !isSelf;
+  const passwordChanged = isEdit && password !== initialPassword && password !== '';
 
   function validate(): string | null {
     const next: Record<string, string | null> = {
       full_name: validateFullName(fullName),
       email: isEdit ? null : validateEmailAddress(email),
       role: roleId ? null : 'Please choose a role',
-      password: isEdit ? null : passwordMeetsRules(password) ? null : 'Password does not meet all the rules',
+      password:
+        isEdit && !passwordChanged
+          ? null
+          : passwordMeetsRules(password)
+            ? null
+            : 'Password does not meet all the rules',
     };
     setErrors(next);
     return Object.values(next).find(Boolean) ?? null;
@@ -99,9 +109,15 @@ export function UserForm(props: Props) {
         ? await updateStaffUser(props.userId, { full_name: fullName.trim(), role_id: roleId })
         : await createStaffUser({ full_name: fullName.trim(), email: email.trim(), role_id: roleId, password });
       if (res.error) return void toast.error(res.error);
+      if (isEdit && passwordChanged) {
+        const pw = await resetStaffTempPassword(props.userId, password);
+        if (pw.error) return void toast.error(`Details saved, but the password was not updated: ${pw.error}`);
+      }
       await toast.success(isEdit ? 'Updated successfully' : 'User created successfully', {
         description: isEdit
-          ? undefined
+          ? passwordChanged
+            ? `Share the new password with ${fullName.trim()}.`
+            : undefined
           : `Share the temporary password with ${fullName.trim()}. It's shown on the Users page until they change it.`,
       });
       router.push('/travinco_dashboard/users');
@@ -217,10 +233,10 @@ export function UserForm(props: Props) {
           ) : null}
         </div>
 
-        {!isEdit && (
+        {showPasswordField && (
           <div>
             <label htmlFor="user-password" className="mb-1 block text-sm font-medium text-ink-700">
-              Temporary password <span className="text-red-500">*</span>
+              {isEdit ? 'Password' : 'Temporary password'} {!isEdit && <span className="text-red-500">*</span>}
             </label>
             <div className="flex gap-2">
               <div className="relative flex-1">
@@ -234,6 +250,7 @@ export function UserForm(props: Props) {
                     setPassword(e.target.value.replace(/\s/g, ''));
                     if (errors.password) setErrors((x) => ({ ...x, password: null }));
                   }}
+                  placeholder={isEdit && !initialPassword ? 'Changed by user — type a new one to reset' : undefined}
                   className={cn('input pr-9 font-mono', errors.password && 'border-red-400 focus:border-red-500')}
                 />
                 <button
@@ -258,6 +275,7 @@ export function UserForm(props: Props) {
                 <RefreshCw className="h-3.5 w-3.5" /> Generate
               </button>
             </div>
+            {(!isEdit || passwordChanged) && (
             <ul className="mt-2 grid grid-cols-2 gap-1 text-[11px]">
               {PASSWORD_RULES.map((r) => {
                 const ok = r.test(password);
@@ -269,8 +287,13 @@ export function UserForm(props: Props) {
                 );
               })}
             </ul>
+            )}
             <p className="mt-1.5 text-[11px] text-ink-400">
-              Shown on the Users page until the user changes it.
+              {isEdit
+                ? initialPassword
+                  ? 'Edit it and press Update to set a new password. Shown on the Users page until the user changes it.'
+                  : 'The user has set their own password, so it can’t be shown. Type a new one and press Update to reset it.'
+                : 'Shown on the Users page until the user changes it.'}
             </p>
           </div>
         )}

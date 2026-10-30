@@ -28,17 +28,18 @@ import {
   initiateCustomerLogin,
   resendCustomerLoginOtp,
   verifyCustomerLoginOtp,
-  checkCustomerEmailExistsAction,
-  sendResetPasswordOtpWithNewPasswordAction,
+  startCustomerPasswordReset,
   resendCustomerResetOtpAction,
-  verifyResetOtpAndSavePasswordAction,
+  verifyCustomerResetOtpAction,
+  saveCustomerResetPasswordAction,
 } from '../actions';
 
 const REASON_MESSAGES: Record<string, string> = {
   not_customer: 'This page is for travellers. Please sign in with your traveller account.',
   not_staff: 'You do not have staff permissions to access the admin dashboard.',
   forbidden: 'Access denied: You do not have permission to access that page.',
-  deactivated: 'This account has been deactivated. Please contact support.',
+  deactivated: 'Your account is deactivated. Please contact the Travinco team.',
+  deleted: 'Unable to login. Please contact the Travinco team.',
   reset_success: 'Your password has been reset successfully! Please sign in with your new password.',
 };
 
@@ -166,9 +167,9 @@ export default function LoginPage() {
   // Stages:
   // 'credentials' -> Login form
   // 'otp' -> Login 2FA OTP
-  // 'forgot_email' -> Step 1: Enter email & check DB
-  // 'forgot_password' -> Step 2: Set new password & confirm password
-  // 'forgot_otp' -> Step 3: Send OTP and verify to save in DB
+  // 'forgot_email' -> Step 1: Enter email, verify it exists, email a 6-digit code
+  // 'forgot_otp' -> Step 2: Verify the code
+  // 'forgot_password' -> Step 3: Set new password & confirm password, then save
   const [step, setStep] = useState<
     'credentials' | 'otp' | 'forgot_email' | 'forgot_password' | 'forgot_otp'
   >('credentials');
@@ -196,6 +197,7 @@ export default function LoginPage() {
   // Forgot password flow states
   const [resetEmail, setResetEmail] = useState('');
   const [resetTicket, setResetTicket] = useState('');
+  const [verifiedTicket, setVerifiedTicket] = useState('');
   const [resetOtpDigits, setResetOtpDigits] = useState<string[]>(['', '', '', '', '', '']);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -252,25 +254,10 @@ export default function LoginPage() {
       const cleanEmail = (emailParam || email || '').trim();
       setLoginError(null);
       setSuccessBanner(null);
-      if (cleanEmail) {
-        setResetEmail(cleanEmail);
-        setEmail(cleanEmail);
-        setIsResetChecking(true);
-        setStep('forgot_email');
-        checkCustomerEmailExistsAction(cleanEmail)
-          .then((res) => {
-            if (res.success) {
-              if (res.email) setResetEmail(res.email);
-              setNewPassword('');
-              setConfirmPassword('');
-              setStep('forgot_password');
-            }
-          })
-          .catch(() => { })
-          .finally(() => setIsResetChecking(false));
-      } else {
-        setStep('forgot_email');
-      }
+      setResetError(null);
+      setResetEmail(cleanEmail);
+      if (cleanEmail) setEmail(cleanEmail);
+      setStep('forgot_email');
     } else if (emailParam && !email) {
       setEmail(emailParam.trim());
     }
@@ -399,36 +386,24 @@ export default function LoginPage() {
 
   // ── Forgot Password Handlers ──
 
-  async function handleOpenForgotPassword() {
-    const target = email.trim();
-    setResetEmail(target);
+  function resetForgotState() {
     setResetError(null);
+    setResetTicket('');
+    setVerifiedTicket('');
+    setResetOtpDigits(['', '', '', '', '', '']);
+    setNewPassword('');
+    setConfirmPassword('');
+  }
+
+  function handleOpenForgotPassword() {
+    resetForgotState();
+    setResetEmail(email.trim());
     setSuccessBanner(null);
     setLoginError(null);
-
-    if (target) {
-      setIsResetChecking(true);
-      setStep('forgot_email');
-      try {
-        const res = await checkCustomerEmailExistsAction(target);
-        if (res.success) {
-          if (res.email) setResetEmail(res.email);
-          setNewPassword('');
-          setConfirmPassword('');
-          setStep('forgot_password');
-          return;
-        }
-      } catch {
-        // Fallback to forgot_email
-      } finally {
-        setIsResetChecking(false);
-      }
-    }
-
     setStep('forgot_email');
   }
 
-  // Step 1: Check if email or username exists in DB
+  // Step 1: Verify the email / username exists, then email a 6-digit code
   async function handleCheckEmailInDb(e: React.FormEvent) {
     e.preventDefault();
     const target = resetEmail.trim();
@@ -440,61 +415,25 @@ export default function LoginPage() {
     setIsResetChecking(true);
     setResetError(null);
     try {
-      const res = await checkCustomerEmailExistsAction(target);
-      if (!res.success) {
-        setResetError(res.error || 'No customer account found with this email or username.');
-        toast.error(res.error || 'No customer account found with this email or username.');
+      const res = await startCustomerPasswordReset(target);
+      if (!res.success || !res.resetTicket) {
+        const message = res.error || 'No customer account found with this email or username.';
+        setResetError(message);
+        toast.error(message);
         return;
       }
 
-      // Email verified in database! Set resolved email for reset
-      if (res.email) {
-        setResetEmail(res.email);
-      }
-      setNewPassword('');
-      setConfirmPassword('');
-      setResetError(null);
-      setStep('forgot_password');
-    } catch (err: any) {
-      setResetError(err?.message || 'Could not verify account in Records…. Please try again.');
-    } finally {
-      setIsResetChecking(false);
-    }
-  }
-
-  // Step 2: User sets new password and confirm password, clicks submit -> sends OTP to email
-  async function handleSendResetOtp(e: React.FormEvent) {
-    e.preventDefault();
-    if (!allResetRulesMet) {
-      setResetError('Please fulfill all password requirements before continuing.');
-      return;
-    }
-
-    setIsSendingResetOtp(true);
-    setResetError(null);
-    try {
-      const res = await sendResetPasswordOtpWithNewPasswordAction({
-        email: resetEmail,
-        password: newPassword,
-        confirmPassword,
-      });
-
-      if (!res.success) {
-        setResetError(res.error || 'Failed to send verification code. Please try again.');
-        toast.error(res.error || 'Failed to send verification code. Please try again.');
-        return;
-      }
-
-      setResetTicket(res.resetTicket || '');
-      setMaskedEmail(res.maskedEmail || resetEmail);
+      if (res.email) setResetEmail(res.email);
+      setResetTicket(res.resetTicket);
+      setMaskedEmail(res.maskedEmail || target);
       setResetOtpDigits(['', '', '', '', '', '']);
       setResetCooldown(60);
       setStep('forgot_otp');
-      toast.success(`Verification code sent to ${res.maskedEmail || resetEmail}`);
+      toast.success(`Verification code sent to ${res.maskedEmail || target}`);
     } catch (err: any) {
-      setResetError(err?.message || 'Failed to send verification code. Please try again.');
+      setResetError(err?.message || 'Could not verify your account. Please try again.');
     } finally {
-      setIsSendingResetOtp(false);
+      setIsResetChecking(false);
     }
   }
 
@@ -506,11 +445,12 @@ export default function LoginPage() {
     setResetError(null);
     try {
       const res = await resendCustomerResetOtpAction(resetTicket);
-      if (res.error) {
-        setResetError(res.error);
-        toast.error(res.error);
+      if (!res.success) {
+        setResetError(res.error || 'Could not resend the verification code.');
+        toast.error(res.error || 'Could not resend the verification code.');
       } else {
         if (res.resetTicket) setResetTicket(res.resetTicket);
+        setResetOtpDigits(['', '', '', '', '', '']);
         setResetCooldown(60);
         toast.success('A new verification code has been sent to your email.');
       }
@@ -521,44 +461,70 @@ export default function LoginPage() {
     }
   }
 
-  // Step 3: Verify OTP and save new password in DB
-  async function handleVerifyOtpAndSave(codeToVerify?: string) {
+  // Step 2: Verify the emailed code
+  async function handleVerifyResetOtp(codeToVerify?: string) {
     const code = (codeToVerify || resetOtpDigits.join('')).trim();
     if (code.length !== 6) {
       setResetError('Please enter all 6 digits of your verification code.');
       return;
     }
-
     if (!resetTicket || isResetSubmitting) return;
 
     setIsResetSubmitting(true);
     setResetError(null);
     try {
-      const res = await verifyResetOtpAndSavePasswordAction({
-        resetTicket,
-        otpCode: code,
-      });
+      const res = await verifyCustomerResetOtpAction(resetTicket, code);
+      if (!res.success || !res.verifiedTicket) {
+        setResetError(res.error || 'Invalid verification code.');
+        toast.error(res.error || 'Invalid verification code.');
+        return;
+      }
+      setVerifiedTicket(res.verifiedTicket);
+      setNewPassword('');
+      setConfirmPassword('');
+      setStep('forgot_password');
+      toast.success('Email verified. Please choose your new password.');
+    } catch (err: any) {
+      setResetError(err?.message || 'Could not verify your code. Please try again.');
+    } finally {
+      setIsResetSubmitting(false);
+    }
+  }
 
-      if (res.error) {
-        setResetError(res.error);
-        toast.error(res.error);
+  // Step 3: Save the new password
+  async function handleSaveNewPassword(e: React.FormEvent) {
+    e.preventDefault();
+    if (!allResetRulesMet) {
+      setResetError('Please fulfill all password requirements before continuing.');
+      return;
+    }
+    if (!verifiedTicket || isSendingResetOtp) return;
+
+    setIsSendingResetOtp(true);
+    setResetError(null);
+    try {
+      const res = await saveCustomerResetPasswordAction({
+        verifiedTicket,
+        password: newPassword,
+        confirmPassword,
+      });
+      if (!res.success) {
+        setResetError(res.error || 'Failed to update password. Please try again.');
+        toast.error(res.error || 'Failed to update password. Please try again.');
         return;
       }
 
       toast.success('Password updated successfully! Please sign in with your new password.');
-      setSuccessBanner('Your password has been updated in the Records…. Please sign in with your new password.');
+      setSuccessBanner('Your password has been updated. Please sign in with your new password.');
       setEmail(resetEmail);
       setPassword('');
       setLoginError(null);
+      resetForgotState();
       setStep('credentials');
-      setResetError(null);
-      setResetOtpDigits(['', '', '', '', '', '']);
-      setNewPassword('');
-      setConfirmPassword('');
     } catch (err: any) {
       setResetError(err?.message || 'Failed to update password. Please try again.');
     } finally {
-      setIsResetSubmitting(false);
+      setIsSendingResetOtp(false);
     }
   }
 
@@ -919,7 +885,7 @@ export default function LoginPage() {
                   Forgot Password
                 </h1>
                 <p className="mt-1.5 text-sm text-ink-500 leading-relaxed">
-                  Enter your registered email address or username. We will verify your account in our Records….
+                  Enter your registered email address or username. Once we find your account, we&apos;ll email you a 6-digit verification code.
                 </p>
 
                 <form onSubmit={handleCheckEmailInDb} className="mt-6 space-y-4">
@@ -958,11 +924,11 @@ export default function LoginPage() {
                     {isResetChecking ? (
                       <>
                         <Loader2 className="h-4 w-4 animate-spin" />
-                        <span>Checking…</span>
+                        <span>Verifying &amp; sending code…</span>
                       </>
                     ) : (
                       <>
-                        <span>Continue</span>
+                        <span>Verify &amp; Send Code</span>
                         <ArrowRight className="h-4 w-4" />
                       </>
                     )}
@@ -982,23 +948,23 @@ export default function LoginPage() {
                 </form>
               </div>
             ) : step === 'forgot_password' ? (
-              // ── Stage 4: Forgot Password Step 2: Set New Password & Confirm Password ──
+              // ── Stage 4: Forgot Password Step 3: Set New Password & Confirm Password ──
               <div className="animate-in fade-in slide-in-from-right-4 duration-300">
                 <div className="flex items-center justify-between mb-2">
                   <div className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800 border border-emerald-200">
                     <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-                    <span>Account Found in Records</span>
+                    <span>Email Verified</span>
                   </div>
                   <button
                     type="button"
                     onClick={() => {
-                      setStep('forgot_email');
-                      setResetError(null);
+                      resetForgotState();
+                      setStep('credentials');
                     }}
                     className="text-xs font-medium text-ink-500 hover:text-ink-800 transition inline-flex items-center gap-1 cursor-pointer"
                   >
                     <ArrowLeft className="h-3.5 w-3.5" />
-                    <span>Change email</span>
+                    <span>Back to login</span>
                   </button>
                 </div>
 
@@ -1006,10 +972,10 @@ export default function LoginPage() {
                   Create New Password
                 </h1>
                 <p className="mt-1.5 text-sm text-ink-500 leading-relaxed">
-                  Enter your new password for <strong className="font-semibold text-ink-900">{resetEmail}</strong>. We will send a verification code to your email to confirm.
+                  Your email is verified. Choose a new password for <strong className="font-semibold text-ink-900">{resetEmail}</strong>.
                 </p>
 
-                <form onSubmit={handleSendResetOtp} className="mt-6 space-y-4">
+                <form onSubmit={handleSaveNewPassword} className="mt-6 space-y-4">
                   {/* New Password */}
                   <div>
                     <label className="label">
@@ -1141,12 +1107,12 @@ export default function LoginPage() {
                     {isSendingResetOtp ? (
                       <>
                         <Loader2 className="h-4 w-4 animate-spin" />
-                        <span>Sending Verification Code…</span>
+                        <span>Saving New Password…</span>
                       </>
                     ) : (
                       <>
-                        <span>Send Verification Code &amp; Continue</span>
-                        <ArrowRight className="h-4 w-4" />
+                        <ShieldCheck className="h-4 w-4" />
+                        <span>Save New Password</span>
                       </>
                     )}
                   </button>
@@ -1154,18 +1120,18 @@ export default function LoginPage() {
                   <button
                     type="button"
                     onClick={() => {
-                      setStep('forgot_email');
-                      setResetError(null);
+                      resetForgotState();
+                      setStep('credentials');
                     }}
                     className="flex w-full items-center justify-center gap-1.5 text-xs font-semibold text-ink-500 hover:text-ink-800 py-2 transition cursor-pointer"
                   >
                     <ArrowLeft className="h-3.5 w-3.5" />
-                    <span>Back to change email</span>
+                    <span>Cancel and return to Sign in</span>
                   </button>
                 </form>
               </div>
             ) : (
-              // ── Stage 5: Forgot Password Step 3: Enter OTP and Save in DB ──
+              // ── Stage 5: Forgot Password Step 2: Verify the emailed code ──
               <div className="animate-in fade-in slide-in-from-right-4 duration-300">
                 <div className="flex items-center justify-between mb-2">
                   <div className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800 border border-emerald-200">
@@ -1175,22 +1141,22 @@ export default function LoginPage() {
                   <button
                     type="button"
                     onClick={() => {
-                      setStep('forgot_password');
+                      setStep('forgot_email');
                       setResetError(null);
                     }}
                     className="text-xs font-medium text-ink-500 hover:text-ink-800 transition inline-flex items-center gap-1 cursor-pointer"
                   >
                     <ArrowLeft className="h-3.5 w-3.5" />
-                    <span>Edit password</span>
+                    <span>Change email</span>
                   </button>
                 </div>
 
                 <h1 className="font-display text-2xl sm:text-3xl font-bold text-ink-950 tracking-tight mt-2">
-                  Verify Code &amp; Save
+                  Verify Your Email
                 </h1>
                 <p className="mt-1.5 text-sm text-ink-500 leading-relaxed">
                   We sent a 6-digit verification code to{' '}
-                  <strong className="font-semibold text-ink-900">{maskedEmail}</strong>. Enter the code to save your new password in the Records.
+                  <strong className="font-semibold text-ink-900">{maskedEmail}</strong>. Enter it below to continue to setting your new password.
                 </p>
 
                 <div className="mt-8">
@@ -1200,7 +1166,7 @@ export default function LoginPage() {
                   <LoginOtpInputBoxes
                     value={resetOtpDigits}
                     onChange={setResetOtpDigits}
-                    onComplete={(code) => handleVerifyOtpAndSave(code)}
+                    onComplete={(code) => handleVerifyResetOtp(code)}
                     disabled={isResetSubmitting}
                   />
                 </div>
@@ -1215,19 +1181,19 @@ export default function LoginPage() {
                 <div className="mt-6 space-y-3">
                   <button
                     type="button"
-                    onClick={() => handleVerifyOtpAndSave()}
+                    onClick={() => handleVerifyResetOtp()}
                     disabled={resetOtpDigits.join('').length !== 6 || isResetSubmitting}
                     className="btn-primary w-full justify-center flex items-center gap-2 py-3.5 rounded-xl font-semibold shadow-md shadow-emerald-700/20 cursor-pointer disabled:opacity-60 hover:shadow-lg transition-all"
                   >
                     {isResetSubmitting ? (
                       <>
                         <Loader2 className="h-4 w-4 animate-spin" />
-                        <span>Updating Password in Records…</span>
+                        <span>Verifying…</span>
                       </>
                     ) : (
                       <>
                         <ShieldCheck className="h-4 w-4" />
-                        <span>Verify &amp; Save New Password</span>
+                        <span>Verify Code</span>
                       </>
                     )}
                   </button>
@@ -1236,12 +1202,12 @@ export default function LoginPage() {
                     <button
                       type="button"
                       onClick={() => {
-                        setStep('forgot_password');
+                        setStep('forgot_email');
                         setResetError(null);
                       }}
                       className="font-medium text-ink-600 hover:text-ink-900 hover:underline cursor-pointer"
                     >
-                      Back to edit password
+                      Use a different email
                     </button>
 
                     <button

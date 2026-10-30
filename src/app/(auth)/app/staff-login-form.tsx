@@ -14,9 +14,16 @@ import {
   Circle,
   CheckCircle2,
 } from 'lucide-react';
-import { staffLogin, checkStaffResetEmail, sendStaffResetCode, verifyStaffResetCode } from './actions';
+import {
+  staffLogin,
+  startStaffPasswordReset,
+  resendStaffResetCode,
+  verifyStaffResetCode,
+  saveStaffNewPassword,
+} from './actions';
 
-type Mode = 'login' | 'reset_email' | 'reset_password' | 'reset_code';
+// Forgot password: reset_email (verify + send code) -> reset_code -> reset_password
+type Mode = 'login' | 'reset_email' | 'reset_code' | 'reset_password';
 
 export function StaffLoginForm({
   redirectTo,
@@ -37,13 +44,14 @@ export function StaffLoginForm({
 
   // Forgot password
   const [resetEmail, setResetEmail] = useState('');
-  const [resetName, setResetName] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [resetTicket, setResetTicket] = useState('');
+  const [verifiedTicket, setVerifiedTicket] = useState('');
   const [maskedEmail, setMaskedEmail] = useState('');
   const [code, setCode] = useState('');
+  const [isResending, setIsResending] = useState(false);
 
   const rules = useMemo(
     () => ({
@@ -70,6 +78,7 @@ export function StaffLoginForm({
     setConfirmPassword('');
     setCode('');
     setResetTicket('');
+    setVerifiedTicket('');
     setMode('login');
   }
 
@@ -98,41 +107,16 @@ export function StaffLoginForm({
     }
   }
 
-  // Step 1: email -> check it is a staff account
+  // Step 1: email -> confirm it is an active team account -> email a 6-digit code
   async function handleResetEmail(e: React.FormEvent) {
     e.preventDefault();
     if (isLoading) return;
     setIsLoading(true);
     setError(null);
     try {
-      const res = await checkStaffResetEmail(resetEmail);
-      if (!res.success) {
-        setError({ message: res.error || 'No staff account found with this email address.' });
-        return;
-      }
-      setResetName(res.fullName || '');
-      goTo('reset_password');
-    } catch {
-      setError({ message: 'Could not check this email right now. Please try again.' });
-    } finally {
-      setIsLoading(false);
-    }
-  }
-
-  // Step 2: new password + confirm -> email a verification code
-  async function handleResetPassword(e: React.FormEvent) {
-    e.preventDefault();
-    if (isLoading || !allRulesMet || !passwordsMatch) return;
-    setIsLoading(true);
-    setError(null);
-    try {
-      const res = await sendStaffResetCode({
-        email: resetEmail,
-        password: newPassword,
-        confirmPassword,
-      });
+      const res = await startStaffPasswordReset(resetEmail);
       if (!res.success || !res.resetTicket) {
-        setError({ message: res.error || 'Could not send the verification code.' });
+        setError({ message: res.error || 'No team account found with this email address.' });
         return;
       }
       setResetTicket(res.resetTicket);
@@ -141,22 +125,65 @@ export function StaffLoginForm({
       goTo('reset_code');
       toast.success(`Verification code sent to ${res.maskedEmail || resetEmail}`);
     } catch {
-      setError({ message: 'Could not send the verification code. Please try again.' });
+      setError({ message: 'Could not check this email right now. Please try again.' });
     } finally {
       setIsLoading(false);
     }
   }
 
-  // Step 3: code -> save the new password
+  async function handleResendCode() {
+    if (isResending || !resetTicket) return;
+    setIsResending(true);
+    setError(null);
+    try {
+      const res = await resendStaffResetCode(resetTicket);
+      if (!res.success || !res.resetTicket) {
+        setError({ message: res.error || 'Could not resend the code.' });
+        return;
+      }
+      setResetTicket(res.resetTicket);
+      setCode('');
+      toast.success('A new verification code has been sent.');
+    } catch {
+      setError({ message: 'Could not resend the code. Please try again.' });
+    } finally {
+      setIsResending(false);
+    }
+  }
+
+  // Step 2: code -> verified
   async function handleResetCode(e: React.FormEvent) {
     e.preventDefault();
     if (isLoading || code.length !== 6) return;
     setIsLoading(true);
     setError(null);
     try {
-      const res = await verifyStaffResetCode({ email: resetEmail, resetTicket, code });
-      if (!res.success) {
+      const res = await verifyStaffResetCode({ resetTicket, code });
+      if (!res.success || !res.verifiedTicket) {
         setError({ message: res.error || 'Invalid verification code.' });
+        return;
+      }
+      setVerifiedTicket(res.verifiedTicket);
+      setNewPassword('');
+      setConfirmPassword('');
+      goTo('reset_password');
+    } catch {
+      setError({ message: 'Could not verify the code. Please try again.' });
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  // Step 3: new password + confirm -> saved
+  async function handleResetPassword(e: React.FormEvent) {
+    e.preventDefault();
+    if (isLoading || !allRulesMet || !passwordsMatch) return;
+    setIsLoading(true);
+    setError(null);
+    try {
+      const res = await saveStaffNewPassword({ verifiedTicket, password: newPassword, confirmPassword });
+      if (!res.success) {
+        setError({ message: res.error || 'Could not update the password.' });
         return;
       }
       toast.success('Password updated successfully');
@@ -214,9 +241,9 @@ export function StaffLoginForm({
         </h1>
         <p className="mt-1 text-sm text-ink-500">
           {mode === 'login' && 'Travinco admin & staff portal'}
-          {mode === 'reset_email' && 'Enter your staff email address'}
-          {mode === 'reset_password' && `Choose a new password${resetName ? ` for ${resetName}` : ''}`}
+          {mode === 'reset_email' && 'Enter your email address to receive a verification code'}
           {mode === 'reset_code' && `Enter the 6-digit code sent to ${maskedEmail}`}
+          {mode === 'reset_password' && 'Email verified. Choose your new password'}
         </p>
       </div>
 
@@ -318,7 +345,7 @@ export function StaffLoginForm({
         <form onSubmit={handleResetEmail} className="space-y-4" noValidate>
           <div>
             <label className="label" htmlFor="reset-email">
-              Staff email
+              Email
             </label>
             <div className="relative">
               <input
@@ -342,7 +369,7 @@ export function StaffLoginForm({
             className="btn-primary flex w-full items-center justify-center gap-2 py-3 disabled:opacity-50"
           >
             {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            <span>{isLoading ? 'Checking…' : 'Continue'}</span>
+            <span>{isLoading ? 'Verifying…' : 'Verify & send code'}</span>
           </button>
           {backLink}
         </form>
@@ -412,11 +439,8 @@ export function StaffLoginForm({
             className="btn-primary flex w-full items-center justify-center gap-2 py-3 disabled:opacity-50"
           >
             {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            <span>{isLoading ? 'Sending code…' : 'Save new password'}</span>
+            <span>{isLoading ? 'Updating…' : 'Update password'}</span>
           </button>
-          <p className="text-center text-[11px] text-ink-400">
-            For your security we&apos;ll email a 6-digit code to confirm it&apos;s you.
-          </p>
           {backLink}
         </form>
       )}
@@ -448,14 +472,15 @@ export function StaffLoginForm({
             className="btn-primary flex w-full items-center justify-center gap-2 py-3 disabled:opacity-50"
           >
             {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            <span>{isLoading ? 'Saving…' : 'Confirm & save password'}</span>
+            <span>{isLoading ? 'Verifying…' : 'Verify code'}</span>
           </button>
           <button
             type="button"
-            onClick={() => goTo('reset_password')}
-            className="w-full text-xs font-medium text-brand-600 hover:underline"
+            onClick={handleResendCode}
+            disabled={isResending}
+            className="w-full text-xs font-medium text-brand-600 hover:underline disabled:opacity-60"
           >
-            Didn&apos;t get the code? Send again
+            {isResending ? 'Sending a new code…' : 'Didn’t get the code? Send again'}
           </button>
           {backLink}
         </form>

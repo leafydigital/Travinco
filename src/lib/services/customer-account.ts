@@ -1,5 +1,8 @@
 import 'server-only';
 import { createCustomerClient } from '@/lib/supabase/server';
+import { createServiceClient } from '@/lib/supabase/service';
+import { escapeLike } from '@/lib/auth/signup-rules';
+import { splitEnquiryMessage } from '@/lib/enquiry-display';
 import type { InvoiceDoc } from '@/components/tour/invoice-document';
 
 export type CustomerInvoice = {
@@ -21,39 +24,30 @@ export type CustomerInvoice = {
   trip_title?: string | null;
 };
 
-export type CustomerTripBooking = {
-  id: string;
-  booking_number: string;
-  booking_status: string;
-  payment_status: string;
-  total_amount: number;
-  travel_start_date: string;
-  travel_end_date: string;
-  created_at: string;
-  package_title?: string;
-  package_slug?: string;
-  package_cover_image?: string | null;
-};
-
 export type CustomerTripEnquiry = {
   id: string;
   enquiry_number: string;
   status: string;
   destination: string | null;
+  travel_date: string | null;
+  number_of_adults: number;
+  number_of_children: number;
+  number_of_infants: number;
   created_at: string;
   package_title?: string;
 };
 
 export type CustomerDashboardData = {
   invoices: CustomerInvoice[];
-  bookings: CustomerTripBooking[];
   enquiries: CustomerTripEnquiry[];
 };
 
 /**
- * Retrieves all data for the customer's "My Bookings & Invoices" page.
- * Strictly focuses on Invoices: when admin converts quotation to invoice,
- * the invoice is displayed here for the customer.
+ * Retrieves all data for the customer's "My Bookings" page:
+ * - invoices (shown once the team converts a quotation into an invoice)
+ * - enquiries submitted through the "Book with us" / package enquiry forms
+ *   (Contact-page messages are excluded).
+ * Callers must pass the email of the verified, signed-in customer.
  */
 export async function getCustomerDashboardData(accountEmail: string): Promise<CustomerDashboardData> {
   const supabase = await createCustomerClient();
@@ -113,66 +107,45 @@ export async function getCustomerDashboardData(accountEmail: string): Promise<Cu
     };
   });
 
-  // 3. Fetch legacy / direct bookings (if any)
-  let bookingsList: CustomerTripBooking[] = [];
-  if (customerId) {
-    const { data: rawBookings } = await supabase
-      .from('bookings')
+  // 3. Booking-form enquiries for this email. Read with the service role (RLS does
+  //    not grant customers access to enquiries); scoped strictly to the session email.
+  let enquiriesList: CustomerTripEnquiry[] = [];
+  try {
+    const service = createServiceClient();
+    const { data: rawEnquiries, error: enqErr } = await service
+      .from('enquiries')
       .select(
-        'id, booking_number, booking_status, payment_status, total_amount, travel_start_date, travel_end_date, created_at, travel_packages(title, slug, cover_image_url)'
+        'id, enquiry_number, status, destination, travel_date, number_of_adults, number_of_children, number_of_infants, message, source, is_deleted, created_at, travel_packages(title)'
       )
-      .eq('customer_id', customerId)
-      .order('created_at', { ascending: false });
+      .ilike('email', escapeLike(normalizedEmail))
+      .eq('source', 'website')
+      .order('created_at', { ascending: false })
+      .limit(100);
+    if (enqErr) console.error('Customer enquiries query error:', enqErr.message);
 
-    if (rawBookings) {
-      bookingsList = rawBookings.map((b: any) => {
-        const pkg = Array.isArray(b.travel_packages) ? b.travel_packages[0] : b.travel_packages;
+    enquiriesList = (rawEnquiries ?? [])
+      .filter((e: any) => e.is_deleted !== true && !splitEnquiryMessage(e.message).isContactForm)
+      .map((e: any) => {
+        const pkg = Array.isArray(e.travel_packages) ? e.travel_packages[0] : e.travel_packages;
         return {
-          id: b.id,
-          booking_number: b.booking_number,
-          booking_status: b.booking_status,
-          payment_status: b.payment_status,
-          total_amount: Number(b.total_amount),
-          travel_start_date: b.travel_start_date,
-          travel_end_date: b.travel_end_date,
-          created_at: b.created_at,
+          id: e.id,
+          enquiry_number: e.enquiry_number,
+          status: e.status,
+          destination: e.destination,
+          travel_date: e.travel_date,
+          number_of_adults: Number(e.number_of_adults) || 0,
+          number_of_children: Number(e.number_of_children) || 0,
+          number_of_infants: Number(e.number_of_infants) || 0,
+          created_at: e.created_at,
           package_title: pkg?.title,
-          package_slug: pkg?.slug,
-          package_cover_image: pkg?.cover_image_url,
         };
       });
-    }
+  } catch (err) {
+    console.error('Customer enquiries load failed:', err);
   }
-
-  // 4. Fetch enquiries (pending quote requests)
-  const { data: rawEnquiries } = await supabase
-    .from('enquiries')
-    .select('id, enquiry_number, status, destination, created_at, travel_packages(title)')
-    .ilike('email', normalizedEmail)
-    .order('created_at', { ascending: false });
-
-  // Exclude enquiries that already became confirmed bookings
-  const bookedEnquiryIds = new Set(
-    (bookingsList as any[]).map((b) => b.enquiry_id).filter(Boolean)
-  );
-
-  const enquiriesList: CustomerTripEnquiry[] = (rawEnquiries ?? [])
-    .filter((e: any) => !bookedEnquiryIds.has(e.id))
-    .map((e: any) => {
-      const pkg = Array.isArray(e.travel_packages) ? e.travel_packages[0] : e.travel_packages;
-      return {
-        id: e.id,
-        enquiry_number: e.enquiry_number,
-        status: e.status,
-        destination: e.destination,
-        created_at: e.created_at,
-        package_title: pkg?.title,
-      };
-    });
 
   return {
     invoices: invoicesList,
-    bookings: bookingsList,
     enquiries: enquiriesList,
   };
 }

@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
+import { createServiceClient } from '@/lib/supabase/service';
 import { requireProfile } from '@/lib/supabase/auth-helpers';
 import { redirect, notFound } from 'next/navigation';
 import Link from 'next/link';
@@ -14,9 +15,11 @@ export default async function EditUserPage({ params }: { params: { id: string } 
   }
 
   const supabase = await createClient();
-  const [{ data: user }, { data: roleRows }] = await Promise.all([
+  const [{ data: user }, { data: roleRows }, tempRes] = await Promise.all([
     supabase.from('profiles').select('*').eq('id', params.id).single(),
     supabase.from('staff_roles').select('id, name, pages, is_system').order('is_system', { ascending: false }).order('name'),
+    // The admin-set password (cleared automatically once the user changes it themselves)
+    createServiceClient().from('staff_temp_passwords').select('temp_password').eq('profile_id', params.id).maybeSingle(),
   ]);
 
   if (!user) notFound();
@@ -41,7 +44,7 @@ export default async function EditUserPage({ params }: { params: { id: string } 
         </Link>
         <div>
           <h1 className="text-xl font-bold tracking-tight text-ink-900">Edit user — {user.full_name}</h1>
-          <p className="mt-0.5 text-xs text-ink-500">Change the name or role. Page access follows the role.</p>
+          <p className="mt-0.5 text-xs text-ink-500">Change the name, role or password. Page access follows the role.</p>
         </div>
       </div>
       <UserForm
@@ -49,7 +52,12 @@ export default async function EditUserPage({ params }: { params: { id: string } 
         roles={roles}
         userId={user.id}
         isSelf={user.id === profile.id}
-        initial={{ full_name: user.full_name, email: user.email, role_id: user.role_id ?? null }}
+        initial={{
+          full_name: user.full_name,
+          email: user.email,
+          role_id: user.role_id ?? null,
+          password: tempRes.error ? null : tempRes.data?.temp_password ?? null,
+        }}
       />
     </div>
   );

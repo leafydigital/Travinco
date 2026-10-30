@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
+import { createServiceClient } from '@/lib/supabase/service';
 import { requireProfile } from '@/lib/supabase/auth-helpers';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
@@ -29,7 +30,9 @@ export default async function AdminUsersPage() {
       .select('key')
       .like('key', 'deleted_user_%'),
     supabase.from('staff_roles').select('id, name, pages, is_system').order('is_system', { ascending: false }).order('name'),
-    supabase.from('staff_temp_passwords').select('profile_id, temp_password, created_at'),
+    // Admin-only table; read with the service role after the admin check above so a
+    // missing/misconfigured RLS policy can't silently hide every password
+    createServiceClient().from('staff_temp_passwords').select('profile_id, temp_password, created_at'),
   ]);
 
   const roles = (rolesRes.data ?? []).map((r) => ({
@@ -100,7 +103,7 @@ export default async function AdminUsersPage() {
         <div>
           <h1 className="text-xl font-bold tracking-tight text-ink-900">Users</h1>
           <p className="text-xs text-ink-500 mt-0.5">
-            Create staff accounts, assign a role, and share their temporary password.
+            Create staff accounts, assign a role, and manage their passwords.
           </p>
         </div>
         <Link href="/travinco_dashboard/users/new" className="btn-primary">

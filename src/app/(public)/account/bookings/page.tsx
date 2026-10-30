@@ -6,8 +6,8 @@ import { getCustomerDashboardData } from '@/lib/services/customer-account';
 import { BookingsView } from './bookings-view';
 
 export const metadata: Metadata = {
-  title: 'My Invoices & Bookings — Travinco',
-  description: 'View your official tour invoices, payment statuses, and trip booking history.',
+  title: 'My Bookings — Travinco',
+  description: 'View your tour invoices and the status of your trip enquiries.',
 };
 
 export default async function BookingsPage() {
@@ -41,15 +41,15 @@ export default async function BookingsPage() {
           </Link>
 
           <span className="inline-flex items-center rounded-full bg-white/10 px-3.5 py-1 text-xs font-semibold tracking-wider uppercase text-sand-300 border border-white/20 backdrop-blur-md mb-4 shadow-sm animate-in fade-in slide-in-from-bottom-2 duration-300">
-            Customer Portal • Invoices &amp; Bookings
+            Customer Portal • Invoices &amp; Enquiries
           </span>
 
           <h1 className="font-display text-3xl sm:text-5xl font-bold uppercase text-white tracking-tight drop-shadow-md animate-in fade-in slide-in-from-bottom-3 duration-500">
-            My Invoices &amp; Bookings
+            My Bookings
           </h1>
 
           <p className="mt-3 text-sm sm:text-base text-white/85 font-light leading-relaxed max-w-xl animate-in fade-in slide-in-from-bottom-4 duration-700">
-            Review your official tour invoices, payment receipts, and confirmed trip details all in one place.
+            Download your official tour invoices and follow the status of your trip enquiries, all in one place.
           </p>
         </div>
       </section>

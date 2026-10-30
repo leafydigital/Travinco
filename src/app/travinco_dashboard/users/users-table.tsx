@@ -15,18 +15,11 @@ import {
   Eye,
   EyeOff,
   Copy,
-  RefreshCw,
-  X,
-  CheckCircle2,
-  Check,
-  Circle,
 } from 'lucide-react';
 import { toast, confirmAlert } from '@/lib/admin-alert';
 import { formatDate } from '@/lib/utils/format';
 import { cn } from '@/lib/utils/cn';
-import { PASSWORD_RULES, generateTempPassword, passwordMeetsRules } from '@/lib/temp-password';
-import { ModalPortal } from '@/components/ui/modal-portal';
-import { setStaffActive, deleteStaffUser, resetStaffTempPassword } from './actions';
+import { setStaffActive, deleteStaffUser } from './actions';
 import type { Tables } from '@/types/database';
 
 export type RoleOption = { id: string; name: string; pages: string[]; isSystem: boolean };
@@ -49,7 +42,6 @@ export function UsersTable({ initialUsers, currentUserId, currentUserRole, roles
   const [pendingActiveId, setPendingActiveId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
-  const [resetUser, setResetUser] = useState<Tables<'profiles'> | null>(null);
 
   useEffect(() => {
     setUsers(initialUsers);
@@ -66,6 +58,15 @@ export function UsersTable({ initialUsers, currentUserId, currentUserRole, roles
   const isAdminUser = (u: Tables<'profiles'>) =>
     u.role === 'super_admin' || u.role === 'admin' || Boolean(u.role_id && roleById.get(u.role_id)?.isSystem);
 
+  // Users with the legacy 'admin' role but no role_id belong to the built-in Admin role
+  const systemRole = roles.find((r) => r.isSystem);
+  const roleKey = (u: Tables<'profiles'>): string => {
+    if (u.role === 'super_admin') return 'super_admin';
+    if (u.role_id && roleById.has(u.role_id)) return u.role_id;
+    if (u.role === 'admin') return systemRole?.id ?? 'admin';
+    return 'none';
+  };
+
   const filteredUsers = users.filter((u) => {
     const q = searchQuery.toLowerCase().trim();
     const matchesSearch =
@@ -73,13 +74,24 @@ export function UsersTable({ initialUsers, currentUserId, currentUserRole, roles
       u.full_name?.toLowerCase().includes(q) ||
       u.email?.toLowerCase().includes(q) ||
       roleLabel(u).toLowerCase().includes(q);
-    const matchesRole = roleFilter === 'all' || roleLabel(u) === roleFilter;
+    const matchesRole = roleFilter === 'all' || roleKey(u) === roleFilter;
     const matchesStatus =
       statusFilter === 'all' || (statusFilter === 'active' && u.is_active) || (statusFilter === 'inactive' && !u.is_active);
     return matchesSearch && matchesRole && matchesStatus;
   });
 
-  const roleFilterOptions = Array.from(new Set(users.map(roleLabel))).sort();
+  // Every defined role is listed (even with no users yet), with how many users have it
+  const roleCounts = users.reduce<Record<string, number>>((acc, u) => {
+    const k = roleKey(u);
+    acc[k] = (acc[k] ?? 0) + 1;
+    return acc;
+  }, {});
+  const roleFilterOptions: { value: string; label: string }[] = [
+    ...(roleCounts.super_admin ? [{ value: 'super_admin', label: 'Super Admin' }] : []),
+    ...(!systemRole && roleCounts.admin ? [{ value: 'admin', label: 'Admin' }] : []),
+    ...roles.map((r) => ({ value: r.id, label: r.name })),
+    ...(roleCounts.none ? [{ value: 'none', label: 'No role' }] : []),
+  ].map((o) => ({ ...o, label: `${o.label} (${roleCounts[o.value] ?? 0})` }));
 
   /** Admins can't manage the Super Admin, and only the Super Admin manages other admins. */
   const canManage = (u: Tables<'profiles'>) =>
@@ -129,6 +141,13 @@ export function UsersTable({ initialUsers, currentUserId, currentUserRole, roles
 
   return (
     <div className="space-y-4">
+      {tempPasswords === null && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+          Passwords can&apos;t be shown because the <code>staff_temp_passwords</code> table is missing. Run{' '}
+          <code>supabase/roles_and_users_migration.sql</code> in the Supabase SQL editor.
+        </div>
+      )}
+
       {/* Filters */}
       <div className="card p-4">
         <div className="flex flex-col items-stretch justify-between gap-3 sm:flex-row sm:items-center">
@@ -150,8 +169,8 @@ export function UsersTable({ initialUsers, currentUserId, currentUserRole, roles
             >
               <option value="all">All roles</option>
               {roleFilterOptions.map((r) => (
-                <option key={r} value={r}>
-                  {r}
+                <option key={r.value} value={r.value}>
+                  {r.label}
                 </option>
               ))}
             </select>
@@ -161,8 +180,8 @@ export function UsersTable({ initialUsers, currentUserId, currentUserRole, roles
               className="input h-10 min-w-[120px] bg-white px-3 py-1.5 text-xs"
             >
               <option value="all">All statuses</option>
-              <option value="active">Active only</option>
-              <option value="inactive">Deactivated only</option>
+              <option value="active">Active</option>
+              <option value="inactive">Deactivated</option>
             </select>
           </div>
         </div>
@@ -176,7 +195,7 @@ export function UsersTable({ initialUsers, currentUserId, currentUserRole, roles
               <tr className="border-b border-ink-100 bg-ink-50/60 text-xs font-semibold uppercase tracking-wider text-ink-500">
                 <th className="px-5 py-3.5">User</th>
                 <th className="px-5 py-3.5">Role</th>
-                <th className="px-5 py-3.5">Temporary password</th>
+                <th className="px-5 py-3.5">Password</th>
                 <th className="px-5 py-3.5">Status</th>
                 <th className="px-5 py-3.5">Joined</th>
                 <th className="whitespace-nowrap px-5 py-3.5 text-right">Actions</th>
@@ -278,14 +297,17 @@ export function UsersTable({ initialUsers, currentUserId, currentUserRole, roles
                             </button>
                           </div>
                         ) : tempPasswords === null ? (
-                          <span className="text-xs text-ink-400">—</span>
+                          <span className="text-xs text-ink-400" title="Password storage is not set up">—</span>
+                        ) : isSelf ? (
+                          <span className="text-xs text-ink-400">Your own password</span>
                         ) : (
-                          <span
-                            className="inline-flex items-center gap-1 text-xs text-emerald-700"
-                            title="The user has set their own password. It is private and can't be shown."
-                          >
-                            <CheckCircle2 className="h-3.5 w-3.5" /> Changed by user
-                          </span>
+                          <Link
+                            href={`/travinco_dashboard/users/${u.id}`}
+                            className="inline-flex items-center gap-1 text-xs text-ink-500 hover:text-brand-700 hover:underline"
+                            title="No admin-set password is stored (user created before this feature, or they changed it themselves). Open Edit to set a new one."
+                            >
+                              <KeyRound className="h-3.5 w-3.5" /> Not set — set in Edit
+                            </Link>
                         )}
                       </td>
 
@@ -344,16 +366,6 @@ export function UsersTable({ initialUsers, currentUserId, currentUserRole, roles
 
                           <button
                             type="button"
-                            onClick={() => setResetUser(u)}
-                            disabled={!manageable || isSelf || tempPasswords === null}
-                            title={isSelf ? 'Use “Change password” in the sidebar for your own account' : 'Set a new temporary password'}
-                            className="inline-flex items-center gap-1 rounded-lg border border-ocean-200 bg-ocean-50 px-2.5 py-1 text-xs font-medium text-ocean-700 transition-colors hover:bg-ocean-100 disabled:cursor-not-allowed disabled:opacity-40"
-                          >
-                            <KeyRound className="h-3 w-3" /> Reset password
-                          </button>
-
-                          <button
-                            type="button"
                             data-no-confirm-save="true"
                             onClick={() => handleDelete(u)}
                             disabled={isSelf || !manageable || deletingId === u.id}
@@ -373,122 +385,6 @@ export function UsersTable({ initialUsers, currentUserId, currentUserRole, roles
           </table>
         </div>
       </div>
-
-      {resetUser && (
-        <ResetPasswordDialog
-          user={resetUser}
-          onClose={() => setResetUser(null)}
-          onDone={() => {
-            setRevealed((prev) => new Set(prev).add(resetUser.id));
-            setResetUser(null);
-            router.refresh();
-          }}
-        />
-      )}
     </div>
-  );
-}
-
-function ResetPasswordDialog({
-  user,
-  onClose,
-  onDone,
-}: {
-  user: Tables<'profiles'>;
-  onClose: () => void;
-  onDone: () => void;
-}) {
-  const [password, setPassword] = useState(() => generateTempPassword());
-  const [saving, setSaving] = useState(false);
-  const valid = passwordMeetsRules(password);
-
-  async function handleReset() {
-    if (!valid || saving) return;
-    setSaving(true);
-    const res = await resetStaffTempPassword(user.id, password).catch(() => ({ error: 'Could not reset the password.' }));
-    setSaving(false);
-    if ('error' in res && res.error) return void toast.error(res.error);
-    onDone();
-    void toast.success('Password reset successfully', {
-      description: `Share the new temporary password with ${user.full_name}. It stays visible on this page until they change it.`,
-    });
-  }
-
-  return (
-    <ModalPortal>
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-950/50 p-4">
-        <div className="w-full max-w-md space-y-4 rounded-xl border border-ink-100 bg-white p-5 shadow-xl">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h3 className="text-base font-semibold text-ink-900">Reset password</h3>
-              <p className="text-xs text-ink-500">
-                New temporary password for <b>{user.full_name}</b> ({user.email})
-              </p>
-            </div>
-            <button type="button" onClick={onClose} className="rounded-lg p-1 text-ink-400 hover:bg-ink-100" aria-label="Close">
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-
-          <div>
-            <div className="flex gap-2">
-              <input
-                value={password}
-                onChange={(e) => setPassword(e.target.value.replace(/\s/g, ''))}
-                maxLength={72}
-                className="input flex-1 font-mono"
-                aria-label="Temporary password"
-              />
-              <button
-                type="button"
-                data-no-confirm-save="true"
-                onClick={() => setPassword(generateTempPassword())}
-                className="btn-outline px-3"
-                title="Generate a new password"
-              >
-                <RefreshCw className="h-4 w-4" />
-              </button>
-            </div>
-            <ul className="mt-2 grid grid-cols-2 gap-1 text-[11px]">
-              {PASSWORD_RULES.map((r) => {
-                const ok = r.test(password);
-                return (
-                  <li key={r.key} className={cn('flex items-center gap-1.5', ok ? 'text-emerald-700' : 'text-ink-400')}>
-                    {ok ? <Check className="h-3 w-3" /> : <Circle className="h-3 w-3" />}
-                    {r.label}
-                  </li>
-                );
-              })}
-            </ul>
-            <p className="mt-2 text-[11px] text-ink-400">
-              The user signs in with this password and can change it from “Change password”. Once they do, it&apos;s no
-              longer shown here.
-            </p>
-          </div>
-
-          <div className="flex justify-end gap-2 border-t border-ink-100 pt-3">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={saving}
-              className="rounded-lg bg-red-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-red-700 disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={handleReset}
-              disabled={!valid || saving}
-              data-confirm-save="true"
-              data-confirm-label="Reset password"
-              className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50"
-            >
-              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <KeyRound className="h-3.5 w-3.5" />}
-              {saving ? 'Resetting...' : 'Reset password'}
-            </button>
-          </div>
-        </div>
-      </div>
-    </ModalPortal>
   );
 }

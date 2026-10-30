@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import { formatDateTime } from '@/lib/utils/format';
 import { NotesPanel } from './notes-followups';
 import { EnquiryDetailCard } from './enquiry-detail-card';
+import { maskBadWords } from '@/lib/validations/contact-rules';
 
 export default async function EnquiryDetailPage({
   params,
@@ -43,7 +44,8 @@ export default async function EnquiryDetailPage({
   const pkg = Array.isArray(pkgRaw) ? pkgRaw[0] ?? null : pkgRaw;
   return (
     <EnquiryDetailCard
-      enquiry={enquiry}
+      // Customer text is stored as typed; staff only ever receive the masked version
+      enquiry={{ ...enquiry, message: maskBadWords(enquiry.message) }}
       packageTitle={pkg?.title ?? null}
       staff={staff ?? []}
       canEdit={canEdit}

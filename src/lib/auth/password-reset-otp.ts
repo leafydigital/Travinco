@@ -1,3 +1,5 @@
+import 'server-only';
+import { randomUUID } from 'crypto';
 import { escapeLike } from '@/lib/auth/signup-rules';
 import { createServiceClient } from '@/lib/supabase/service';
 import { sendGmail } from '@/lib/email/gmail';
@@ -9,31 +11,66 @@ import {
   decryptTicket,
   maskEmail,
 } from '@/lib/auth/otp-crypto';
+import { getCustomerAccountStatus, accountStatusMessage } from '@/lib/auth/account-status';
 import { z } from 'zod';
 
-const RESET_OTP_TTL_MINUTES = 10;
-const MAX_OTP_ATTEMPTS = 5;
+/**
+ * Email-OTP password flows.
+ *
+ * Forgot password (customer /account/login and staff /app):
+ *   1. email  -> account must exist and be active -> 6-digit code emailed
+ *   2. code   -> verified -> short-lived "verified" ticket
+ *   3. new password + confirm (with the verified ticket) -> saved
+ *
+ * Update password (signed-in customer, see account actions):
+ *   current + new + confirm -> current verified -> code emailed -> code -> saved
+ *
+ * Tickets are AES-GCM encrypted (otp-crypto) so they can travel through the browser
+ * without exposing the code hash, the email or a pending password.
+ */
 
-type ResetOtpMemoryRecord = {
+const OTP_TTL_MINUTES = 10;
+const VERIFIED_TTL_MINUTES = 10;
+const MAX_OTP_ATTEMPTS = 5;
+const RESEND_COOLDOWN_MS = 45 * 1000;
+
+export type ResetScope = 'customer' | 'staff' | 'change';
+
+type OtpMemoryRecord = {
   codeHash: string;
   expiresAt: number;
   attempts: number;
   createdAt: number;
-  userId?: string;
 };
 
 // Global memory cache across requests (survives HMR in local dev)
 declare global {
   // eslint-disable-next-line no-var
-  var __travincoResetOtpMemoryMap: Map<string, ResetOtpMemoryRecord> | undefined;
+  var __travincoPasswordOtpMemoryMap: Map<string, OtpMemoryRecord> | undefined;
+  // eslint-disable-next-line no-var
+  var __travincoUsedResetTickets: Map<string, number> | undefined;
 }
 
-function getMemoryMap(): Map<string, ResetOtpMemoryRecord> {
-  if (!globalThis.__travincoResetOtpMemoryMap) {
-    globalThis.__travincoResetOtpMemoryMap = new Map();
+function getMemoryMap(): Map<string, OtpMemoryRecord> {
+  if (!globalThis.__travincoPasswordOtpMemoryMap) {
+    globalThis.__travincoPasswordOtpMemoryMap = new Map();
   }
-  return globalThis.__travincoResetOtpMemoryMap;
+  return globalThis.__travincoPasswordOtpMemoryMap;
 }
+
+function getUsedTickets(): Map<string, number> {
+  if (!globalThis.__travincoUsedResetTickets) {
+    globalThis.__travincoUsedResetTickets = new Map();
+  }
+  const used = globalThis.__travincoUsedResetTickets;
+  const now = Date.now();
+  used.forEach((exp, id) => {
+    if (exp < now) used.delete(id);
+  });
+  return used;
+}
+
+const memKey = (scope: ResetScope, email: string) => `${scope}:${email}`;
 
 export const resetPasswordSchema = z
   .object({
@@ -66,6 +103,12 @@ export type SendResetOtpResult = {
 };
 
 export type VerifyResetOtpResult = {
+  success?: boolean;
+  error?: string;
+  verifiedTicket?: string;
+};
+
+export type SaveResetPasswordResult = {
   success?: boolean;
   error?: string;
 };
@@ -109,7 +152,7 @@ export async function checkCustomerEmailExists(
 
     if (!foundUser) {
       try {
-        const { data: usersData } = await serviceSupabase.auth.admin.listUsers();
+        const { data: usersData } = await serviceSupabase.auth.admin.listUsers({ perPage: 1000 });
         const authUser = usersData?.users?.find(
           (u) =>
             (u.user_metadata?.username as string)?.toLowerCase() === trimmed.toLowerCase()
@@ -169,15 +212,6 @@ export async function checkCustomerEmailExists(
         .maybeSingle();
 
       if (customerRow) {
-        if (customerRow.is_deleted) {
-          return { success: false, error: 'This customer account has been deleted.' };
-        }
-        if (customerRow.is_active === false) {
-          return {
-            success: false,
-            error: 'This account has been deactivated. Please contact support.',
-          };
-        }
         foundUser = {
           id: customerRow.id,
           email: customerRow.email || targetEmail,
@@ -192,7 +226,7 @@ export async function checkCustomerEmailExists(
   // C. Check Supabase Auth users via admin API
   if (!foundUser) {
     try {
-      const { data: usersData, error: listError } = await serviceSupabase.auth.admin.listUsers();
+      const { data: usersData, error: listError } = await serviceSupabase.auth.admin.listUsers({ perPage: 1000 });
       if (!listError && usersData?.users) {
         const authUser = usersData.users.find(
           (u) => u.email?.toLowerCase() === targetEmail
@@ -219,6 +253,23 @@ export async function checkCustomerEmailExists(
     };
   }
 
+  // Staff accounts recover their password on the staff sign-in page (/app)
+  try {
+    const [{ data: staffRows }, { data: accountRows }] = await Promise.all([
+      serviceSupabase.from('profiles').select('id').ilike('email', escapeLike(targetEmail)).limit(1),
+      serviceSupabase.from('customer_accounts').select('id').ilike('email', escapeLike(targetEmail)).limit(1),
+    ]);
+    if (staffRows?.length && !accountRows?.length) {
+      return { success: false, error: 'No customer account found with this email address or username.' };
+    }
+  } catch {
+    // Lookup failure is not fatal; the emailed code still proves mailbox ownership
+  }
+
+  // Deactivated / deleted customers cannot recover a password (same rule as sign-in)
+  const blocked = accountStatusMessage(await getCustomerAccountStatus(targetEmail));
+  if (blocked) return { success: false, error: blocked };
+
   return {
     success: true,
     email: targetEmail,
@@ -226,301 +277,324 @@ export async function checkCustomerEmailExists(
   };
 }
 
-/**
- * Step 2: User has entered and confirmed their new password.
- * Validates password rules, generates 6-digit OTP, encrypts the pending reset payload,
- * and sends the 6-digit OTP code to the customer's email.
- */
-export async function sendResetPasswordOtpWithNewPassword(params: {
+// ─── Shared OTP core ──────────────────────────────────────────────────────────
+
+type OtpTicket = {
+  purpose: 'otp';
+  scope: ResetScope;
   email: string;
-  password: string;
-  confirmPassword: string;
+  codeHash: string;
+  exp: number;
+  /** Extra data carried to the verify step (e.g. the pending password for "change"). */
+  data?: Record<string, string>;
+};
+
+type VerifiedTicket = {
+  purpose: 'verified';
+  scope: ResetScope;
+  email: string;
+  id: string;
+  exp: number;
+};
+
+const EMAIL_COPY: Record<ResetScope, { title: string; intro: string; subject: string }> = {
+  customer: {
+    title: 'Password Reset Verification',
+    intro:
+      'You have requested to reset the password for your Travinco account. Enter the 6-digit code below to verify it is you, then choose your new password.',
+    subject: 'is your Travinco password reset code',
+  },
+  staff: {
+    title: 'Team Password Reset',
+    intro:
+      'A password reset was requested for your Travinco team account. Enter the 6-digit code below to verify it is you, then choose your new password.',
+    subject: 'is your Travinco team password reset code',
+  },
+  change: {
+    title: 'Confirm Password Update',
+    intro:
+      'You asked to update the password for your Travinco account. Enter the 6-digit code below to confirm and save your new password.',
+    subject: 'is your Travinco password update code',
+  },
+};
+
+const HTML_ESCAPES: Record<string, string> = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#39;',
+};
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (c) => HTML_ESCAPES[c] ?? c);
+}
+
+function otpEmailHtml(scope: ResetScope, fullName: string, otpCode: string): string {
+  const copy = EMAIL_COPY[scope];
+  return `
+    <!DOCTYPE html>
+    <html>
+      <head><meta charset="utf-8"><title>${copy.title}</title></head>
+      <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; padding: 24px; margin: 0;">
+        <div style="max-width: 520px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+          <div style="background-color: #022c22; padding: 28px 24px; text-align: center;">
+            <h1 style="color: #ffffff; font-size: 24px; margin: 0; font-weight: 700; letter-spacing: 1px;">TRAVINCO</h1>
+            <p style="color: #a7f3d0; font-size: 13px; margin: 6px 0 0; text-transform: uppercase; letter-spacing: 1.5px;">${copy.title}</p>
+          </div>
+          <div style="padding: 32px 28px;">
+            <p style="font-size: 15px; color: #1e293b; margin: 0 0 16px; font-weight: 600;">Hello ${escapeHtml(fullName)},</p>
+            <p style="font-size: 14px; color: #475569; line-height: 1.6; margin: 0 0 24px;">${copy.intro}</p>
+            <div style="background-color: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 12px; padding: 20px; text-align: center; margin: 0 0 24px;">
+              <span style="font-family: 'Courier New', Courier, monospace; font-size: 34px; font-weight: 800; letter-spacing: 8px; color: #065f46; display: inline-block;">${otpCode}</span>
+              <p style="font-size: 12px; color: #047857; margin: 8px 0 0;">Valid for ${OTP_TTL_MINUTES} minutes</p>
+            </div>
+            <p style="font-size: 13px; color: #64748b; line-height: 1.5; margin: 0;">
+              If you did not request this, please ignore this email. Your existing password will remain unchanged.
+            </p>
+          </div>
+          <div style="background-color: #f8fafc; border-top: 1px solid #f1f5f9; padding: 16px 24px; text-align: center;">
+            <p style="font-size: 11px; color: #94a3b8; margin: 0;">&copy; ${new Date().getFullYear()} Travinco Tours. All rights reserved.</p>
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
+}
+
+/**
+ * Generates a code, emails it and returns the encrypted OTP ticket.
+ * Callers must have already confirmed the account exists and is allowed.
+ */
+export async function sendPasswordOtp(params: {
+  scope: ResetScope;
+  email: string;
+  fullName?: string;
+  data?: Record<string, string>;
 }): Promise<SendResetOtpResult> {
-  const trimmedEmail = params.email.trim().toLowerCase();
-
-  // 1. Validate password schema
-  const parsed = resetPasswordSchema.safeParse({
-    password: params.password,
-    confirmPassword: params.confirmPassword,
-  });
-
-  if (!parsed.success) {
-    return {
-      success: false,
-      error: parsed.error.issues[0]?.message ?? 'Invalid password format.',
-    };
-  }
-
-  // 2. Ensure customer exists
-  const check = await checkCustomerEmailExists(trimmedEmail);
-  if (!check.success) {
-    return { success: false, error: check.error };
-  }
-
-  // 3. Generate OTP and expiration
-  const otpCode = generateOtpCode();
-  const expiresAtMs = Date.now() + RESET_OTP_TTL_MINUTES * 60 * 1000;
-  const hashedCode = hashToken(otpCode);
-
+  const email = params.email.trim().toLowerCase();
   const memoryMap = getMemoryMap();
-  memoryMap.set(trimmedEmail, {
-    codeHash: hashedCode,
-    expiresAt: expiresAtMs,
-    attempts: 0,
-    createdAt: Date.now(),
-  });
+  const key = memKey(params.scope, email);
 
-  // Securely encrypt the pending password reset payload
-  const resetTicket = encryptTicket({
-    email: trimmedEmail,
-    password: parsed.data.password,
-    codeHash: hashedCode,
-    exp: expiresAtMs,
-  });
-
-  // 4. Send rich email via Gmail
-  const fullName = check.fullName || 'Traveler';
-  const html = `
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <meta charset="utf-8">
-        <title>Reset Your Travinco Password</title>
-      </head>
-      <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; padding: 24px; margin: 0;">
-        <div style="max-width: 520px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
-          <div style="background-color: #022c22; padding: 28px 24px; text-align: center;">
-            <h1 style="color: #ffffff; font-size: 24px; margin: 0; font-weight: 700; letter-spacing: 1px;">TRAVINCO</h1>
-            <p style="color: #a7f3d0; font-size: 13px; margin: 6px 0 0; text-transform: uppercase; letter-spacing: 1.5px;">Password Reset Verification</p>
-          </div>
-          <div style="padding: 32px 28px;">
-            <p style="font-size: 15px; color: #1e293b; margin: 0 0 16px; font-weight: 600;">Hello ${fullName},</p>
-            <p style="font-size: 14px; color: #475569; line-height: 1.6; margin: 0 0 24px;">
-              You have requested to reset your password for your Travinco account. Please enter the 6-digit verification code below to confirm and save your new password:
-            </p>
-            <div style="background-color: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 12px; padding: 20px; text-align: center; margin: 0 0 24px;">
-              <span style="font-family: 'Courier New', Courier, monospace; font-size: 34px; font-weight: 800; letter-spacing: 8px; color: #065f46; display: inline-block;">
-                ${otpCode}
-              </span>
-              <p style="font-size: 12px; color: #047857; margin: 8px 0 0;">Valid for ${RESET_OTP_TTL_MINUTES} minutes</p>
-            </div>
-            <p style="font-size: 13px; color: #64748b; line-height: 1.5; margin: 0 0 8px;">
-              If you did not request this password reset, please ignore this email. Your existing password will remain safe and unchanged.
-            </p>
-          </div>
-          <div style="background-color: #f8fafc; border-top: 1px solid #f1f5f9; padding: 16px 24px; text-align: center;">
-            <p style="font-size: 11px; color: #94a3b8; margin: 0;">&copy; ${new Date().getFullYear()} Travinco Tours. All rights reserved.</p>
-          </div>
-        </div>
-      </body>
-    </html>
-  `;
-
-  const emailResult = await sendGmail({
-    to: trimmedEmail,
-    subject: `${otpCode} is your Travinco password reset verification code`,
-    html,
-  });
-
-  if (emailResult.error) {
-    console.error('Failed to send reset verification email:', emailResult.error);
-    return {
-      success: false,
-      error: 'Failed to send verification code email. Please try again.',
-    };
-  }
-
-  return {
-    success: true,
-    resetTicket,
-    maskedEmail: maskEmail(trimmedEmail),
-  };
-}
-
-/**
- * Resends a fresh password reset OTP for an active reset ticket.
- */
-export async function resendCustomerResetPasswordOtpFlow(
-  resetTicket: string
-): Promise<{
-  error?: string;
-  success?: boolean;
-  resetTicket?: string;
-}> {
-  const payload = decryptTicket<{
-    email: string;
-    password: string;
-    codeHash: string;
-    exp: number;
-  }>(resetTicket);
-
-  if (!payload || payload.exp < Date.now()) {
-    return { error: 'Your reset session has expired. Please start over.' };
-  }
-
-  const trimmedEmail = payload.email.trim().toLowerCase();
-  const memoryMap = getMemoryMap();
-  const existingMem = memoryMap.get(trimmedEmail);
-
-  if (existingMem && Date.now() - existingMem.createdAt < 45 * 1000) {
-    return { error: 'Please wait a moment before requesting another code.' };
+  const existing = memoryMap.get(key);
+  if (existing && Date.now() - existing.createdAt < RESEND_COOLDOWN_MS) {
+    return { success: false, error: 'Please wait a moment before requesting another code.' };
   }
 
   const otpCode = generateOtpCode();
-  const expiresAtMs = Date.now() + RESET_OTP_TTL_MINUTES * 60 * 1000;
-  const hashedCode = hashToken(otpCode);
+  const codeHash = hashToken(otpCode);
+  const exp = Date.now() + OTP_TTL_MINUTES * 60 * 1000;
 
-  memoryMap.set(trimmedEmail, {
-    codeHash: hashedCode,
-    expiresAt: expiresAtMs,
-    attempts: 0,
-    createdAt: Date.now(),
-  });
+  memoryMap.set(key, { codeHash, expiresAt: exp, attempts: 0, createdAt: Date.now() });
 
-  const newTicket = encryptTicket({
-    email: trimmedEmail,
-    password: payload.password,
-    codeHash: hashedCode,
-    exp: expiresAtMs,
-  });
-
-  const html = `
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <meta charset="utf-8">
-        <title>Your New Travinco Password Reset Code</title>
-      </head>
-      <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; padding: 24px; margin: 0;">
-        <div style="max-width: 520px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
-          <div style="background-color: #022c22; padding: 28px 24px; text-align: center;">
-            <h1 style="color: #ffffff; font-size: 24px; margin: 0; font-weight: 700; letter-spacing: 1px;">TRAVINCO</h1>
-            <p style="color: #a7f3d0; font-size: 13px; margin: 6px 0 0; text-transform: uppercase; letter-spacing: 1.5px;">Password Reset Verification</p>
-          </div>
-          <div style="padding: 32px 28px;">
-            <p style="font-size: 15px; color: #1e293b; margin: 0 0 16px; font-weight: 600;">Hello,</p>
-            <p style="font-size: 14px; color: #475569; line-height: 1.6; margin: 0 0 24px;">
-              Here is your new 6-digit password reset verification code:
-            </p>
-            <div style="background-color: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 12px; padding: 20px; text-align: center; margin: 0 0 24px;">
-              <span style="font-family: 'Courier New', Courier, monospace; font-size: 34px; font-weight: 800; letter-spacing: 8px; color: #065f46; display: inline-block;">
-                ${otpCode}
-              </span>
-              <p style="font-size: 12px; color: #047857; margin: 8px 0 0;">Valid for ${RESET_OTP_TTL_MINUTES} minutes</p>
-            </div>
-            <p style="font-size: 13px; color: #64748b; line-height: 1.5; margin: 0 0 8px;">
-              If you did not request this password reset, please ignore this email.
-            </p>
-          </div>
-          <div style="background-color: #f8fafc; border-top: 1px solid #f1f5f9; padding: 16px 24px; text-align: center;">
-            <p style="font-size: 11px; color: #94a3b8; margin: 0;">&copy; ${new Date().getFullYear()} Travinco Tours. All rights reserved.</p>
-          </div>
-        </div>
-      </body>
-    </html>
-  `;
+  const ticket: OtpTicket = { purpose: 'otp', scope: params.scope, email, codeHash, exp, data: params.data };
 
   const emailResult = await sendGmail({
-    to: trimmedEmail,
-    subject: `${otpCode} is your new Travinco password reset code`,
-    html,
+    to: email,
+    subject: `${otpCode} ${EMAIL_COPY[params.scope].subject}`,
+    html: otpEmailHtml(params.scope, params.fullName || email.split('@')[0] || 'Traveler', otpCode),
   });
 
   if (emailResult.error) {
-    return { error: 'Failed to resend verification code. Please try again.' };
+    memoryMap.delete(key);
+    console.error('Failed to send password OTP email:', emailResult.error);
+    return { success: false, error: 'Failed to send the verification code email. Please try again.' };
   }
 
-  return { success: true, resetTicket: newTicket };
+  return { success: true, resetTicket: encryptTicket(ticket), maskedEmail: maskEmail(email) };
+}
+
+/** Reads an OTP ticket, rejecting expired tickets and tickets from another flow. */
+export async function readOtpTicket(resetTicket: string, scope: ResetScope): Promise<OtpTicket | null> {
+  const payload = decryptTicket<OtpTicket>(resetTicket || '');
+  if (!payload || payload.purpose !== 'otp' || payload.scope !== scope || payload.exp < Date.now()) {
+    return null;
+  }
+  return payload;
+}
+
+/** Sends a fresh code for an active OTP ticket (same email, same carried data). */
+export async function resendPasswordOtp(
+  resetTicket: string,
+  scope: ResetScope,
+  fullName?: string
+): Promise<SendResetOtpResult> {
+  const payload = await readOtpTicket(resetTicket, scope);
+  if (!payload) {
+    return { success: false, error: 'Your verification session has expired. Please start over.' };
+  }
+  return sendPasswordOtp({ scope, email: payload.email, fullName, data: payload.data });
 }
 
 /**
- * Step 3: Verifies OTP code and saves the new password directly in the database.
+ * Checks the entered code against the ticket. Returns the decoded ticket on success.
+ * Wrong codes are counted (max 5 per code) when the memory record is available.
  */
-export async function verifyOtpAndSavePasswordFlow(params: {
-  resetTicket: string;
-  otpCode: string;
-}): Promise<VerifyResetOtpResult> {
-  const code = params.otpCode.trim();
-
-  if (code.length !== 6) {
+export async function checkPasswordOtp(
+  resetTicket: string,
+  otpCode: string,
+  scope: ResetScope
+): Promise<{ error?: string; ticket?: OtpTicket }> {
+  const code = (otpCode || '').trim();
+  if (!/^\d{6}$/.test(code)) {
     return { error: 'Please enter all 6 digits of your verification code.' };
   }
 
-  // 1. Decrypt reset ticket
-  const payload = decryptTicket<{
-    email: string;
-    password: string;
-    codeHash: string;
-    exp: number;
-  }>(params.resetTicket);
-
-  if (!payload || payload.exp < Date.now()) {
-    return { error: 'Your reset session has expired. Please start over.' };
+  const payload = await readOtpTicket(resetTicket, scope);
+  if (!payload) {
+    return { error: 'Your verification code has expired. Please request a new code.' };
   }
 
-  const normalizedEmail = payload.email.trim().toLowerCase();
-
-  // 2. Verify OTP code
   const memoryMap = getMemoryMap();
-  const memRecord = memoryMap.get(normalizedEmail);
+  const key = memKey(scope, payload.email);
+  const memRecord = memoryMap.get(key);
 
-  if (memRecord) {
-    if (memRecord.expiresAt < Date.now()) {
-      memoryMap.delete(normalizedEmail);
-      return { error: 'Verification code has expired. Please request a new code.' };
-    }
-    if (memRecord.attempts >= MAX_OTP_ATTEMPTS) {
-      memoryMap.delete(normalizedEmail);
-      return { error: 'Too many incorrect attempts. Please request a new code.' };
-    }
+  // A newer code was issued: only the latest code is valid
+  if (memRecord && memRecord.codeHash !== payload.codeHash) {
+    return { error: 'A newer code was sent. Please use the latest code from your email.' };
+  }
+  if (memRecord && memRecord.attempts >= MAX_OTP_ATTEMPTS) {
+    memoryMap.delete(key);
+    return { error: 'Too many incorrect attempts. Please request a new code.' };
   }
 
-  const enteredHash = hashToken(code);
-  const expectedHash = memRecord?.codeHash || payload.codeHash;
-
-  if (enteredHash !== expectedHash) {
+  if (hashToken(code) !== payload.codeHash) {
     if (memRecord) memRecord.attempts += 1;
     return { error: 'Invalid verification code. Please check your email and try again.' };
   }
 
-  // 3. OTP verified -> Update password in Supabase DB
-  const serviceSupabase = createServiceClient();
+  memoryMap.delete(key);
+  return { ticket: payload };
+}
+
+/** Forgot-password step 2: code verified -> short-lived ticket allowing the new password to be set. */
+export async function verifyResetOtp(
+  resetTicket: string,
+  otpCode: string,
+  scope: 'customer' | 'staff'
+): Promise<VerifyResetOtpResult> {
+  const checked = await checkPasswordOtp(resetTicket, otpCode, scope);
+  if (!checked.ticket) return { error: checked.error };
+
+  const verified: VerifiedTicket = {
+    purpose: 'verified',
+    scope,
+    email: checked.ticket.email,
+    id: randomUUID(),
+    exp: Date.now() + VERIFIED_TTL_MINUTES * 60 * 1000,
+  };
+  return { success: true, verifiedTicket: encryptTicket(verified) };
+}
+
+/** Reads a verified ticket (forgot-password step 3); single use per server instance. */
+export async function readVerifiedTicket(
+  verifiedTicket: string,
+  scope: 'customer' | 'staff'
+): Promise<VerifiedTicket | null> {
+  const payload = decryptTicket<VerifiedTicket>(verifiedTicket || '');
+  if (!payload || payload.purpose !== 'verified' || payload.scope !== scope || payload.exp < Date.now()) {
+    return null;
+  }
+  if (getUsedTickets().has(payload.id)) return null;
+  return payload;
+}
+
+/** Finds the auth user id for an email (customer_accounts / profiles first, then Auth). */
+async function findAuthUserIdByEmail(email: string): Promise<string | null> {
+  const service = createServiceClient();
+  const [{ data: account }, { data: profile }] = await Promise.all([
+    service.from('customer_accounts').select('id').ilike('email', escapeLike(email)).limit(1),
+    service.from('profiles').select('id').ilike('email', escapeLike(email)).limit(1),
+  ]);
+  for (const candidate of [account?.[0]?.id, profile?.[0]?.id]) {
+    if (!candidate) continue;
+    const { data } = await service.auth.admin.getUserById(candidate);
+    if (data?.user?.email?.toLowerCase() === email) return data.user.id;
+  }
+
+  // Page through Auth users (listUsers returns only 50 per page by default)
+  for (let page = 1; page <= 20; page++) {
+    const { data, error } = await service.auth.admin.listUsers({ page, perPage: 1000 });
+    if (error || !data?.users?.length) break;
+    const match = data.users.find((u) => u.email?.toLowerCase() === email);
+    if (match) return match.id;
+    if (data.users.length < 1000) break;
+  }
+  return null;
+}
+
+/** Sets a user's password with the service role. Optionally creates a missing customer login. */
+export async function setPasswordForEmail(
+  email: string,
+  password: string,
+  opts: { createCustomerIfMissing?: boolean; fullName?: string } = {}
+): Promise<SaveResetPasswordResult> {
+  const service = createServiceClient();
+  const normalized = email.trim().toLowerCase();
 
   try {
-    const { data: usersData } = await serviceSupabase.auth.admin.listUsers();
-    const targetUser = usersData?.users?.find(
-      (u) => u.email?.toLowerCase() === normalizedEmail
-    );
-
-    if (targetUser) {
-      const { error: adminError } = await serviceSupabase.auth.admin.updateUserById(
-        targetUser.id,
-        { password: payload.password }
-      );
-      if (adminError) {
-        console.error('Failed to update customer password in auth.users:', adminError);
-        return { error: adminError.message || 'Failed to update password in database.' };
+    const userId = await findAuthUserIdByEmail(normalized);
+    if (userId) {
+      const { error } = await service.auth.admin.updateUserById(userId, { password });
+      if (error) {
+        console.error('Failed to update password:', error);
+        return { error: error.message || 'Failed to update the password.' };
       }
-    } else {
-      // Create auth user if they existed in customers table only
-      const { error: createError } = await serviceSupabase.auth.admin.createUser({
-        email: normalizedEmail,
-        password: payload.password,
-        email_confirm: true,
-      });
-      if (createError) {
-        console.error('Failed to create customer user during reset:', createError);
-        return { error: createError.message || 'Failed to update password in database.' };
-      }
+      return { success: true };
     }
 
-    // 4. Clean up memory store and clear any login lockouts
-    memoryMap.delete(normalizedEmail);
-    await clearLoginAttempts(normalizedEmail, 'customer');
+    if (!opts.createCustomerIfMissing) {
+      return { error: 'Account not found. Please contact the Travinco team.' };
+    }
 
+    // Customer known only from the customers table: create their login now
+    const fullName = opts.fullName || normalized.split('@')[0];
+    const { data: created, error: createError } = await service.auth.admin.createUser({
+      email: normalized,
+      password,
+      email_confirm: true,
+      user_metadata: { full_name: fullName, role: 'customer', is_customer_signup: 'true' },
+    });
+    if (createError || !created?.user) {
+      console.error('Failed to create customer user during reset:', createError);
+      return { error: createError?.message || 'Failed to update the password.' };
+    }
+    await service
+      .from('customer_accounts')
+      .upsert({ id: created.user.id, email: normalized, full_name: fullName }, { onConflict: 'id' });
     return { success: true };
   } catch (err: any) {
-    console.error('Error during password reset execution:', err);
-    return { error: err?.message || 'Could not update password. Please try again.' };
+    console.error('Error while saving password:', err);
+    return { error: err?.message || 'Could not update the password. Please try again.' };
   }
+}
+
+/** Forgot-password step 3: with a verified ticket, validate and save the new password. */
+export async function saveResetPassword(params: {
+  verifiedTicket: string;
+  password: string;
+  confirmPassword: string;
+  scope: 'customer' | 'staff';
+}): Promise<SaveResetPasswordResult & { email?: string }> {
+  const ticket = await readVerifiedTicket(params.verifiedTicket, params.scope);
+  if (!ticket) {
+    return { error: 'Your verification has expired. Please start the password reset again.' };
+  }
+
+  const parsed = resetPasswordSchema.safeParse({
+    password: params.password,
+    confirmPassword: params.confirmPassword,
+  });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? 'Invalid password format.' };
+  }
+
+  const result = await setPasswordForEmail(ticket.email, parsed.data.password, {
+    createCustomerIfMissing: params.scope === 'customer',
+  });
+  if (!result.success) return result;
+
+  getUsedTickets().set(ticket.id, ticket.exp);
+  await clearLoginAttempts(ticket.email, params.scope === 'staff' ? 'admin' : 'customer');
+  return { success: true, email: ticket.email };
 }

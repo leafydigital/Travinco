@@ -65,12 +65,13 @@ async function resolveRole(
 
 /** Stores the admin-issued temporary password (cleared automatically when the user changes it). */
 async function storeTempPassword(
-  supabase: Awaited<ReturnType<typeof createClient>>,
+  _supabase: Awaited<ReturnType<typeof createClient>>,
   profileId: string,
   password: string,
   setBy: string
 ) {
-  const { error } = await supabase
+  // Callers have already verified the requester is an admin
+  const { error } = await createServiceClient()
     .from('staff_temp_passwords')
     .upsert({ profile_id: profileId, temp_password: password, set_by: setBy, created_at: new Date().toISOString() }, {
       onConflict: 'profile_id',

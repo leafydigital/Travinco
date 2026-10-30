@@ -8,8 +8,6 @@ import { CheckCircle2, AlertCircle, Clock } from 'lucide-react';
 import {
   validateFullName,
   validateEmailAddress,
-  containsBadWords,
-  badWordsError,
 } from '@/lib/validations/contact-rules';
 
 const initialState: ContactFormState = {};
@@ -146,12 +144,10 @@ export function ContactForm() {
   }
 
   // Field validity checks
-  const subjectError = containsBadWords(subject) ? badWordsError('Subject') : null;
-  const messageError = containsBadWords(message) ? badWordsError('Message') : null;
   const isNameValid = validateName(name) === null;
   const isEmailValid = validateEmail(email) === null;
-  const isSubjectValid = Boolean(subject.trim()) && !subjectError;
-  const isMessageValid = Boolean(message.trim()) && !messageError;
+  const isSubjectValid = Boolean(subject.trim());
+  const isMessageValid = Boolean(message.trim());
   const isPhoneValid = Boolean(phoneValue.number) && phoneValid;
 
   // Form is complete and button enables only when all required fields are valid
@@ -316,18 +312,11 @@ export function ContactForm() {
             onChange={(e) => setSubject(e.target.value)}
             placeholder="Subject*"
             maxLength={200}
-            aria-invalid={Boolean(subjectError)}
-            className={`input bg-white text-sm ${subjectError ? 'border-coral-400 focus:ring-coral-400 bg-coral-50/20' : ''}`}
+            className="input bg-white text-sm"
           />
-          {subjectError && (
-            <p className="mt-1 text-xs text-coral-600 font-medium flex items-center gap-1 animate-in fade-in duration-150">
-              <AlertCircle className="h-3 w-3 shrink-0" />
-              <span>{subjectError}</span>
-            </p>
-          )}
         </div>
 
-        {/* Message (Required — warns on inappropriate language) */}
+        {/* Message (Required) */}
         <div>
           <label className="mb-1 block text-xs font-semibold text-ink-700">
             Your message <span className="text-red-500">*</span>
@@ -340,15 +329,8 @@ export function ContactForm() {
             onChange={(e) => setMessage(e.target.value)}
             placeholder="Your message*"
             maxLength={2000}
-            aria-invalid={Boolean(messageError)}
-            className={`input bg-white text-sm ${messageError ? 'border-coral-400 focus:ring-coral-400 bg-coral-50/20' : ''}`}
+            className="input bg-white text-sm"
           />
-          {messageError && (
-            <p className="mt-1 text-xs text-coral-600 font-medium flex items-center gap-1 animate-in fade-in duration-150">
-              <AlertCircle className="h-3 w-3 shrink-0" />
-              <span>{messageError}</span>
-            </p>
-          )}
         </div>
       </div>
 

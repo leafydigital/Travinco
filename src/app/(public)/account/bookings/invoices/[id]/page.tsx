@@ -13,8 +13,10 @@ export const metadata: Metadata = {
 
 export default async function CustomerInvoicePage({
   params,
+  searchParams,
 }: {
   params: { id: string };
+  searchParams: { download?: string };
 }) {
   const account = await requireCustomer('/account/bookings');
   const invoiceData = await getCustomerInvoiceById(params.id, account.email);
@@ -38,6 +40,7 @@ export default async function CustomerInvoicePage({
           docNumber={invoice.invoice_number}
           elementId="invoice-doc"
           fileName={fileName}
+          autoDownload={searchParams.download === '1'}
         />
 
         <div className="rounded-xl border border-ink-200/80 bg-white p-4 shadow-sm sm:p-8 print:border-none print:p-0 print:shadow-none">

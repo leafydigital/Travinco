@@ -11,7 +11,13 @@ import {
   MAX_ADMIN_LOGIN_ATTEMPTS,
 } from '@/lib/auth/login-limiter';
 import { cookies } from 'next/headers';
+import { revalidatePath } from 'next/cache';
+import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { z } from 'zod';
+import {
+  getCustomerAccountStatus,
+  accountStatusMessage,
+} from '@/lib/auth/account-status';
 import {
   initiateCustomerLoginFlow,
   resendCustomerLoginOtpFlow,
@@ -42,19 +48,6 @@ const emailRule = z
   .string()
   .trim()
   .regex(EMAIL_REGEX, 'Enter a valid email address (e.g. name@example.com).');
-
-const signupSchema = z.object({
-  full_name: z.string().min(1, 'Name is required'),
-  username: usernameRule,
-  email: emailRule,
-  password: z
-    .string()
-    .min(7, 'Password must be at least 7 characters')
-    .regex(/[A-Z]/, 'Password must include at least one capital letter')
-    .regex(/[a-z]/, 'Password must include at least one lowercase letter')
-    .regex(/[0-9]/, 'Password must include at least one number')
-    .regex(/[^A-Za-z0-9]/, 'Password must include at least one symbol'),
-});
 
 const initiateSignupSchema = z
   .object({
@@ -137,73 +130,6 @@ export async function verifyCustomerSignupOtp(
 ): Promise<VerifySignupResult> {
   if (!signupTicket) return { error: 'Invalid signup session.' };
   return verifyCustomerSignupOtpFlow(signupTicket, otp);
-}
-
-export async function signUpCustomer(raw: unknown) {
-  const parsed = signupSchema.safeParse(raw);
-  if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? 'Please check the form.' };
-  }
-
-  const supabase = await createCustomerClient();
-  const { data: authData, error } = await supabase.auth.signUp({
-    email: parsed.data.email,
-    password: parsed.data.password,
-    options: {
-      data: {
-        full_name: parsed.data.full_name,
-        username: parsed.data.username,
-        is_customer_signup: 'true',
-        role: 'customer',
-      },
-    },
-  });
-
-  if (error) {
-    const message = error.message.toLowerCase();
-    if (
-      message.includes('already registered') ||
-      message.includes('already exists') ||
-      message.includes('user already')
-    ) {
-      return { error: 'Email is already taken' };
-    }
-    console.error('signUpCustomer failed:', error.message);
-    return { error: 'Could not create your account. Please try again.' };
-  }
-
-  if (authData?.user) {
-    try {
-      await supabase.from('customer_accounts').upsert({
-        id: authData.user.id,
-        full_name: parsed.data.full_name,
-        username: parsed.data.username,
-        email: parsed.data.email,
-      }, { onConflict: 'id' });
-
-      // Ensure user also exists in customers table so admin/team can see them
-      const { data: existingCust } = await supabase
-        .from('customers')
-        .select('id')
-        .eq('email', parsed.data.email)
-        .maybeSingle();
-
-      if (!existingCust) {
-        await supabase.from('customers').insert({
-          full_name: parsed.data.full_name,
-          email: parsed.data.email,
-          phone: '',
-          source: 'website',
-          is_active: true,
-          is_deleted: false,
-        } as any);
-      }
-    } catch (upsertErr) {
-      console.warn('customer_accounts/customers upsert on signup:', upsertErr);
-    }
-  }
-
-  return { hasSession: Boolean(authData?.session) };
 }
 
 /**
@@ -309,10 +235,11 @@ export async function logInCustomer(raw: unknown) {
 
   const custRecord = custRecordRes.data;
 
-  // Check if customer account is deactivated
-  if (custRecord?.is_active === false) {
+  // Deactivated / deleted customers cannot sign in
+  const blocked = accountStatusMessage(await getCustomerAccountStatus(parsed.data.email));
+  if (blocked) {
     await supabase.auth.signOut();
-    return { error: 'Your account has been deactivated. Please contact support.' };
+    return { error: blocked };
   }
 
   const customerAccount = customerAccountRes.data;
@@ -389,124 +316,332 @@ export async function logOutCustomer() {
   return { success: true };
 }
 
-/**
- * Step 1: Confirms that the entered email matches the logged-in customer's active account.
- */
-export async function verifyCustomerEmailAction(rawEmail: string) {
-  const customer = await requireCustomer();
+// ─── Forgot password (/account/login) ─────────────────────────────────────────
+// 1. Email / username -> account must exist and be active -> 6-digit code emailed
+// 2. Code -> verified ticket
+// 3. New password + confirm -> saved
 
-  const email = (rawEmail || '').trim().toLowerCase();
-  if (!email) {
-    return { error: 'Please enter your email address.' };
+export type StartResetResult = {
+  success: boolean;
+  error?: string;
+  email?: string;
+  resetTicket?: string;
+  maskedEmail?: string;
+};
+
+export async function startCustomerPasswordReset(identifier: string): Promise<StartResetResult> {
+  const { checkCustomerEmailExists, sendPasswordOtp } = await import('@/lib/auth/password-reset-otp');
+  const check = await checkCustomerEmailExists(String(identifier ?? '').slice(0, 254));
+  if (!check.success || !check.email) {
+    return { success: false, error: check.error || 'No customer account found with this email address.' };
   }
-
-  if (email !== customer.email.toLowerCase()) {
-    return { error: 'This email does not match your active customer account.' };
-  }
-
-  return {
-    success: true,
-    email: customer.email,
-    fullName: customer.full_name || 'Customer',
-  };
+  const sent = await sendPasswordOtp({ scope: 'customer', email: check.email, fullName: check.fullName });
+  if (!sent.success) return { success: false, error: sent.error };
+  return { success: true, email: check.email, resetTicket: sent.resetTicket, maskedEmail: sent.maskedEmail };
 }
 
-const changePasswordSchema = z
+export async function resendCustomerResetOtpAction(resetTicket: string) {
+  const { resendPasswordOtp } = await import('@/lib/auth/password-reset-otp');
+  return resendPasswordOtp(resetTicket, 'customer');
+}
+
+export async function verifyCustomerResetOtpAction(resetTicket: string, otpCode: string) {
+  const { verifyResetOtp } = await import('@/lib/auth/password-reset-otp');
+  return verifyResetOtp(resetTicket, otpCode, 'customer');
+}
+
+export async function saveCustomerResetPasswordAction(data: {
+  verifiedTicket: string;
+  password: string;
+  confirmPassword: string;
+}): Promise<{ success?: boolean; error?: string }> {
+  const { readVerifiedTicket, saveResetPassword } = await import('@/lib/auth/password-reset-otp');
+
+  // Re-check status: the account may have been deactivated while the code was pending
+  const ticket = await readVerifiedTicket(data?.verifiedTicket, 'customer');
+  if (ticket) {
+    const blocked = accountStatusMessage(await getCustomerAccountStatus(ticket.email));
+    if (blocked) return { error: blocked };
+  }
+
+  const result = await saveResetPassword({
+    verifiedTicket: data?.verifiedTicket,
+    password: data?.password,
+    confirmPassword: data?.confirmPassword,
+    scope: 'customer',
+  });
+  return result.success ? { success: true } : { error: result.error };
+}
+
+// ─── Update password (signed in, /account/change-password) ───────────────────
+// Current + new + confirm -> current password verified -> code emailed to the
+// account address -> code -> new password saved.
+
+const updatePasswordSchema = z
   .object({
-    email: z.string().email('Enter a valid email').optional(),
-    password: z
+    currentPassword: z.string().min(1, 'Please enter your current password.'),
+    newPassword: z
       .string()
       .min(7, 'Password must be at least 7 characters')
       .regex(/[A-Z]/, 'Password must include at least one capital letter')
       .regex(/[a-z]/, 'Password must include at least one lowercase letter')
       .regex(/[0-9]/, 'Password must include at least one number')
       .regex(/[^A-Za-z0-9]/, 'Password must include at least one symbol'),
-    confirmPassword: z.string().optional(),
+    confirmPassword: z.string().min(1, 'Please confirm your new password.'),
   })
-  .refine(
-    (data) => !data.confirmPassword || data.password === data.confirmPassword,
-    {
-      message: 'Passwords do not match',
-      path: ['confirmPassword'],
-    }
-  );
+  .refine((d) => d.newPassword === d.confirmPassword, {
+    message: 'Passwords do not match',
+    path: ['confirmPassword'],
+  })
+  .refine((d) => d.newPassword !== d.currentPassword, {
+    message: 'Your new password must be different from your current password.',
+    path: ['newPassword'],
+  });
 
-export async function changeCustomerPassword(raw: unknown) {
-  // Enforces that the session is a verified customer account
-  const customer = await requireCustomer();
+const CURRENT_PASSWORD_MAX_FAILURES = 5;
+const CURRENT_PASSWORD_LOCK_MS = 15 * 60 * 1000;
 
-  const parsed = changePasswordSchema.safeParse(raw);
+declare global {
+  // eslint-disable-next-line no-var
+  var __travincoCurrentPasswordFailures: Map<string, { count: number; lockedUntil: number }> | undefined;
+}
+
+function currentPasswordFailures() {
+  if (!globalThis.__travincoCurrentPasswordFailures) {
+    globalThis.__travincoCurrentPasswordFailures = new Map();
+  }
+  return globalThis.__travincoCurrentPasswordFailures;
+}
+
+/** Checks a password without touching the browser session (no cookies are written). */
+async function isCorrectPassword(email: string, password: string): Promise<boolean> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !anonKey) return false;
+  const transient = createSupabaseClient(url, anonKey, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  });
+  const { data, error } = await transient.auth.signInWithPassword({ email, password });
+  return !error && Boolean(data?.user);
+}
+
+export async function startCustomerPasswordUpdate(raw: unknown): Promise<{
+  success?: boolean;
+  error?: string;
+  field?: 'currentPassword' | 'newPassword' | 'confirmPassword';
+  resetTicket?: string;
+  maskedEmail?: string;
+}> {
+  const customer = await requireCustomer('/account/change-password');
+
+  const parsed = updatePasswordSchema.safeParse(raw);
   if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? 'Please check the form.' };
+    const issue = parsed.error.issues[0];
+    return {
+      error: issue?.message ?? 'Please check the form.',
+      field: issue?.path?.[0] as 'currentPassword' | 'newPassword' | 'confirmPassword' | undefined,
+    };
   }
 
-  if (
-    parsed.data.email &&
-    parsed.data.email.trim().toLowerCase() !== customer.email.toLowerCase()
-  ) {
-    return { error: 'Email does not match your active customer account.' };
+  const failures = currentPasswordFailures();
+  const record = failures.get(customer.id);
+  if (record && record.lockedUntil > Date.now()) {
+    const mins = Math.ceil((record.lockedUntil - Date.now()) / 60000);
+    return {
+      error: `Too many incorrect attempts. Please try again in ${mins} minute${mins === 1 ? '' : 's'}.`,
+      field: 'currentPassword',
+    };
   }
 
-  const supabase = await createCustomerClient();
-  const { error } = await supabase.auth.updateUser({ password: parsed.data.password });
-  if (error) return { error: error.message || 'Could not update your password. Please try again.' };
+  if (!(await isCorrectPassword(customer.email, parsed.data.currentPassword))) {
+    // An expired lock starts a fresh count
+    const count = (record && record.lockedUntil === 0 ? record.count : 0) + 1;
+    const locked = count >= CURRENT_PASSWORD_MAX_FAILURES;
+    failures.set(customer.id, { count: locked ? 0 : count, lockedUntil: locked ? Date.now() + CURRENT_PASSWORD_LOCK_MS : 0 });
+    return {
+      error: locked
+        ? 'Too many incorrect attempts. Please try again in 15 minutes.'
+        : 'Your current password is incorrect.',
+      field: 'currentPassword',
+    };
+  }
+  failures.delete(customer.id);
+
+  const { sendPasswordOtp } = await import('@/lib/auth/password-reset-otp');
+  const sent = await sendPasswordOtp({
+    scope: 'change',
+    email: customer.email,
+    fullName: customer.full_name || undefined,
+    data: { userId: customer.id, password: parsed.data.newPassword },
+  });
+  if (!sent.success) return { error: sent.error };
+  return { success: true, resetTicket: sent.resetTicket, maskedEmail: sent.maskedEmail };
+}
+
+export async function resendCustomerPasswordUpdateOtp(resetTicket: string) {
+  const customer = await requireCustomer('/account/change-password');
+  const { readOtpTicket, resendPasswordOtp } = await import('@/lib/auth/password-reset-otp');
+  const ticket = await readOtpTicket(resetTicket, 'change');
+  if (!ticket || ticket.data?.userId !== customer.id) {
+    return { success: false, error: 'Your verification session has expired. Please start over.' };
+  }
+  return resendPasswordOtp(resetTicket, 'change', customer.full_name || undefined);
+}
+
+export async function confirmCustomerPasswordUpdate(
+  resetTicket: string,
+  otpCode: string
+): Promise<{ success?: boolean; error?: string }> {
+  const customer = await requireCustomer('/account/change-password');
+  const { readOtpTicket, checkPasswordOtp } = await import('@/lib/auth/password-reset-otp');
+
+  // The ticket must belong to the signed-in customer before the code is even checked
+  const pending = await readOtpTicket(resetTicket, 'change');
+  if (!pending || pending.data?.userId !== customer.id || !pending.data?.password) {
+    return { error: 'Your verification session has expired. Please start over.' };
+  }
+
+  const checked = await checkPasswordOtp(resetTicket, otpCode, 'change');
+  if (!checked.ticket) return { error: checked.error };
+
+  const service = createServiceClient();
+  const { error } = await service.auth.admin.updateUserById(customer.id, {
+    password: checked.ticket.data!.password,
+  });
+  if (error) {
+    console.error('Password update failed:', error.message);
+    return { error: 'Could not update your password. Please try again.' };
+  }
 
   await clearLoginAttempts(customer.email, 'customer');
-
   return { success: true };
 }
 
-/**
- * Step 1: Checks if customer email exists in the database.
- */
-export async function checkCustomerEmailExistsAction(email: string) {
-  const { checkCustomerEmailExists } = await import('@/lib/auth/password-reset-otp');
-  return checkCustomerEmailExists(email);
-}
+// ─── Profile (/account/profile) ───────────────────────────────────────────────
 
-/**
- * Step 2: User sets new password and confirm password. Validates password rules and sends OTP code to email.
- */
-export async function sendResetPasswordOtpWithNewPasswordAction(data: {
+export type CustomerProfile = {
+  full_name: string;
   email: string;
-  password: string;
-  confirmPassword: string;
-}) {
-  const { sendResetPasswordOtpWithNewPassword } = await import('@/lib/auth/password-reset-otp');
-  return sendResetPasswordOtpWithNewPassword(data);
+  phone: string;
+  address: string;
+  /** When the customer account was created (ISO string). */
+  member_since: string | null;
+};
+
+/** Latest non-deleted customers row for an email (enquiries can create duplicates). */
+async function findCustomerRow(service: ReturnType<typeof createServiceClient>, email: string) {
+  const { data } = await service
+    .from('customers')
+    .select('id, full_name, phone, address, is_deleted, created_at')
+    .ilike('email', escapeLike(email))
+    .order('created_at', { ascending: true })
+    .limit(20);
+  return (data ?? []).find((r: any) => r.is_deleted !== true) ?? null;
 }
 
-/**
- * Resends a fresh 6-digit OTP code for password reset.
- */
-export async function resendCustomerResetOtpAction(resetTicket: string) {
-  const { resendCustomerResetPasswordOtpFlow } = await import('@/lib/auth/password-reset-otp');
-  return resendCustomerResetPasswordOtpFlow(resetTicket);
+export async function getCustomerProfile(): Promise<CustomerProfile> {
+  const customer = await requireCustomer('/account/profile');
+  const service = createServiceClient();
+
+  // phone / address columns on customer_accounts come from the profile migration;
+  // until it is run, fall back to the customers row (which already has both).
+  const [{ data: account, error: accountError }, custRow] = await Promise.all([
+    service.from('customer_accounts').select('full_name, phone, address').eq('id', customer.id).maybeSingle(),
+    findCustomerRow(service, customer.email),
+  ]);
+  const acc = accountError ? null : (account as { full_name?: string; phone?: string; address?: string } | null);
+
+  return {
+    full_name: acc?.full_name || customer.full_name || custRow?.full_name || '',
+    email: customer.email,
+    phone: acc?.phone || custRow?.phone || '',
+    address: acc?.address || custRow?.address || '',
+    member_since: customer.created_at ?? null,
+  };
 }
 
-/**
- * Step 3: Verifies the 6-digit OTP code and updates password directly in the database.
- */
-export async function verifyResetOtpAndSavePasswordAction(data: {
-  resetTicket: string;
-  otpCode: string;
-}) {
-  const { verifyOtpAndSavePasswordFlow } = await import('@/lib/auth/password-reset-otp');
-  return verifyOtpAndSavePasswordFlow(data);
+const profileSchema = z.object({
+  full_name: z.string().trim().min(2, 'Please enter your full name.').max(120, 'Name is too long.'),
+  phone: z.string().trim().min(1, 'Please enter your mobile number.'),
+  address: z.string().trim().max(500, 'Address is too long (max 500 characters).').optional().default(''),
+});
+
+export async function updateCustomerProfile(raw: unknown): Promise<{
+  success?: boolean;
+  error?: string;
+  field?: 'full_name' | 'phone' | 'address';
+  profile?: CustomerProfile;
+}> {
+  const customer = await requireCustomer('/account/profile');
+
+  const parsed = profileSchema.safeParse(raw);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    return { error: issue?.message ?? 'Please check the form.', field: issue?.path?.[0] as any };
+  }
+
+  const { parsePhoneNumberFromString, isValidPhoneNumber } = await import('libphonenumber-js/mobile');
+  const phoneParsed = parsePhoneNumberFromString(parsed.data.phone);
+  const phone = phoneParsed?.number ?? '';
+  if (!phone || !isValidPhoneNumber(phone)) {
+    return { error: 'Enter a valid mobile number.', field: 'phone' };
+  }
+
+  const service = createServiceClient();
+  const fullName = parsed.data.full_name;
+  const address = parsed.data.address || '';
+
+  // customer_accounts: try with the new columns, fall back if the migration hasn't run
+  let { error: accErr } = await service
+    .from('customer_accounts')
+    .update({ full_name: fullName, phone, address } as any)
+    .eq('id', customer.id);
+  if (accErr && /phone|address/.test(accErr.message || '')) {
+    ({ error: accErr } = await service
+      .from('customer_accounts')
+      .update({ full_name: fullName })
+      .eq('id', customer.id));
+  }
+  if (accErr) {
+    console.error('updateCustomerProfile customer_accounts:', accErr.message);
+    return { error: 'Could not save your profile. Please try again.' };
+  }
+
+  // Keep the customers row (what the Travinco team sees) in sync
+  const custRow = await findCustomerRow(service, customer.email);
+  if (custRow) {
+    const { error } = await service
+      .from('customers')
+      .update({ full_name: fullName, phone, address: address || null } as any)
+      .eq('id', custRow.id);
+    if (error) console.warn('updateCustomerProfile customers sync:', error.message);
+  } else {
+    const { error } = await service.from('customers').insert({
+      full_name: fullName,
+      email: customer.email,
+      phone,
+      address: address || null,
+      source: 'website',
+      is_active: true,
+      is_deleted: false,
+    } as any);
+    if (error) console.warn('updateCustomerProfile customers insert:', error.message);
+  }
+
+  // Name shown in the header comes from Auth metadata as a fallback
+  try {
+    await service.auth.admin.updateUserById(customer.id, {
+      user_metadata: { full_name: fullName },
+    });
+  } catch {}
+
+  revalidatePath('/account', 'layout');
+  return { success: true, profile: {
+      full_name: fullName,
+      email: customer.email,
+      phone,
+      address,
+      member_since: customer.created_at ?? null,
+    },
+  };
 }
-
-export async function requestPasswordReset(email: string) {
-  // Retained for backward-compatibility
-  return checkCustomerEmailExistsAction(email);
-}
-
-/**
- * Manually unlocks a customer account by clearing failed login attempts.
- */
-export async function unlockCustomerAccountAction(identifier: string) {
-  if (!identifier) return { error: 'Please enter an email or username.' };
-  await clearLoginAttempts(identifier, 'customer');
-  return { success: true };
-}
-
-
