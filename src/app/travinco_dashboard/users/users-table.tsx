@@ -15,12 +15,11 @@ import {
   Eye,
   EyeOff,
   Copy,
-  RotateCcw,
 } from 'lucide-react';
 import { toast, confirmAlert } from '@/lib/admin-alert';
 import { formatDate } from '@/lib/utils/format';
 import { cn } from '@/lib/utils/cn';
-import { setStaffActive, deleteStaffUser, restoreStaffUser } from './actions';
+import { setStaffActive, deleteStaffUser } from './actions';
 import type { Tables } from '@/types/database';
 
 export type RoleOption = { id: string; name: string; pages: string[]; isSystem: boolean };
@@ -42,7 +41,6 @@ export function UsersTable({ initialUsers, currentUserId, currentUserRole, roles
   const [statusFilter, setStatusFilter] = useState('all');
   const [pendingActiveId, setPendingActiveId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [restoringId, setRestoringId] = useState<string | null>(null);
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -81,8 +79,8 @@ export function UsersTable({ initialUsers, currentUserId, currentUserRole, roles
     const matchesRole = roleFilter === 'all' || roleKey(u) === roleFilter;
     const matchesStatus =
       statusFilter === 'all' ||
-      (statusFilter === 'deleted' && u.is_deleted) ||
-      (!u.is_deleted && ((statusFilter === 'active' && u.is_active) || (statusFilter === 'inactive' && !u.is_active)));
+      (statusFilter === 'active' && u.is_active) ||
+      (statusFilter === 'inactive' && !u.is_active);
     return matchesSearch && matchesRole && matchesStatus;
   });
 
@@ -100,10 +98,7 @@ export function UsersTable({ initialUsers, currentUserId, currentUserRole, roles
   ].map((o) => ({ ...o, label: `${o.label} (${roleCounts[o.value] ?? 0})` }));
 
   /** Admins can't manage the Super Admin, and only the Super Admin manages other admins. */
-  const canManageRole = (u: Tables<'profiles'>) =>
-    u.role !== 'super_admin' && !(u.role === 'admin' && currentUserRole !== 'super_admin');
   const canManage = (u: Tables<'profiles'>) =>
-    !u.is_deleted &&
     u.role !== 'super_admin' && !(u.role === 'admin' && currentUserRole !== 'super_admin');
 
   async function handleToggleActive(user: Tables<'profiles'>) {
@@ -123,8 +118,8 @@ export function UsersTable({ initialUsers, currentUserId, currentUserRole, roles
 
   async function handleDelete(user: Tables<'profiles'>) {
     const ok = await confirmAlert({
-      title: `Delete ${user.full_name}?`,
-      text: `${user.email} will no longer be able to sign in.`,
+      title: `Delete ${user.full_name} permanently?`,
+      text: `${user.email} is saved to the Google Sheet "Users" tab, then removed from the system. Their sign-in stops working and the email can be used for a new user.`,
       confirmText: 'Delete',
       icon: 'warning',
       danger: true,
@@ -134,30 +129,9 @@ export function UsersTable({ initialUsers, currentUserId, currentUserRole, roles
     const res = await deleteStaffUser(user.id).catch(() => ({ error: 'Failed to delete the user.' }));
     setDeletingId(null);
     if ('error' in res && res.error) return void toast.error(res.error);
-    setUsers((prev) =>
-      prev.map((item) => (item.id === user.id ? { ...item, is_deleted: true, is_active: false } : item))
-    );
+    setUsers((prev) => prev.filter((item) => item.id !== user.id));
     router.refresh();
-    void toast.success('User deleted successfully');
-  }
-
-  async function handleRestore(user: Tables<'profiles'>) {
-    const ok = await confirmAlert({
-      title: `Restore ${user.full_name}?`,
-      text: `${user.email} will be able to sign in again.`,
-      confirmText: 'Restore',
-      icon: 'question',
-    });
-    if (!ok) return;
-    setRestoringId(user.id);
-    const res = await restoreStaffUser(user.id).catch(() => ({ error: 'Failed to restore the user.' }));
-    setRestoringId(null);
-    if ('error' in res && res.error) return void toast.error(res.error);
-    setUsers((prev) =>
-      prev.map((item) => (item.id === user.id ? { ...item, is_deleted: false, is_active: true } : item))
-    );
-    router.refresh();
-    void toast.success('User restored successfully');
+    void toast.success('User deleted permanently');
   }
 
   async function copyPassword(password: string) {
@@ -212,7 +186,6 @@ export function UsersTable({ initialUsers, currentUserId, currentUserRole, roles
               <option value="all">All statuses</option>
               <option value="active">Active</option>
               <option value="inactive">Deactivated</option>
-              <option value="deleted">Deleted</option>
             </select>
           </div>
         </div>
@@ -250,7 +223,7 @@ export function UsersTable({ initialUsers, currentUserId, currentUserRole, roles
                   const temp = tempPasswords?.[u.id];
                   const shown = revealed.has(u.id);
                   return (
-                    <tr key={u.id} className={cn('transition-colors hover:bg-ink-50/40', u.is_deleted && 'bg-ink-50/40')}>
+                    <tr key={u.id} className="transition-colors hover:bg-ink-50/40">
                       <td className="px-3 py-3.5 lg:px-4">
                         <div className="flex items-center gap-3">
                           <div
@@ -300,9 +273,7 @@ export function UsersTable({ initialUsers, currentUserId, currentUserRole, roles
                       </td>
 
                       <td className="hidden px-3 py-3.5 lg:table-cell lg:px-4">
-                        {u.is_deleted ? (
-                          <span className="text-xs text-ink-400">—</span>
-                        ) : temp ? (
+                        {temp ? (
                           <div className="flex items-center gap-1">
                             <code className="rounded bg-ink-100 px-2 py-0.5 font-mono text-xs text-ink-800">
                               {shown ? temp.password : '••••••••••'}
@@ -349,12 +320,6 @@ export function UsersTable({ initialUsers, currentUserId, currentUserRole, roles
                       </td>
 
                       <td className="px-3 py-3.5 lg:px-4">
-                        {u.is_deleted ? (
-                          <span className="inline-flex items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-2.5 py-0.5 text-xs font-medium text-red-700">
-                            <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
-                            Deleted
-                          </span>
-                        ) : (
                           <span
                             className={cn(
                               'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium',
@@ -366,32 +331,11 @@ export function UsersTable({ initialUsers, currentUserId, currentUserRole, roles
                             <span className={cn('h-1.5 w-1.5 rounded-full', u.is_active ? 'bg-emerald-500' : 'bg-ink-400')} />
                             {u.is_active ? 'Active' : 'Deactivated'}
                           </span>
-                        )}
                       </td>
 
                       <td className="hidden px-3 py-3.5 text-xs text-ink-400 xl:table-cell xl:px-4">{formatDate(u.created_at)}</td>
 
                       <td className="px-3 py-3.5 text-right lg:px-4">
-                        {u.is_deleted ? (
-                          canManageRole(u) ? (
-                            <button
-                              type="button"
-                              data-no-confirm-save="true"
-                              onClick={() => handleRestore(u)}
-                              disabled={restoringId === u.id}
-                              className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-100 disabled:opacity-50"
-                            >
-                              {restoringId === u.id ? (
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                              ) : (
-                                <RotateCcw className="h-3 w-3" />
-                              )}
-                              Restore
-                            </button>
-                          ) : (
-                            <span className="text-xs text-ink-400">—</span>
-                          )
-                        ) : (
                           <div className="flex flex-wrap items-center justify-end gap-1.5">
                             <button
                               type="button"
@@ -441,7 +385,6 @@ export function UsersTable({ initialUsers, currentUserId, currentUserRole, roles
                               <span className="hidden xl:inline">Delete</span>
                             </button>
                           </div>
-                        )}
                       </td>
                     </tr>
                   );

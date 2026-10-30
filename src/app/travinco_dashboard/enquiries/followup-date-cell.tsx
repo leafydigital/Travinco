@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useTransition, useEffect } from 'react';
+import { RESOLVED_ENQUIRY_STATUSES, normalizeEnquiryStatus } from '@/lib/enquiry-status';
 import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { toast } from '@/lib/admin-alert';
@@ -61,7 +62,7 @@ export function FollowupDateCell({
   }
 
   const isToday = displayedDate === todayStr;
-  const isResolved = ['confirmed', 'lost', 'closed'].includes(status);
+  const isResolved = (RESOLVED_ENQUIRY_STATUSES as string[]).includes(normalizeEnquiryStatus(status));
   const isOverdue = Boolean(displayedDate && displayedDate < todayStr && !isResolved);
 
   // Handle ESC key to close modal

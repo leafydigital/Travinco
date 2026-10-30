@@ -95,7 +95,7 @@ export function CustomerRowActions({
         toast.error(res.error);
         return;
       }
-      toast.success('Customer deleted successfully');
+      toast.success('Customer deleted permanently');
       setDeleteOpen(false);
       router.refresh();
     });
@@ -150,7 +150,7 @@ export function CustomerRowActions({
           </button>
         )}
 
-        {/* Delete Action (Soft Delete) */}
+        {/* Delete Action (permanent) */}
         {isAdmin && (
           <button
             type="button"
@@ -175,7 +175,7 @@ export function CustomerRowActions({
         />
       )}
 
-      {/* Confirm Soft Delete Dialog */}
+      {/* Confirm Delete Dialog */}
       <ConfirmDeleteDialog
         isOpen={deleteOpen}
         isPending={isPending}
@@ -183,8 +183,9 @@ export function CustomerRowActions({
         description={
           <>
             Are you sure you want to delete customer{' '}
-            <strong className="text-ink-900">{customer.full_name}</strong>? They will stay in the
-            customers list with the status <strong className="text-ink-900">Deleted</strong>.
+            <strong className="text-ink-900">{customer.full_name}</strong>? Their details are saved to the
+            Google Sheet <strong className="text-ink-900">Customers</strong> tab, then the customer and their
+            website login are removed permanently. The same email can register again.
           </>
         }
         onConfirm={handleDelete}

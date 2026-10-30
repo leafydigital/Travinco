@@ -1,27 +1,30 @@
 import { Suspense, cache } from 'react';
 import { requireProfile, assertModulePermission, checkModulePermission } from '@/lib/supabase/auth-helpers';
-import { StatusBadge } from '@/components/ui/status-badge';
-import { formatDate, formatTime } from '@/lib/utils/format';
+import { createClient } from '@/lib/supabase/server';
 import Link from 'next/link';
-import { Search, ArrowLeft, RotateCcw, AlertCircle } from 'lucide-react';
-import { EnquiryRowActions } from './enquiry-row-actions';
-import { FollowupDateCell } from './followup-date-cell';
-import { EnquiryPagination } from './enquiry-pagination';
+import { Search, ArrowLeft, RotateCcw } from 'lucide-react';
 import { AutoRefresh } from '@/components/admin/auto-refresh';
-import { getEnquiriesTableList, getEnquiryTabCounts, clearAndArchiveEnquiries } from './actions';
-import { ClearDataButton } from '@/components/admin/clear-data-button';
+import { getEnquiriesTableList, getEnquiryTabCounts } from './actions';
+import { EnquiryClearDataButton } from './enquiry-clear-data-button';
+import { DateRangeFilter } from './date-range-filter';
+import { ENQUIRY_STATUS_OPTIONS } from '@/lib/enquiry-status';
+import { EnquiriesTable } from './enquiries-table';
+import { UploadExcelButton } from './upload-excel-button';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-const statusFilterOptions = [
-  { value: 'new', label: 'Pending' },
-  { value: 'follow_up', label: 'Follow Up' },
-  { value: 'quotation_sent', label: 'Quotations Sent' },
-  { value: 'booked', label: 'Booked' },
-  { value: 'confirmed', label: 'Confirmed' },
-  { value: 'lost', label: 'Not Interested' },
-];
+type EnquiriesSearchParams = {
+  q?: string;
+  status?: string;
+  priority?: string;
+  view?: string;
+  assigned?: string;
+  from?: string;
+  to?: string;
+  page?: string;
+  limit?: string;
+};
 
 const priorityFilterOptions = [
   { value: 'urgent', label: 'Urgent' },
@@ -42,21 +45,15 @@ function buildHref(
   return `?${params.toString()}`;
 }
 
-// Per-request memo: the tab badges and the Clear Data button share one count query
+// Per-request memo for the tab badge counts
 const getTabCountsCached = cache(() => getEnquiryTabCounts());
 
-/** Clear Data button enabled only when the (unfiltered) "All" count is above zero. */
-async function EnquiryClearDataSlot() {
-  const counts = await getTabCountsCached();
-  return (
-    <ClearDataButton
-      entityLabel="enquiries"
-      sheetTab="Enquiries"
-      action={clearAndArchiveEnquiries}
-      hasData={counts.allCount > 0}
-    />
-  );
-}
+// Active staff an admin can assign enquiries to (filter dropdown + bulk assign)
+const getActiveStaffCached = cache(async () => {
+  const supabase = await createClient();
+  const { data } = await supabase.from('profiles').select('id, full_name').eq('is_active', true).order('full_name');
+  return (data ?? []) as { id: string; full_name: string }[];
+});
 
 function TabCountersSkeleton() {
   return (
@@ -144,6 +141,7 @@ function EnquiriesTableSkeleton() {
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-ink-100 text-left text-xs uppercase tracking-wide text-ink-400">
+            <th className="w-10 py-3 pl-5 pr-1" />
             <th className="px-5 py-3">Enquiry #</th>
             <th className="px-5 py-3">Customer</th>
             <th className="px-5 py-3">Destination / Travel</th>
@@ -158,6 +156,7 @@ function EnquiriesTableSkeleton() {
         <tbody className="divide-y divide-ink-50">
           {Array.from({ length: 8 }).map((_, i) => (
             <tr key={i} className="animate-pulse">
+              <td className="py-3.5 pl-5 pr-1"><div className="h-4 w-4 rounded bg-ink-100" /></td>
               <td className="px-5 py-3.5"><div className="h-4 w-24 rounded bg-ink-200/70" /></td>
               <td className="px-5 py-3.5">
                 <div className="h-4 w-28 rounded bg-ink-200/70 mb-1.5" />
@@ -183,143 +182,63 @@ async function EnquiriesTableContent({
   isAdmin,
   canEdit,
 }: {
-  searchParams: { q?: string; status?: string; priority?: string; view?: string; page?: string; limit?: string };
+  searchParams: EnquiriesSearchParams;
   isAdmin: boolean;
   canEdit: boolean;
 }) {
-  const pageSize = Math.max(1, Number(searchParams.limit ?? 20));
-  const page = Math.max(1, Number(searchParams.page ?? 1));
+  const pageSize = Math.min(100, Math.max(1, Number(searchParams.limit ?? 20) || 20));
+  const page = Math.max(1, Number(searchParams.page ?? 1) || 1);
   const today = new Date().toISOString().slice(0, 10);
 
-  const result = await getEnquiriesTableList({
-    page,
-    pageSize,
-    q: searchParams.q ?? '',
-    status: searchParams.status ?? '',
-    priority: searchParams.priority ?? '',
-    view: searchParams.view ?? '',
-  });
+  const [result, staff] = await Promise.all([
+    getEnquiriesTableList({
+      page,
+      pageSize,
+      q: searchParams.q ?? '',
+      status: searchParams.status ?? '',
+      priority: searchParams.priority ?? '',
+      view: searchParams.view ?? '',
+      assigned: searchParams.assigned ?? '',
+      from: searchParams.from ?? '',
+      to: searchParams.to ?? '',
+    }),
+    isAdmin ? getActiveStaffCached() : Promise.resolve([]),
+  ]);
 
   return (
-    <>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[780px] text-sm">
-          <thead>
-            <tr className="border-b border-ink-100 text-left text-xs uppercase tracking-wide text-ink-400">
-              <th className="px-5 py-3">Enquiry #</th>
-              <th className="px-5 py-3">Customer</th>
-              <th className="px-5 py-3">Destination / Travel</th>
-              <th className="px-5 py-3">Status</th>
-              <th className="px-5 py-3">Priority</th>
-              <th className="px-5 py-3">Follow-up</th>
-              <th className="px-5 py-3">Assigned</th>
-              <th className="px-5 py-3">Date</th>
-              <th className="px-5 py-3 text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {result.enquiries.length === 0 && (
-              <tr>
-                <td colSpan={9} className="px-5 py-12 text-center text-ink-400">
-                  <AlertCircle className="mx-auto mb-2 h-7 w-7 text-ink-300" />
-                  <p className="font-medium text-ink-700">No enquiries found</p>
-                  <p className="text-xs text-ink-400 mt-0.5">Try resetting filters or search query</p>
-                </td>
-              </tr>
-            )}
-            {result.enquiries.map((e) => {
-              const isTodayTravel = e.travel_date === today;
-              return (
-                <tr key={e.id} className="border-b border-ink-50 last:border-0 hover:bg-ink-50/50">
-                  {/* 1. Enquiry # */}
-                  <td className="px-5 py-3">
-                    <Link
-                      href={`/travinco_dashboard/enquiries/${e.id}`}
-                      prefetch={true}
-                      className="font-medium text-ink-800 hover:text-brand-700 hover:underline"
-                    >
-                      {e.enquiry_number}
-                    </Link>
-                  </td>
+    <EnquiriesTable
+      enquiries={result.enquiries}
+      totalCount={result.totalCount}
+      currentPage={result.page}
+      pageSize={result.pageSize}
+      isAdmin={isAdmin}
+      canEdit={canEdit}
+      staff={staff}
+      today={today}
+    />
+  );
+}
 
-                  {/* 2. Customer */}
-                  <td className="px-5 py-3">
-                    <p className="font-medium text-ink-800">{e.customer_name}</p>
-                    <p className="text-xs text-ink-400">{e.phone}</p>
-                  </td>
-
-                  {/* 3. Destination / Travel */}
-                  <td className="px-5 py-3">
-                    <p className="text-ink-700">{e.destination || '—'}</p>
-                    {e.travel_date && (
-                      <p className={`text-xs ${isTodayTravel ? 'font-semibold text-rose-600' : 'text-ink-400'}`}>
-                        {formatDate(e.travel_date)}
-                        {isTodayTravel && ' (Today)'}
-                      </p>
-                    )}
-                  </td>
-
-                  {/* 4. Status */}
-                  <td className="px-5 py-3">
-                    <StatusBadge status={e.status} />
-                  </td>
-
-                  {/* 5. Priority */}
-                  <td className="px-5 py-3">
-                    <StatusBadge status={e.priority} />
-                  </td>
-
-                  {/* 6. Follow-up */}
-                  <td className="px-5 py-3">
-                    <FollowupDateCell
-                      enquiryId={e.id}
-                      customerName={e.customer_name}
-                      enquiryNumber={e.enquiry_number}
-                      currentDate={e.next_followup_date}
-                      status={e.status}
-                    />
-                  </td>
-
-                  {/* 7. Assigned */}
-                  <td className="px-5 py-3 text-ink-500">
-                    {e.assigned_staff_name}
-                  </td>
-
-                  {/* 8. Date */}
-                  <td className="whitespace-nowrap px-5 py-3 text-ink-500">
-                    <div>{formatDate(e.created_at)}</div>
-                    <div className="text-xs text-ink-400">{formatTime(e.created_at)}</div>
-                  </td>
-
-                  {/* 9. Actions */}
-                  <td className="px-5 py-3 text-right">
-                    <EnquiryRowActions
-                      id={e.id}
-                      customerName={e.customer_name}
-                      isAdmin={isAdmin}
-                      canEdit={canEdit}
-                    />
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-
-      <EnquiryPagination
-        totalCount={result.totalCount}
-        currentPage={result.page}
-        pageSize={result.pageSize}
-      />
-    </>
+/** Admin-only "Assigned to" filter. */
+async function AssignedFilter({ value }: { value: string }) {
+  const staff = await getActiveStaffCached();
+  return (
+    <select name="assigned" defaultValue={value} className="input w-full sm:w-auto">
+      <option value="">Everyone</option>
+      <option value="unassigned">Unassigned</option>
+      {staff.map((s) => (
+        <option key={s.id} value={s.id}>
+          {s.full_name}
+        </option>
+      ))}
+    </select>
   );
 }
 
 export default async function AdminEnquiriesPage({
   searchParams,
 }: {
-  searchParams: { q?: string; status?: string; priority?: string; view?: string; page?: string; limit?: string };
+  searchParams: EnquiriesSearchParams;
 }) {
   const profile = await requireProfile();
   await assertModulePermission(profile, 'enquiries', 'view');
@@ -327,8 +246,15 @@ export default async function AdminEnquiriesPage({
   const isAdmin = profile.role === 'admin' || profile.role === 'super_admin';
   const canEdit = isAdmin || (await checkModulePermission(profile, 'enquiries', 'edit')).allowed;
 
-  const hasFilters = Boolean(searchParams.q || searchParams.status || searchParams.priority);
-  const suspKey = `${searchParams.q ?? ''}-${searchParams.status ?? ''}-${searchParams.priority ?? ''}-${searchParams.view ?? ''}-${searchParams.page ?? '1'}-${searchParams.limit ?? '20'}`;
+  const hasFilters = Boolean(
+    searchParams.q ||
+      searchParams.status ||
+      searchParams.priority ||
+      searchParams.from ||
+      searchParams.to ||
+      (isAdmin && searchParams.assigned)
+  );
+  const suspKey = `${searchParams.q ?? ''}-${searchParams.status ?? ''}-${searchParams.priority ?? ''}-${searchParams.view ?? ''}-${searchParams.assigned ?? ''}-${searchParams.from ?? ''}-${searchParams.to ?? ''}-${searchParams.page ?? '1'}-${searchParams.limit ?? '20'}`;
 
   return (
     <div className="space-y-5">
@@ -346,14 +272,21 @@ export default async function AdminEnquiriesPage({
           <div>
             <h1 className="text-xl font-semibold text-ink-900">Enquiries</h1>
             <p className="text-sm text-ink-500">
-              Track, prioritize, and follow up with customer travel enquiries and quote requests
+              {isAdmin
+                ? 'Website, contact form and uploaded enquiries in one place. Select rows to assign them to employees.'
+                : 'Enquiries assigned to you'}
             </p>
           </div>
-          {isAdmin && (
-            <Suspense fallback={<ClearDataButton entityLabel="enquiries" sheetTab="Enquiries" loading />}>
-              <EnquiryClearDataSlot />
-            </Suspense>
-          )}
+          <div className="flex flex-wrap items-center gap-2.5">
+            {isAdmin && (
+              <EnquiryClearDataButton
+                key={`${searchParams.from ?? ''}-${searchParams.to ?? ''}`}
+                initialFrom={searchParams.from ?? ''}
+                initialTo={searchParams.to ?? ''}
+              />
+            )}
+            {canEdit && <UploadExcelButton isAdmin={isAdmin} />}
+          </div>
         </div>
       </div>
 
@@ -372,14 +305,14 @@ export default async function AdminEnquiriesPage({
             type="text"
             name="q"
             defaultValue={searchParams.q}
-            placeholder="Search name, phone, enquiry #, email…"
+            placeholder="Search name, phone, enquiry #, email, package…"
             className="input pl-9 w-full"
           />
         </div>
 
         <select name="status" defaultValue={searchParams.status ?? ''} className="input w-full sm:w-auto">
           <option value="">All statuses</option>
-          {statusFilterOptions.map((s) => (
+          {ENQUIRY_STATUS_OPTIONS.map((s) => (
             <option key={s.value} value={s.value}>
               {s.label}
             </option>
@@ -395,13 +328,31 @@ export default async function AdminEnquiriesPage({
           ))}
         </select>
 
+        <DateRangeFilter
+          key={`${searchParams.from ?? ''}-${searchParams.to ?? ''}`}
+          initialFrom={searchParams.from ?? ''}
+          initialTo={searchParams.to ?? ''}
+        />
+
+        {isAdmin && (
+          <Suspense
+            fallback={
+              <select disabled className="input w-full sm:w-auto">
+                <option>Everyone</option>
+              </select>
+            }
+          >
+            <AssignedFilter value={searchParams.assigned ?? ''} />
+          </Suspense>
+        )}
+
         <button type="submit" className="btn-primary w-full sm:w-auto">
           Filter
         </button>
 
         {hasFilters && (
           <Link
-            href={buildHref(searchParams, { q: undefined, status: undefined, priority: undefined, page: undefined })}
+            href={buildHref(searchParams, { q: undefined, status: undefined, priority: undefined, assigned: undefined, from: undefined, to: undefined, page: undefined })}
             className="btn-outline flex items-center gap-1 text-ink-600"
             title="Clear search and filters"
           >

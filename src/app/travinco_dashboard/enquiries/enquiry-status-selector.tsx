@@ -1,74 +1,14 @@
 'use client';
 
 import { useState, useRef, useEffect, useTransition } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { toast } from '@/lib/admin-alert';
 import { ChevronDown, Check, Loader2 } from 'lucide-react';
 import { updateEnquiryStatus } from './actions';
 import type { EnquiryStatus } from '@/types/database';
 import { StatusBadge } from '@/components/ui/status-badge';
-
-export const ENQUIRY_STATUS_OPTIONS: {
-  value: EnquiryStatus;
-  label: string;
-  badgeClass: string;
-  dotColor: string;
-}[] = [
-  {
-    value: 'new',
-    label: 'Pending',
-    badgeClass: 'bg-amber-50 text-amber-800 border-amber-200/80 hover:bg-amber-100/70',
-    dotColor: 'bg-amber-500',
-  },
-  {
-    value: 'contacted',
-    label: 'Contacted',
-    badgeClass: 'bg-sand-100 text-sand-800 border-sand-200 hover:bg-sand-200/70',
-    dotColor: 'bg-sand-500',
-  },
-  {
-    value: 'follow_up',
-    label: 'Follow Up',
-    badgeClass: 'bg-purple-50 text-purple-800 border-purple-200/80 hover:bg-purple-100/70',
-    dotColor: 'bg-purple-500',
-  },
-  {
-    value: 'quotation_sent',
-    label: 'Quotations Sent',
-    badgeClass: 'bg-indigo-50 text-indigo-800 border-indigo-200/80 hover:bg-indigo-100/70',
-    dotColor: 'bg-indigo-500',
-  },
-  {
-    value: 'negotiation',
-    label: 'Negotiation',
-    badgeClass: 'bg-blue-50 text-blue-800 border-blue-200/80 hover:bg-blue-100/70',
-    dotColor: 'bg-blue-500',
-  },
-  {
-    value: 'booked',
-    label: 'Booked',
-    badgeClass: 'bg-emerald-50 text-emerald-800 border-emerald-200/80 hover:bg-emerald-100/70',
-    dotColor: 'bg-emerald-500',
-  },
-  {
-    value: 'confirmed',
-    label: 'Confirmed',
-    badgeClass: 'bg-emerald-50 text-emerald-800 border-emerald-200/80 hover:bg-emerald-100/70',
-    dotColor: 'bg-emerald-500',
-  },
-  {
-    value: 'lost',
-    label: 'Not Interested',
-    badgeClass: 'bg-rose-50 text-rose-800 border-rose-200/80 hover:bg-rose-100/70',
-    dotColor: 'bg-rose-500',
-  },
-  {
-    value: 'closed',
-    label: 'Closed',
-    badgeClass: 'bg-ink-100 text-ink-600 border-ink-200 hover:bg-ink-200/70',
-    dotColor: 'bg-ink-400',
-  },
-];
+import { ENQUIRY_STATUS_OPTIONS, normalizeEnquiryStatus } from '@/lib/enquiry-status';
 
 interface EnquiryStatusSelectorProps {
   enquiryId: string;
@@ -82,15 +22,17 @@ export function EnquiryStatusSelector({
   canEdit = true,
 }: EnquiryStatusSelectorProps) {
   const router = useRouter();
-  const [current, setCurrent] = useState<EnquiryStatus>(currentStatus as EnquiryStatus);
+  const [current, setCurrent] = useState<EnquiryStatus>(normalizeEnquiryStatus(currentStatus));
   const [isOpen, setIsOpen] = useState(false);
-  const [openUpward, setOpenUpward] = useState(false);
+  // Fixed-position menu (rendered in <body>) so a scrolling table can't clip it
+  const [menuPos, setMenuPos] = useState<{ left: number; top?: number; bottom?: number } | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const [isPending, startTransition] = useTransition();
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Sync state if prop changes from parent / router refresh
   useEffect(() => {
-    setCurrent(currentStatus as EnquiryStatus);
+    setCurrent(normalizeEnquiryStatus(currentStatus));
   }, [currentStatus]);
 
   // Sync state if changed from EnquiryControls or other components
@@ -107,26 +49,28 @@ export function EnquiryStatusSelector({
     };
   }, [enquiryId, current]);
 
-  const activeConfig =
-    ENQUIRY_STATUS_OPTIONS.find((o) => o.value === current) ?? {
-      value: 'new' as EnquiryStatus,
-      label: 'Pending',
-      badgeClass: 'bg-amber-50 text-amber-800 border-amber-200/80 hover:bg-amber-100/70',
-      dotColor: 'bg-amber-500',
-    };
+  const activeConfig = ENQUIRY_STATUS_OPTIONS.find((o) => o.value === current) ?? ENQUIRY_STATUS_OPTIONS[0]!;
 
   // Close dropdown on click outside
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setIsOpen(false);
-      }
+      const target = e.target as Node;
+      if (dropdownRef.current?.contains(target) || menuRef.current?.contains(target)) return;
+      setIsOpen(false);
+    }
+    function close() {
+      setIsOpen(false);
     }
     if (isOpen) {
       document.addEventListener('mousedown', handleClickOutside);
+      // The menu is fixed to the screen, so close it rather than leave it floating
+      window.addEventListener('scroll', close, true);
+      window.addEventListener('resize', close);
     }
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
     };
   }, [isOpen]);
 
@@ -134,8 +78,15 @@ export function EnquiryStatusSelector({
     if (!canEdit) return;
     if (!isOpen && dropdownRef.current) {
       const rect = dropdownRef.current.getBoundingClientRect();
+      const menuW = Math.min(240, window.innerWidth - 16);
+      const menuH = 230;
       const spaceBelow = window.innerHeight - rect.bottom;
-      setOpenUpward(spaceBelow < 260 && rect.top > 260);
+      const left = Math.max(8, Math.min(rect.left, window.innerWidth - menuW - 8));
+      setMenuPos(
+        spaceBelow < menuH && rect.top > spaceBelow
+          ? { left, bottom: window.innerHeight - rect.top + 6 }
+          : { left, top: rect.bottom + 6 }
+      );
     }
     setIsOpen((prev) => !prev);
   }
@@ -172,7 +123,7 @@ export function EnquiryStatusSelector({
 
   // If user cannot edit, render standard read-only status badge
   if (!canEdit) {
-    return <StatusBadge status={current} />;
+    return <StatusBadge status={current} className="max-w-[11.5rem] rounded-2xl leading-tight" />;
   }
 
   return (
@@ -182,10 +133,10 @@ export function EnquiryStatusSelector({
         onClick={toggleDropdown}
         disabled={isPending}
         title="Click to change enquiry status"
-        className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold border transition-all cursor-pointer shadow-2xs hover:shadow-xs focus:outline-none focus:ring-2 focus:ring-brand-500/20 disabled:opacity-60 ${activeConfig.badgeClass}`}
+        className={`inline-flex max-w-[11.5rem] items-center gap-1.5 rounded-2xl px-3 py-1 text-left text-xs font-semibold leading-tight border transition-all cursor-pointer shadow-2xs hover:shadow-xs focus:outline-none focus:ring-2 focus:ring-brand-500/20 disabled:opacity-60 ${activeConfig.badgeClass}`}
       >
         <span className={`h-2 w-2 rounded-full shrink-0 ${activeConfig.dotColor}`} />
-        <span>{activeConfig.label}</span>
+        <span className="min-w-0">{activeConfig.label}</span>
         {isPending ? (
           <Loader2 className="h-3 w-3 animate-spin ml-0.5 opacity-70" />
         ) : (
@@ -197,11 +148,11 @@ export function EnquiryStatusSelector({
         )}
       </button>
 
-      {isOpen && (
+      {isOpen && menuPos && createPortal(
         <div
-          className={`absolute z-50 w-52 rounded-2xl border border-ink-200/90 bg-white p-1.5 shadow-xl animate-in fade-in zoom-in-95 duration-150 ${
-            openUpward ? 'bottom-full mb-1.5 left-0' : 'top-full mt-1.5 left-0'
-          }`}
+          ref={menuRef}
+          style={{ left: menuPos.left, top: menuPos.top, bottom: menuPos.bottom }}
+          className="fixed z-[60] w-60 max-w-[calc(100vw-1rem)] rounded-2xl border border-ink-200/90 bg-white p-1.5 shadow-xl animate-in fade-in zoom-in-95 duration-150"
         >
           <div className="px-2.5 py-1.5 border-b border-ink-100 mb-1">
             <p className="text-[10px] font-bold uppercase tracking-wider text-ink-400">
@@ -232,7 +183,8 @@ export function EnquiryStatusSelector({
               );
             })}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

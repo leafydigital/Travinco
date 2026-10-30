@@ -52,7 +52,6 @@ export const adminNav: NavSection[] = [
       { label: 'Destinations', href: '/travinco_dashboard/destinations', icon: 'MapPin', pageKey: 'destinations', module: 'destinations' },
       { label: 'Enquiries', href: '/travinco_dashboard/enquiries', icon: 'Inbox', pageKey: 'enquiries', module: 'enquiries' },
       { label: 'Customers', href: '/travinco_dashboard/customers', icon: 'UsersRound', pageKey: 'customers', module: 'customers' },
-      { label: 'Leads', href: '/travinco_dashboard/leads', icon: 'ClipboardList', pageKey: 'leads', module: 'leads' },
       { label: 'Blog', href: '/travinco_dashboard/blog', icon: 'BookOpen', pageKey: 'blog', module: 'blog' },
       { label: 'Theme', href: '/travinco_dashboard/theme', icon: 'Palette', pageKey: 'theme', module: 'theme', roles: ['admin', 'super_admin', 'sales_staff'] },
       {

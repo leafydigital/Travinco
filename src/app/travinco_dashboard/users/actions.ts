@@ -3,7 +3,13 @@
 import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
-import { requireProfile } from '@/lib/supabase/auth-helpers';
+import { requireProfile, type CurrentProfile } from '@/lib/supabase/auth-helpers';
+import {
+  USERS_SHEET_HEADERS,
+  USERS_SHEET_TAB,
+  archiveRows,
+  hardDeleteErrorMessage,
+} from '@/lib/hard-delete';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { validateFullName, validateEmailAddress } from '@/lib/validations/contact-rules';
@@ -108,9 +114,10 @@ export async function createStaffUser(raw: unknown) {
   const phone = parsed.data.phone;
 
   // Check if a profile with this email already exists (active or soft-deleted)
+  // '*' so the is_deleted / role_title checks below see those columns
   const { data: existingProfile } = await supabase
     .from('profiles')
-    .select('id, full_name, email')
+    .select('*')
     .eq('email', normalizedEmail)
     .maybeSingle();
 
@@ -405,6 +412,62 @@ export async function setStaffActive(profileId: string, isActive: boolean) {
   return { success: true };
 }
 
+/** Was this profile soft-deleted by the old delete (before deletes became permanent)? */
+function isSoftDeleted(p: Record<string, any>, markerIds: Set<string>) {
+  return p.is_deleted === true || p.role_title === '[DELETED]' || markerIds.has(p.id);
+}
+
+/**
+ * Saves the users to the Google Sheet "Users" tab, then permanently removes
+ * their profile and sign-in account (so the same email can be used again).
+ */
+async function archiveAndDeleteUsers(
+  requester: CurrentProfile,
+  targets: Record<string, any>[]
+): Promise<{ error?: string; deleted: number }> {
+  const supabase = await createClient();
+  const { data: roles } = await supabase.from('staff_roles').select('id, name');
+  const roleNames = new Map((roles ?? []).map((r) => [r.id as string, r.name as string]));
+
+  const deletedAt = new Date().toISOString();
+  const deletedBy = requester.full_name || requester.email;
+  const archiveError = await archiveRows(
+    USERS_SHEET_TAB,
+    USERS_SHEET_HEADERS,
+    targets.map((u) => [
+      u.id,
+      u.full_name ?? null,
+      u.username ?? null,
+      u.email ?? null,
+      u.phone ?? null,
+      (u.role_id && roleNames.get(u.role_id)) || (u.role_title !== '[DELETED]' ? u.role_title : null) || u.role || null,
+      u.is_deleted || u.role_title === '[DELETED]' ? 'Deleted earlier' : u.is_active ? 'Active' : 'Deactivated',
+      u.created_at ?? null,
+      deletedAt,
+      deletedBy,
+    ])
+  );
+  if (archiveError) return { error: archiveError, deleted: 0 };
+
+  let deleted = 0;
+  for (const u of targets) {
+    const { error } = await supabase.rpc('hard_delete_staff_user', { p_id: u.id });
+    if (error) {
+      return {
+        error: `${deleted > 0 ? `${deleted} deleted, then: ` : ''}${hardDeleteErrorMessage(error)}`,
+        deleted,
+      };
+    }
+    deleted++;
+    // Legacy per-user markers
+    await supabase
+      .from('website_settings')
+      .delete()
+      .in('key', [`staff_perms_${u.id}`, `custom_role_${u.id}`, `deleted_user_${u.id}`]);
+  }
+  return { deleted };
+}
+
 export async function deleteStaffUser(profileId: string) {
   const requester = await requireProfile();
   // Delete access only allowed to admin only
@@ -416,98 +479,47 @@ export async function deleteStaffUser(profileId: string) {
   }
 
   const supabase = await createClient();
-
-  // Fetch target profile
-  const { data: targetProfile, error: fetchErr } = await supabase
-    .from('profiles')
-    .select('id, full_name, role')
-    .eq('id', profileId)
-    .single();
-
-  if (fetchErr || !targetProfile) {
-    return { error: 'Staff member not found.' };
-  }
-
-  if (targetProfile.role === 'super_admin') {
-    return { error: 'Super Admin accounts cannot be deleted.' };
-  }
-
-  if (targetProfile.role === 'admin' && requester.role !== 'super_admin') {
+  const { data: target } = await supabase.from('profiles').select('*').eq('id', profileId).maybeSingle();
+  if (!target) return { error: 'Staff member not found.' };
+  if (target.role === 'super_admin') return { error: 'Super Admin accounts cannot be deleted.' };
+  if (target.role === 'admin' && requester.role !== 'super_admin') {
     return { error: 'Only the Super Admin can delete Admin accounts.' };
   }
 
-  // 1. Revoke page permissions so user has no access
-  await supabase.from('staff_permissions').delete().eq('profile_id', profileId);
-  try {
-    await supabase.from('website_settings').delete().eq('key', `staff_perms_${profileId}`);
-    await supabase.from('website_settings').delete().eq('key', `custom_role_${profileId}`);
-  } catch {}
-
-  // 2. SOFT DELETE fallback in website_settings (guarantees user is immediately and permanently hidden from tables)
-  try {
-    await supabase.from('website_settings').upsert(
-      {
-        key: `deleted_user_${profileId}`,
-        value: { is_deleted: true, deleted_at: new Date().toISOString() },
-      },
-      { onConflict: 'key' }
-    );
-  } catch (wsErr) {
-    console.error('Failed to record deleted user in website_settings:', wsErr);
-  }
-
-  // 3. SOFT DELETE on profiles table: update is_deleted = true, is_active = false
-  // (Data is NOT removed from database)
-  let { error: softDeleteErr } = await supabase
-    .from('profiles')
-    .update({
-      is_deleted: true,
-      is_active: false,
-    } as any)
-    .eq('id', profileId);
-
-  if (softDeleteErr && softDeleteErr.message?.includes('is_deleted')) {
-    // If migration is pending in Supabase, deactivate account
-    const fallback = await supabase
-      .from('profiles')
-      .update({ is_active: false })
-      .eq('id', profileId);
-    if (fallback.error) return { error: fallback.error.message };
-  } else if (softDeleteErr) {
-    return { error: softDeleteErr.message || 'Could not soft-delete staff member.' };
-  }
+  const res = await archiveAndDeleteUsers(requester, [target]);
+  if (res.error) return { error: res.error };
 
   revalidatePath('/travinco_dashboard', 'layout');
   revalidatePath('/travinco_dashboard/users');
   return { success: true };
 }
 
-/** Restores a soft-deleted staff account: it can sign in again with its role. */
-export async function restoreStaffUser(profileId: string) {
+/**
+ * One-off clean-up: users deleted before deletes became permanent are still in
+ * the database. Saves them to the "Users" sheet and removes them for good.
+ */
+export async function purgeSoftDeletedUsers(): Promise<{ error?: string; count?: number }> {
   const requester = await requireProfile();
   if (requester.role !== 'admin' && requester.role !== 'super_admin') {
-    return { error: 'Only administrators can restore staff accounts.' };
+    return { error: 'Only administrators can delete staff accounts.' };
   }
 
   const supabase = await createClient();
-  const { data: target } = await supabase.from('profiles').select('id, role, role_title').eq('id', profileId).maybeSingle();
-  if (!target) return { error: 'Staff member not found.' };
-  if (target.role === 'admin' && requester.role !== 'super_admin') {
-    return { error: 'Only the Super Admin can restore Admin accounts.' };
-  }
+  const [{ data: profiles }, { data: markers }] = await Promise.all([
+    supabase.from('profiles').select('*'),
+    supabase.from('website_settings').select('key').like('key', 'deleted_user_%'),
+  ]);
+  const markerIds = new Set((markers ?? []).map((m) => m.key.replace('deleted_user_', '')));
+  const targets = (profiles ?? []).filter(
+    (p: any) =>
+      isSoftDeleted(p, markerIds) &&
+      p.id !== requester.id &&
+      p.role !== 'super_admin' &&
+      !(p.role === 'admin' && requester.role !== 'super_admin')
+  );
+  if (targets.length === 0) return { count: 0 };
 
-  const { error } = await supabase
-    .from('profiles')
-    .update({
-      is_deleted: false,
-      is_active: true,
-      ...(target.role_title === '[DELETED]' ? { role_title: null } : {}),
-    } as any)
-    .eq('id', profileId);
-  if (error) return { error: 'Could not restore the user. Please try again.' };
-  await supabase.from('website_settings').delete().eq('key', `deleted_user_${profileId}`);
-
-  revalidatePath('/travinco_dashboard', 'layout');
+  const res = await archiveAndDeleteUsers(requester, targets);
   revalidatePath('/travinco_dashboard/users');
-  return { success: true };
+  return res.error ? { error: res.error, count: res.deleted } : { count: res.deleted };
 }

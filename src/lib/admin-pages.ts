@@ -54,8 +54,8 @@ export const PAGE_CATALOG: PageDefinition[] = [
     href: '/travinco_dashboard/enquiries',
     icon: 'Inbox',
     category: 'Core Operations',
-    description: 'Customer leads, follow-up scheduler, quotation pipeline, and statuses',
-    defaultRoles: ['super_admin', 'admin', 'sales_staff'],
+    description: 'Website, contact form and Excel-uploaded enquiries, assignment, follow-ups and statuses',
+    defaultRoles: ['super_admin', 'admin', 'sales_staff', 'accounts_staff'],
   },
   {
     key: 'customers',
@@ -64,15 +64,6 @@ export const PAGE_CATALOG: PageDefinition[] = [
     icon: 'UsersRound',
     category: 'Core Operations',
     description: 'Client profiles, trip histories, contact info, and lifetime value',
-    defaultRoles: ['super_admin', 'admin', 'sales_staff', 'accounts_staff'],
-  },
-  {
-    key: 'leads',
-    label: 'Leads',
-    href: '/travinco_dashboard/leads',
-    icon: 'ClipboardList',
-    category: 'Core Operations',
-    description: 'Travel enquiry leads — upload from Excel, search, filter, and manage statuses',
     defaultRoles: ['super_admin', 'admin', 'sales_staff', 'accounts_staff'],
   },
 

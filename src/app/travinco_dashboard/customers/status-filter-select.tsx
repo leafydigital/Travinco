@@ -13,7 +13,6 @@ export function StatusFilterSelect({ defaultValue }: { defaultValue?: string }) 
       <option value="">All statuses</option>
       <option value="active">Active</option>
       <option value="deactivated">Deactivated</option>
-      <option value="deleted">Deleted</option>
     </select>
   );
 }

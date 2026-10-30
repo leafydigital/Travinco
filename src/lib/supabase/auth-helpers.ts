@@ -245,7 +245,8 @@ export const hasPageAccess = cache(async (
 
     case 'accounts_staff': {
       const accountsAllowed = [
-        'dashboard', 'income', 'expenses', 'bookings', 'customers', 'leads',
+        // 'enquiries' replaces the retired 'leads' page (they only see enquiries assigned to them)
+        'dashboard', 'income', 'expenses', 'bookings', 'customers', 'enquiries',
         'quotations', 'invoices', 'master',
       ];
       if (pageKey === 'customers' && action === 'edit') return false;

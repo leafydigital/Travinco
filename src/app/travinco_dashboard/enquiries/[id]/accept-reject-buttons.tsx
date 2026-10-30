@@ -18,7 +18,7 @@ export function AcceptRejectButtons({
   const [showRejectReason, setShowRejectReason] = useState(false);
   const [reason, setReason] = useState('');
 
-  const alreadyDecided = currentStatus === 'confirmed' || currentStatus === 'lost';
+  const alreadyDecided = currentStatus === 'converted' || currentStatus === 'lost';
 
   function handleAccept() {
     if (!confirm('Accept this enquiry? The customer will be emailed.')) return;
@@ -51,10 +51,10 @@ export function AcceptRejectButtons({
     return (
       <span
         className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium ${
-          currentStatus === 'confirmed' ? 'bg-brand-50 text-brand-700' : 'bg-coral-50 text-coral-700'
+          currentStatus === 'converted' ? 'bg-brand-50 text-brand-700' : 'bg-coral-50 text-coral-700'
         }`}
       >
-        {currentStatus === 'confirmed' ? (
+        {currentStatus === 'converted' ? (
           <>
             <CheckCircle2 className="h-4 w-4" /> Accepted
           </>

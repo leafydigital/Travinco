@@ -38,7 +38,6 @@ interface InvoiceSettingsContextType {
   settings: InvoiceSettings;
   update: (patch: Partial<InvoiceSettings>) => void;
   sampleQrDataUrl: string;
-  handleReset: () => void;
   handleSignUpload: (e: ChangeEvent<HTMLInputElement>) => Promise<void>;
   handleQrUpload: (e: ChangeEvent<HTMLInputElement>) => Promise<void>;
   uploadingSign: boolean;
@@ -134,13 +133,6 @@ export function InvoiceSettingsProvider({
   };
   useRegisterSettingsSave('invoice-settings', handleSave);
 
-  const handleReset = () => {
-    if (!window.confirm('Reset all invoice bank details and terms back to official defaults?'))
-      return;
-    setSettings(DEFAULT_INVOICE_SETTINGS);
-    toast.info('Reset to default invoice configuration. Click "Save settings" at the top to keep it.');
-  };
-
   const handleSignUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -189,7 +181,6 @@ export function InvoiceSettingsProvider({
         settings,
         update,
         sampleQrDataUrl,
-        handleReset,
         handleSignUpload,
         handleQrUpload,
         uploadingSign,
@@ -210,7 +201,6 @@ function InvoiceSettingsEditorForm() {
   const {
     settings,
     update,
-    handleReset,
     handleSignUpload,
     handleQrUpload,
     uploadingSign,
@@ -234,15 +224,6 @@ function InvoiceSettingsEditorForm() {
             Configure bank account particulars, payment QR code image, official seal,
             and terms shown on the tax invoice.
           </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={handleReset}
-            className="btn-outline h-8 text-xs text-ink-600 hover:text-ink-900"
-          >
-            <RefreshCw className="h-3.5 w-3.5" /> Reset Defaults
-          </button>
         </div>
       </div>
 

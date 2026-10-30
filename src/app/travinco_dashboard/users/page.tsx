@@ -5,6 +5,8 @@ import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { Plus } from 'lucide-react';
 import { UsersTable } from './users-table';
+import { PurgeDeletedBanner } from '@/components/admin/purge-deleted-banner';
+import { purgeSoftDeletedUsers } from './actions';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -84,12 +86,16 @@ export default async function AdminUsersPage() {
     }
   }
 
-  // Soft-deleted users stay in the table with a "Deleted" status; attach custom role_title
-  const users = (allUsers ?? []).map((u: any) => ({
-    ...u,
-    is_deleted: u.is_deleted === true || u.role_title === '[DELETED]' || deletedUserIds.has(u.id),
-    role_title: (u.role_title === '[DELETED]' ? null : u.role_title) || customRoleMap.get(u.id) || null,
-  }));
+  // Deleted users are removed for good; rows soft-deleted by the old delete are
+  // hidden here and can be cleaned out with the banner below.
+  const isDeleted = (u: any) => u.is_deleted === true || u.role_title === '[DELETED]' || deletedUserIds.has(u.id);
+  const leftoverDeleted = (allUsers ?? []).filter(isDeleted).length;
+  const users = (allUsers ?? [])
+    .filter((u: any) => !isDeleted(u))
+    .map((u: any) => ({
+      ...u,
+      role_title: u.role_title || customRoleMap.get(u.id) || null,
+    }));
 
   return (
     <div className="space-y-5">
@@ -104,6 +110,10 @@ export default async function AdminUsersPage() {
           <Plus className="h-4 w-4" /> New user
         </Link>
       </div>
+
+      {leftoverDeleted > 0 && (
+        <PurgeDeletedBanner count={leftoverDeleted} entity="user" sheetTab="Users" action={purgeSoftDeletedUsers} />
+      )}
 
       <UsersTable
         initialUsers={users ?? []}

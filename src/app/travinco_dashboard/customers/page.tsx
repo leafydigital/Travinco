@@ -4,9 +4,9 @@ import Link from 'next/link';
 import { Search, Plus, ArrowLeft } from 'lucide-react';
 import { CustomerRowActions } from './customer-row-actions';
 import { CustomerStatusBadge } from './customer-status-badge';
-import { CustomerRestoreButton } from './customer-restore-button';
+import { PurgeDeletedBanner } from '@/components/admin/purge-deleted-banner';
 import { StatusFilterSelect } from './status-filter-select';
-import { getCustomersTableList } from './actions';
+import { getCustomersTableList, countSoftDeletedCustomers, purgeSoftDeletedCustomers } from './actions';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -100,11 +100,11 @@ async function CustomersTableContent({
             {customers.map((c) => (
               <tr
                 key={c.id}
-                className={`border-b border-ink-50 last:border-0 hover:bg-ink-50/50 ${c.is_deleted ? 'bg-ink-50/40 text-ink-400' : ''}`}
+                className="border-b border-ink-50 last:border-0 hover:bg-ink-50/50"
               >
                 {/* 1. Customer */}
                 <td className="px-5 py-3">
-                  <span className={c.is_deleted ? 'font-medium text-ink-500 line-through decoration-ink-300' : 'font-medium text-ink-900'}>
+                  <span className="font-medium text-ink-900">
                     {c.full_name}
                   </span>
                 </td>
@@ -128,20 +128,12 @@ async function CustomersTableContent({
 
                 {/* 7. Actions */}
                 <td className="px-5 py-3 text-right">
-                  {c.is_deleted ? (
-                    isAdmin ? (
-                      <CustomerRestoreButton customerId={c.id} customerName={c.full_name} />
-                    ) : (
-                      <span className="text-xs text-ink-400">—</span>
-                    )
-                  ) : (
-                    <CustomerRowActions
-                      customer={c}
-                      isActive={c.is_active}
-                      canEdit={canEdit}
-                      isAdmin={isAdmin}
-                    />
-                  )}
+                  <CustomerRowActions
+                    customer={c}
+                    isActive={c.is_active}
+                    canEdit={canEdit}
+                    isAdmin={isAdmin}
+                  />
                 </td>
               </tr>
             ))}
@@ -168,6 +160,13 @@ async function CustomersTableContent({
       )}
     </>
   );
+}
+
+/** Customers deleted before deletes became permanent: offer a one-off clean-up. */
+async function LeftoverDeletedCustomers() {
+  const count = await countSoftDeletedCustomers();
+  if (count === 0) return null;
+  return <PurgeDeletedBanner count={count} entity="customer" sheetTab="Customers" action={purgeSoftDeletedCustomers} />;
 }
 
 export default async function AdminCustomersPage({
@@ -201,6 +200,12 @@ export default async function AdminCustomersPage({
           <Plus className="h-4 w-4" /> New customer
         </Link>
       </div>
+
+      {isAdmin && (
+        <Suspense fallback={null}>
+          <LeftoverDeletedCustomers />
+        </Suspense>
+      )}
 
       {/* 2. Filter Form Structure (Renders Instantly) */}
       <form className="flex flex-wrap sm:flex-nowrap items-center gap-3" method="get">

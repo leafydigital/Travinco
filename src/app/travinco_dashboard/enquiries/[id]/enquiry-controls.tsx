@@ -13,18 +13,7 @@ import type { EnquiryStatus, EnquiryPriority } from '@/types/database';
 import { AdminDateField } from '@/components/admin/package-fields';
 import { formatIsoAsDMY } from '@/components/public/date-picker-dmy';
 import { addYearsIso, todayIso } from '@/lib/utils/iso-date';
-
-const statusDisplayList: { value: EnquiryStatus; label: string }[] = [
-  { value: 'new', label: 'Pending' },
-  { value: 'follow_up', label: 'Follow Up' },
-  { value: 'quotation_sent', label: 'Quotations Sent' },
-  { value: 'booked', label: 'Booked' },
-  { value: 'confirmed', label: 'Confirmed' },
-  { value: 'lost', label: 'Not Interested' },
-  { value: 'contacted', label: 'Contacted' },
-  { value: 'negotiation', label: 'Negotiation' },
-  { value: 'closed', label: 'Closed' },
-];
+import { ENQUIRY_STATUS_OPTIONS, normalizeEnquiryStatus } from '@/lib/enquiry-status';
 
 const priorityDisplayList: { value: EnquiryPriority; label: string }[] = [
   { value: 'urgent', label: 'Urgent' },
@@ -41,6 +30,7 @@ export function EnquiryControls({
   currentFollowupDate,
   staff,
   canEdit = true,
+  canAssign = false,
 }: {
   enquiryId: string;
   currentStatus: EnquiryStatus;
@@ -49,17 +39,19 @@ export function EnquiryControls({
   currentFollowupDate?: string | null;
   staff: { id: string; full_name: string }[];
   canEdit?: boolean;
+  /** Only admins hand enquiries to employees. */
+  canAssign?: boolean;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [status, setStatus] = useState<EnquiryStatus>(currentStatus);
+  const [status, setStatus] = useState<EnquiryStatus>(normalizeEnquiryStatus(currentStatus));
   const [priority, setPriority] = useState<EnquiryPriority>(currentPriority);
   const [assignee, setAssignee] = useState<string | null>(currentAssignee);
   const [followupDate, setFollowupDate] = useState(currentFollowupDate ?? '');
 
   // Keep state in sync if server props change (e.g. after router.refresh())
   useEffect(() => {
-    setStatus(currentStatus);
+    setStatus(normalizeEnquiryStatus(currentStatus));
   }, [currentStatus]);
 
   useEffect(() => {
@@ -156,7 +148,7 @@ export function EnquiryControls({
           onChange={(e) => handleStatusChange(e.target.value as EnquiryStatus)}
           className="input"
         >
-          {statusDisplayList.map((s) => (
+          {ENQUIRY_STATUS_OPTIONS.map((s) => (
             <option key={s.value} value={s.value}>
               {s.label}
             </option>
@@ -201,7 +193,8 @@ export function EnquiryControls({
         <label className="label">Assigned to</label>
         <select
           value={assignee ?? ''}
-          disabled={isPending || !canEdit}
+          disabled={isPending || !canAssign}
+          title={canAssign ? undefined : 'Only admins can assign enquiries'}
           onChange={(e) => {
             const val = e.target.value || null;
             setAssignee(val);

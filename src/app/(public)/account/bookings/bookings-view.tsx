@@ -22,6 +22,8 @@ type Tab = 'invoices' | 'enquiries';
 /** Customer-facing wording for the team's enquiry pipeline statuses. */
 const ENQUIRY_STATUS: Record<string, { label: string; className: string }> = {
   new: { label: 'Submitted', className: 'bg-sky-100 text-sky-800' },
+  pending_quote: { label: 'Preparing Quote', className: 'bg-indigo-100 text-indigo-800' },
+  converted: { label: 'Confirmed', className: 'bg-emerald-100 text-emerald-800' },
   contacted: { label: 'Contacted', className: 'bg-indigo-100 text-indigo-800' },
   follow_up: { label: 'In Progress', className: 'bg-amber-100 text-amber-800' },
   quotation_sent: { label: 'Quotation Sent', className: 'bg-violet-100 text-violet-800' },

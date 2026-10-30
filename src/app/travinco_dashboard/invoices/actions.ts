@@ -153,7 +153,7 @@ export async function convertQuotationToInvoice(quotationId: string, option: 1 |
   }, { onConflict: 'key' });
 
   await supabase.from('quotations').update({ status: 'invoiced', customer_id: customerId }).eq('id', q.id);
-  if (q.enquiry_id) await supabase.from('enquiries').update({ status: 'confirmed' }).eq('id', q.enquiry_id);
+  if (q.enquiry_id) await supabase.from('enquiries').update({ status: 'converted' }).eq('id', q.enquiry_id);
 
   revalidatePath('/travinco_dashboard/invoices');
   revalidatePath('/travinco_dashboard/quotations');

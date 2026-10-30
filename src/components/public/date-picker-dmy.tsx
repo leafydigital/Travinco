@@ -29,6 +29,15 @@ function parseIso(iso: string): { y: number; m: number; d: number } | null {
   return { y: Number(match[1]), m: Number(match[2]) - 1, d: Number(match[3]) };
 }
 
+/** Where the calendar opens with no date picked: today, kept inside [min, max]. */
+function initialView(value: string, min: string, max: string) {
+  const picked = parseIso(value);
+  if (picked) return picked;
+  const now = new Date();
+  const today = toIso(now.getFullYear(), now.getMonth(), now.getDate());
+  return parseIso(today < min ? min : today > max ? max : today)!;
+}
+
 export function formatIsoAsDMY(iso: string): string {
   const p = parseIso(iso);
   if (!p) return '';
@@ -62,11 +71,10 @@ export function DatePickerDMY({
 }) {
   const minP = parseIso(min)!;
   const maxP = parseIso(max)!;
-  const selected = parseIso(value);
 
   const [open, setOpen] = useState(false);
   const [view, setView] = useState(() => {
-    const base = selected ?? minP;
+    const base = initialView(value, min, max);
     return { y: base.y, m: base.m };
   });
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -78,18 +86,20 @@ export function DatePickerDMY({
     if (rect) {
       const popW = Math.min(288, window.innerWidth - 32);
       const popH = 360;
+      const spaceBelow = window.innerHeight - rect.bottom;
       setPlacement({
         alignRight: rect.left + popW > window.innerWidth - 8 && rect.right - popW >= 8,
-        openUp: rect.bottom + popH > window.innerHeight && rect.top > popH,
+        // Open upwards when it doesn't fit below and there is more room above
+        openUp: spaceBelow < popH && rect.top > spaceBelow,
       });
     }
     setOpen(true);
   }
 
-  // Re-centre the calendar on the selected date (or min) each time it opens
+  // Re-centre the calendar on the selected date (or today) each time it opens
   useEffect(() => {
     if (!open) return;
-    const base = parseIso(value) ?? parseIso(min)!;
+    const base = initialView(value, min, max);
     setView({ y: base.y, m: base.m });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);

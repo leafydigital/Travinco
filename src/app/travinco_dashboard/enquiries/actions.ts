@@ -1,23 +1,66 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
-import { requireProfile, checkModulePermission } from '@/lib/supabase/auth-helpers';
+import { requireProfile, checkModulePermission, type CurrentProfile } from '@/lib/supabase/auth-helpers';
 import { revalidatePath } from 'next/cache';
-import { hasActiveRows, fetchAllActiveRows, softDeleteRows } from '@/lib/archive-to-sheet';
-import { appendRowsToSheet } from '@/lib/google-sheets';
+import { archiveRows, hardDeleteErrorMessage } from '@/lib/hard-delete';
 import { createServiceClient } from '@/lib/supabase/service';
 import { z } from 'zod';
 import { parsePhoneNumberFromString } from 'libphonenumber-js';
 import { addYearsIso, toIsoDate } from '@/lib/utils/iso-date';
 import { maskBadWords } from '@/lib/validations/contact-rules';
+import {
+  ENQUIRY_STATUS_VALUES,
+  RESOLVED_ENQUIRY_STATUSES,
+  computePriorityFromTravelDate,
+  enquiryStatusLabel,
+  normalizeEnquiryStatus,
+} from '@/lib/enquiry-status';
+import {
+  MAX_IMPORT_ROWS,
+  IMPORT_COLUMNS,
+  findInFileDuplicates,
+  importDuplicateKey,
+  normalizeImportRow,
+  todayInIndia,
+  type ImportColumnKey,
+  type RawImportCells,
+  type RawImportRow,
+} from '@/lib/excel/enquiry-import';
 import type { EnquiryStatus, FollowupType } from '@/types/database';
 
-async function checkEnquiryEditPermission() {
+const ENQUIRIES_PATH = '/travinco_dashboard/enquiries';
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const RESOLVED_FILTER = `(${RESOLVED_ENQUIRY_STATUSES.map((s) => `"${s}"`).join(',')})`;
+
+function isAdminProfile(profile: CurrentProfile) {
+  return profile.role === 'admin' || profile.role === 'super_admin';
+}
+
+/**
+ * Edit rights on the Enquiries page. Admins can work on every enquiry; everyone
+ * else only on the enquiries assigned to them (pass enquiryId to check that).
+ */
+async function checkEnquiryEditPermission(enquiryId?: string) {
   const profile = await requireProfile();
   const perm = await checkModulePermission(profile, 'enquiries', 'edit');
   if (!perm.allowed) {
     return { error: perm.error || 'You do not have permission to edit enquiries.' };
   }
+  if (enquiryId && !isAdminProfile(profile)) {
+    const supabase = await createClient();
+    const { data } = await supabase.from('enquiries').select('assigned_staff').eq('id', enquiryId).maybeSingle();
+    if (!data || data.assigned_staff !== profile.id) {
+      return { error: 'This enquiry is not assigned to you.' };
+    }
+  }
+  return { profile };
+}
+
+async function requireAdmin() {
+  const profile = await requireProfile();
+  if (!isAdminProfile(profile)) return { error: 'Only admins can assign enquiries.' };
   return { profile };
 }
 
@@ -50,7 +93,8 @@ export async function updateEnquiryStatus(
   enquiryId: string,
   status: EnquiryStatus
 ): Promise<{ error?: string }> {
-  const permCheck = await checkEnquiryEditPermission();
+  if (!ENQUIRY_STATUS_VALUES.includes(status)) return { error: 'Unknown status.' };
+  const permCheck = await checkEnquiryEditPermission(enquiryId);
   if (permCheck.error) return { error: permCheck.error };
   const supabase = await createClient();
 
@@ -60,31 +104,22 @@ export async function updateEnquiryStatus(
     .eq('id', enquiryId)
     .single();
 
-  let { error } = await supabase
+  const { error } = await supabase
     .from('enquiries')
     .update({ status, last_contacted_at: new Date().toISOString() })
     .eq('id', enquiryId);
-
-  // If database enum hasn't had 'booked' added yet, fall back to 'confirmed'
-  if (error && status === 'booked' && (error.message?.includes('enquiry_status') || error.message?.includes('enum') || error.message?.includes('invalid input'))) {
-    const fallback = await supabase
-      .from('enquiries')
-      .update({ status: 'confirmed', last_contacted_at: new Date().toISOString() })
-      .eq('id', enquiryId);
-    error = fallback.error;
-  }
 
   if (error) return { error: 'Could not update status.' };
 
   await logEnquiryActivity(
     enquiryId,
     'status_changed',
-    `Status changed from ${before?.status ?? 'unknown'} to ${status}`,
+    `Status changed from ${before?.status ? enquiryStatusLabel(before.status) : 'unknown'} to ${enquiryStatusLabel(status)}`,
     { from_status: before?.status, to_status: status }
   );
 
-  revalidatePath(`/travinco_dashboard/enquiries/${enquiryId}`);
-  revalidatePath('/travinco_dashboard/enquiries');
+  revalidatePath(`${ENQUIRIES_PATH}/${enquiryId}`);
+  revalidatePath(ENQUIRIES_PATH);
   return {};
 }
 
@@ -93,7 +128,7 @@ export async function updateEnquiryStatus(
  * Automated email sending removed per workflow requirements.
  */
 export async function acceptEnquiry(enquiryId: string): Promise<{ error?: string }> {
-  return updateEnquiryStatus(enquiryId, 'confirmed');
+  return updateEnquiryStatus(enquiryId, 'converted');
 }
 
 export async function rejectEnquiry(enquiryId: string, reason?: string): Promise<{ error?: string }> {
@@ -107,28 +142,139 @@ export async function rejectEnquiry(enquiryId: string, reason?: string): Promise
   return {};
 }
 
+/** Active staff an admin can hand enquiries to. */
+async function loadActiveStaff(ids?: string[]) {
+  const supabase = await createClient();
+  let query = supabase.from('profiles').select('id, full_name').eq('is_active', true);
+  if (ids) query = query.in('id', ids);
+  const { data } = await query.order('full_name');
+  return data ?? [];
+}
+
 export async function assignEnquiry(enquiryId: string, staffId: string | null) {
+  const adminCheck = await requireAdmin();
+  if (adminCheck.error) return { error: adminCheck.error };
+  return bulkAssignEnquiries([enquiryId], staffId);
+}
+
+/** Admin: assign (or unassign, with null) several enquiries at once. */
+export async function bulkAssignEnquiries(
+  enquiryIds: string[],
+  staffId: string | null
+): Promise<{ error?: string; count?: number }> {
+  const adminCheck = await requireAdmin();
+  if (adminCheck.error) return { error: adminCheck.error };
+
+  const ids = Array.from(new Set((enquiryIds ?? []).filter((id) => UUID_RE.test(id))));
+  if (ids.length === 0) return { error: 'Select at least one enquiry.' };
+  if (ids.length > 500) return { error: 'You can assign up to 500 enquiries at a time.' };
+
+  let staffName = 'Unassigned';
+  if (staffId) {
+    if (!UUID_RE.test(staffId)) return { error: 'Choose a valid employee.' };
+    const [staff] = await loadActiveStaff([staffId]);
+    if (!staff) return { error: 'That employee was not found or is no longer active.' };
+    staffName = staff.full_name;
+  }
+
+  const supabase = await createClient();
+  const { data: updated, error } = await supabase
+    .from('enquiries')
+    .update({ assigned_staff: staffId })
+    .in('id', ids)
+    .or('is_deleted.is.null,is_deleted.eq.false')
+    .select('id');
+
+  if (error) return { error: 'Could not assign the selected enquiries.' };
+
+  const updatedIds = (updated ?? []).map((r) => r.id as string);
+  if (updatedIds.length > 0) {
+    await supabase.from('enquiry_activities').insert(
+      updatedIds.map((id) => ({
+        enquiry_id: id,
+        activity_type: 'assigned',
+        description: staffId ? `Assigned to ${staffName}` : 'Unassigned',
+        metadata: { staff_id: staffId },
+        performed_by: adminCheck.profile!.id,
+      }))
+    );
+  }
+
+  updatedIds.forEach((id) => revalidatePath(`${ENQUIRIES_PATH}/${id}`));
+  revalidatePath(ENQUIRIES_PATH);
+  return { count: updatedIds.length };
+}
+
+/**
+ * Changes the status of several enquiries at once. Admins can change any
+ * enquiry; employees only the ones assigned to them.
+ */
+export async function bulkUpdateEnquiryStatus(
+  enquiryIds: string[],
+  status: EnquiryStatus
+): Promise<{ error?: string; count?: number; skipped?: number }> {
+  if (!ENQUIRY_STATUS_VALUES.includes(status)) return { error: 'Unknown status.' };
   const permCheck = await checkEnquiryEditPermission();
   if (permCheck.error) return { error: permCheck.error };
+  const profile = permCheck.profile!;
+
+  const ids = Array.from(new Set((enquiryIds ?? []).filter((id) => UUID_RE.test(id))));
+  if (ids.length === 0) return { error: 'Select at least one enquiry.' };
+  if (ids.length > 500) return { error: 'You can update up to 500 enquiries at a time.' };
+
   const supabase = await createClient();
+  let query = supabase.from('enquiries').select('id, status').in('id', ids).or('is_deleted.is.null,is_deleted.eq.false');
+  if (!isAdminProfile(profile)) query = query.eq('assigned_staff', profile.id);
+  const { data: rows, error: readError } = await query;
+  if (readError) return { error: 'Could not update the selected enquiries.' };
+
+  const toChange = (rows ?? []).filter((r: any) => normalizeEnquiryStatus(r.status) !== status || r.status !== status);
+  if (toChange.length === 0) return { count: 0, skipped: ids.length - (rows ?? []).length };
 
   const { error } = await supabase
     .from('enquiries')
-    .update({ assigned_staff: staffId })
-    .eq('id', enquiryId);
+    .update({ status, last_contacted_at: new Date().toISOString() })
+    .in('id', toChange.map((r: any) => r.id));
+  if (error) return { error: 'Could not update the selected enquiries.' };
 
-  if (error) return { error: 'Could not assign staff member.' };
-
-  await logEnquiryActivity(
-    enquiryId,
-    'assigned',
-    staffId ? 'Assigned to a staff member' : 'Unassigned',
-    { staff_id: staffId }
+  await supabase.from('enquiry_activities').insert(
+    toChange.map((r: any) => ({
+      enquiry_id: r.id,
+      activity_type: 'status_changed',
+      description: `Status changed from ${enquiryStatusLabel(r.status)} to ${enquiryStatusLabel(status)}`,
+      metadata: { from_status: r.status, to_status: status, bulk: true },
+      performed_by: profile.id,
+    }))
   );
 
-  revalidatePath(`/travinco_dashboard/enquiries/${enquiryId}`);
-  revalidatePath('/travinco_dashboard/enquiries');
-  return {};
+  toChange.forEach((r: any) => revalidatePath(`${ENQUIRIES_PATH}/${r.id}`));
+  revalidatePath(ENQUIRIES_PATH);
+  revalidatePath('/travinco_dashboard');
+  return { count: toChange.length, skipped: ids.length - (rows ?? []).length };
+}
+
+/** Admin: soft-delete several enquiries at once. */
+export async function bulkDeleteEnquiries(enquiryIds: string[]): Promise<{ error?: string; count?: number }> {
+  const profile = await requireProfile();
+  if (!isAdminProfile(profile)) return { error: 'Only admins can delete enquiries.' };
+
+  const ids = Array.from(new Set((enquiryIds ?? []).filter((id) => UUID_RE.test(id))));
+  if (ids.length === 0) return { error: 'Select at least one enquiry.' };
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from('enquiries')
+    .update({ is_deleted: true, deleted_at: new Date().toISOString(), deleted_by: profile.id } as any)
+    .in('id', ids);
+
+  if (error) return { error: 'Could not delete the selected enquiries.' };
+
+  await supabase.from('enquiry_activities').insert(
+    ids.map((id) => ({ enquiry_id: id, activity_type: 'deleted', description: 'Enquiry deleted', performed_by: profile.id }))
+  );
+
+  revalidatePath(ENQUIRIES_PATH);
+  return { count: ids.length };
 }
 
 /** Rejects numbers whose national part is only zeros (e.g. +91 0000000000). */
@@ -144,36 +290,28 @@ const phoneField = z
   .max(20)
   .refine((v) => !isAllZeroPhone(v), 'Phone number cannot be all zeros');
 
-const editEnquirySchema = z
-  .object({
+const isoDateField = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Enter a valid date')
+  .optional()
+  .or(z.literal(''));
+
+const editEnquirySchema = z.object({
   customer_name: z.string().trim().min(2, 'Please enter a name').max(120),
   // Phone and email come from the customer and are read-only in the dashboard
   whatsapp_number: phoneField.optional().or(z.literal('')),
   destination: z.string().max(120).optional().or(z.literal('')),
-  travel_date: z.string().optional().or(z.literal('')),
-  return_date: z.string().optional().or(z.literal('')),
+  travel_date: isoDateField,
+  return_date: isoDateField,
+  enquiry_date: isoDateField,
+  enquiry_received_from: z.string().trim().max(100).optional().or(z.literal('')),
+  number_of_days: z.coerce.number().int().min(1).max(365).optional(),
   number_of_adults: z.coerce.number().int().min(1),
   number_of_children: z.coerce.number().int().min(0),
   number_of_infants: z.coerce.number().int().min(0),
   budget: z.coerce.number().min(0, 'Budget cannot be negative').optional(),
   message: z.string().max(2000).optional().or(z.literal('')),
-})
-  .superRefine((v, ctx) => {
-    // One day of slack for client/server timezone differences.
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const maxDate = addYearsIso(toIsoDate(tomorrow), 1);
-    if (v.travel_date && v.travel_date > maxDate) {
-      ctx.addIssue({ code: 'custom', path: ['travel_date'], message: 'Travel date must be within 1 year from today' });
-    }
-    if (v.travel_date && v.return_date) {
-      if (v.return_date < v.travel_date) {
-        ctx.addIssue({ code: 'custom', path: ['return_date'], message: 'Return date cannot be before the travel date' });
-      } else if (v.return_date > addYearsIso(v.travel_date, 1)) {
-        ctx.addIssue({ code: 'custom', path: ['return_date'], message: 'Return date must be within 1 year of the travel date' });
-      }
-    }
-  });
+});
 
 /**
  * Lets staff correct/update the customer-submitted details on an
@@ -183,7 +321,7 @@ const editEnquirySchema = z
  * workflow fields, not what the customer actually asked for.
  */
 export async function updateEnquiryDetails(enquiryId: string, raw: unknown) {
-  const permCheck = await checkEnquiryEditPermission();
+  const permCheck = await checkEnquiryEditPermission(enquiryId);
   if (permCheck.error) return { error: permCheck.error };
   const parsed = editEnquirySchema.safeParse(raw);
   if (!parsed.success) {
@@ -191,31 +329,57 @@ export async function updateEnquiryDetails(enquiryId: string, raw: unknown) {
     const field = issue?.path?.[0];
     return { error: field ? `${field}: ${issue.message}` : issue?.message ?? 'Please check the form.' };
   }
+  const v = parsed.data;
 
   const supabase = await createClient();
+  const { data: current } = await supabase
+    .from('enquiries')
+    .select('message, travel_date, enquiry_date')
+    .eq('id', enquiryId)
+    .maybeSingle();
+
+  // Date rules. The 1-year travel window only applies when the date is being
+  // changed, so imported enquiries with a later trip can still be edited.
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1); // one day of slack for timezone differences
+  const tomorrowIso = toIsoDate(tomorrow);
+  if (v.travel_date && v.travel_date !== current?.travel_date && v.travel_date > addYearsIso(tomorrowIso, 1)) {
+    return { error: 'travel_date: Travel date must be within 1 year from today' };
+  }
+  if (v.travel_date && v.return_date) {
+    if (v.return_date < v.travel_date) {
+      return { error: 'return_date: Return date cannot be before the travel date' };
+    }
+    if (v.return_date > addYearsIso(v.travel_date, 1)) {
+      return { error: 'return_date: Return date must be within 1 year of the travel date' };
+    }
+  }
+  if (v.enquiry_date && v.enquiry_date > tomorrowIso) {
+    return { error: 'enquiry_date: Enquiry date cannot be in the future' };
+  }
 
   // Staff see the message with inappropriate words masked. If they saved it unchanged,
   // keep the original text instead of overwriting it with the asterisks.
-  let message = parsed.data.message || null;
-  if (message) {
-    const { data: current } = await supabase.from('enquiries').select('message').eq('id', enquiryId).maybeSingle();
-    if (current?.message && maskBadWords(current.message).trim() === message.trim()) {
-      message = current.message;
-    }
+  let message = v.message || null;
+  if (message && current?.message && maskBadWords(current.message).trim() === message.trim()) {
+    message = current.message;
   }
 
   const { error } = await supabase
     .from('enquiries')
     .update({
-      customer_name: parsed.data.customer_name,
-      whatsapp_number: parsed.data.whatsapp_number || null,
-      destination: parsed.data.destination || null,
-      travel_date: parsed.data.travel_date || null,
-      return_date: parsed.data.return_date || null,
-      number_of_adults: parsed.data.number_of_adults,
-      number_of_children: parsed.data.number_of_children,
-      number_of_infants: parsed.data.number_of_infants,
-      budget: parsed.data.budget ?? null,
+      customer_name: v.customer_name,
+      whatsapp_number: v.whatsapp_number || null,
+      destination: v.destination || null,
+      travel_date: v.travel_date || null,
+      return_date: v.return_date || null,
+      ...(v.enquiry_date ? { enquiry_date: v.enquiry_date } : {}),
+      enquiry_received_from: v.enquiry_received_from || null,
+      number_of_days: v.number_of_days ?? null,
+      number_of_adults: v.number_of_adults,
+      number_of_children: v.number_of_children,
+      number_of_infants: v.number_of_infants,
+      budget: v.budget ?? null,
       message,
     })
     .eq('id', enquiryId);
@@ -224,8 +388,8 @@ export async function updateEnquiryDetails(enquiryId: string, raw: unknown) {
 
   await logEnquiryActivity(enquiryId, 'details_edited', 'Trip details updated by staff');
 
-  revalidatePath(`/travinco_dashboard/enquiries/${enquiryId}`);
-  revalidatePath('/travinco_dashboard/enquiries');
+  revalidatePath(`${ENQUIRIES_PATH}/${enquiryId}`);
+  revalidatePath(ENQUIRIES_PATH);
   return {};
 }
 
@@ -233,14 +397,15 @@ export async function updateEnquiryPriority(
   enquiryId: string,
   priority: 'low' | 'medium' | 'high' | 'urgent'
 ) {
-  const permCheck = await checkEnquiryEditPermission();
+  if (!['low', 'medium', 'high', 'urgent'].includes(priority)) return { error: 'Unknown priority.' };
+  const permCheck = await checkEnquiryEditPermission(enquiryId);
   if (permCheck.error) return { error: permCheck.error };
   const supabase = await createClient();
   const { error } = await supabase.from('enquiries').update({ priority }).eq('id', enquiryId);
   if (error) return { error: 'Could not update priority.' };
   await logEnquiryActivity(enquiryId, 'priority_changed', `Priority changed to ${priority}`);
-  revalidatePath(`/travinco_dashboard/enquiries/${enquiryId}`);
-  revalidatePath('/travinco_dashboard/enquiries');
+  revalidatePath(`${ENQUIRIES_PATH}/${enquiryId}`);
+  revalidatePath(ENQUIRIES_PATH);
   return {};
 }
 
@@ -248,7 +413,7 @@ export async function updateEnquiryFollowupDate(
   enquiryId: string,
   followupDate: string | null
 ): Promise<{ error?: string }> {
-  const permCheck = await checkEnquiryEditPermission();
+  const permCheck = await checkEnquiryEditPermission(enquiryId);
   if (permCheck.error) return { error: permCheck.error };
 
   if (followupDate) {
@@ -281,15 +446,15 @@ export async function updateEnquiryFollowupDate(
     permCheck.profile?.id
   );
 
-  revalidatePath(`/travinco_dashboard/enquiries/${enquiryId}`);
-  revalidatePath('/travinco_dashboard/enquiries');
+  revalidatePath(`${ENQUIRIES_PATH}/${enquiryId}`);
+  revalidatePath(ENQUIRIES_PATH);
   return {};
 }
 
 const noteSchema = z.object({ note: z.string().min(1).max(2000) });
 
 export async function addEnquiryNote(enquiryId: string, raw: unknown) {
-  const permCheck = await checkEnquiryEditPermission();
+  const permCheck = await checkEnquiryEditPermission(enquiryId);
   if (permCheck.error) return { error: permCheck.error };
   const parsed = noteSchema.safeParse(raw);
   if (!parsed.success) return { error: 'Note cannot be empty.' };
@@ -315,8 +480,8 @@ export async function addEnquiryNote(enquiryId: string, raw: unknown) {
 
   await logEnquiryActivity(enquiryId, 'note_added', parsed.data.note);
 
-  revalidatePath(`/travinco_dashboard/enquiries/${enquiryId}`);
-  revalidatePath('/travinco_dashboard/enquiries');
+  revalidatePath(`${ENQUIRIES_PATH}/${enquiryId}`);
+  revalidatePath(ENQUIRIES_PATH);
   return {};
 }
 
@@ -328,7 +493,7 @@ const followupSchema = z.object({
 });
 
 export async function scheduleFollowup(enquiryId: string, raw: unknown) {
-  const permCheck = await checkEnquiryEditPermission();
+  const permCheck = await checkEnquiryEditPermission(enquiryId);
   if (permCheck.error) return { error: permCheck.error };
   const parsed = followupSchema.safeParse(raw);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid follow-up.' };
@@ -365,26 +530,27 @@ export async function scheduleFollowup(enquiryId: string, raw: unknown) {
     `Follow-up scheduled for ${parsed.data.followup_date}`
   );
 
-  revalidatePath(`/travinco_dashboard/enquiries/${enquiryId}`);
-  revalidatePath('/travinco_dashboard/enquiries');
+  revalidatePath(`${ENQUIRIES_PATH}/${enquiryId}`);
+  revalidatePath(ENQUIRIES_PATH);
   return {};
 }
 
 export async function completeFollowup(enquiryId: string, followupId: string) {
-  const permCheck = await checkEnquiryEditPermission();
+  const permCheck = await checkEnquiryEditPermission(enquiryId);
   if (permCheck.error) return { error: permCheck.error };
   const supabase = await createClient();
 
   const { error } = await supabase
     .from('enquiry_followups')
     .update({ is_completed: true, completed_at: new Date().toISOString() })
-    .eq('id', followupId);
+    .eq('id', followupId)
+    .eq('enquiry_id', enquiryId);
 
   if (error) return { error: 'Could not mark follow-up complete.' };
 
   await logEnquiryActivity(enquiryId, 'followup_completed', 'Follow-up marked complete');
-  revalidatePath(`/travinco_dashboard/enquiries/${enquiryId}`);
-  revalidatePath('/travinco_dashboard/enquiries');
+  revalidatePath(`${ENQUIRIES_PATH}/${enquiryId}`);
+  revalidatePath(ENQUIRIES_PATH);
   return {};
 }
 
@@ -399,7 +565,7 @@ export async function convertEnquiryToBooking(
   enquiryId: string,
   overrides?: { baseAmount?: number; discountAmount?: number }
 ) {
-  const permCheck = await checkEnquiryEditPermission();
+  const permCheck = await checkEnquiryEditPermission(enquiryId);
   if (permCheck.error) return { error: permCheck.error };
   const supabase = await createClient();
 
@@ -492,7 +658,7 @@ export async function convertEnquiryToBooking(
   }
   if (!booking) return { error: 'Could not create booking.' };
 
-  await supabase.from('enquiries').update({ status: 'confirmed' }).eq('id', enquiryId);
+  await supabase.from('enquiries').update({ status: 'converted' }).eq('id', enquiryId);
 
   await logEnquiryActivity(enquiryId, 'converted_to_booking', 'Converted to a booking', {
     booking_id: booking.id,
@@ -517,7 +683,7 @@ export async function convertEnquiryToBooking(
     }
   }
 
-  revalidatePath('/travinco_dashboard/enquiries');
+  revalidatePath(ENQUIRIES_PATH);
   revalidatePath('/travinco_dashboard/bookings');
   return { bookingId: booking.id };
 }
@@ -525,7 +691,7 @@ export async function convertEnquiryToBooking(
 export async function deleteEnquiry(enquiryId: string) {
   const profile = await requireProfile();
   const perm = await checkModulePermission(profile, 'enquiries', 'edit');
-  if (!perm.allowed || !['admin', 'super_admin'].includes(profile.role)) {
+  if (!perm.allowed || !isAdminProfile(profile)) {
     return { error: perm.error || 'Only admins can delete enquiries.' };
   }
 
@@ -556,9 +722,177 @@ export async function deleteEnquiry(enquiryId: string) {
 
   await logEnquiryActivity(enquiryId, 'deleted', 'Enquiry deleted');
 
-  revalidatePath('/travinco_dashboard/enquiries');
+  revalidatePath(ENQUIRIES_PATH);
   return {};
 }
+
+// ─── Excel upload ───────────────────────────────────────────────────────────
+
+const IMPORT_COLUMN_KEYS = new Set<string>(IMPORT_COLUMNS.map((c) => c.key));
+
+export interface ImportRowIssue {
+  rowNumber: number;
+  messages: string[];
+}
+
+export interface ImportEnquiriesResult {
+  error?: string;
+  imported?: number;
+  enquiryNumbers?: string[];
+  failed?: ImportRowIssue[];
+  duplicates?: ImportRowIssue[];
+  warnings?: ImportRowIssue[];
+}
+
+/** Keeps only known columns and plain cell values from the browser payload. */
+function sanitizeRawRows(input: unknown): RawImportRow[] | null {
+  if (!Array.isArray(input)) return null;
+  const rows: RawImportRow[] = [];
+  for (const item of input) {
+    if (!item || typeof item !== 'object') return null;
+    const { rowNumber, cells } = item as { rowNumber?: unknown; cells?: unknown };
+    if (typeof rowNumber !== 'number' || !Number.isInteger(rowNumber) || rowNumber < 1) return null;
+    if (!cells || typeof cells !== 'object') return null;
+    const clean: RawImportCells = {};
+    for (const [key, value] of Object.entries(cells as Record<string, unknown>)) {
+      if (!IMPORT_COLUMN_KEYS.has(key)) continue;
+      if (value === null || typeof value === 'number' || typeof value === 'boolean') {
+        clean[key as ImportColumnKey] = value as number | boolean | null;
+      } else if (typeof value === 'string') {
+        clean[key as ImportColumnKey] = value.slice(0, 500);
+      }
+    }
+    rows.push({ rowNumber, cells: clean });
+  }
+  return rows;
+}
+
+/**
+ * Saves the rows of an uploaded Excel sheet as enquiries. Every row is
+ * validated again here with the same rules as the upload preview. Rows that
+ * fail, or that are already in the system, are skipped and reported back.
+ * New rows start as "New lead" with a priority from their travel date.
+ * Employees' uploads are assigned to themselves (they only see their own).
+ */
+export async function importEnquiries(payload: {
+  rows: unknown;
+  date1904?: boolean;
+  fileName?: string;
+}): Promise<ImportEnquiriesResult> {
+  const permCheck = await checkEnquiryEditPermission();
+  if (permCheck.error) return { error: permCheck.error };
+  const profile = permCheck.profile!;
+
+  const rawRows = sanitizeRawRows(payload?.rows);
+  if (!rawRows) return { error: 'The uploaded data could not be read. Please upload the file again.' };
+  if (rawRows.length === 0) return { error: 'The sheet has no enquiry rows to import.' };
+  if (rawRows.length > MAX_IMPORT_ROWS) {
+    return { error: `A sheet can have up to ${MAX_IMPORT_ROWS} rows. Split the file and upload each part.` };
+  }
+
+  const today = todayInIndia();
+  const normalized = rawRows.map((r) => normalizeImportRow(r, { date1904: Boolean(payload.date1904), today }));
+
+  const failed: ImportRowIssue[] = normalized
+    .filter((r) => !r.record)
+    .map((r) => ({ rowNumber: r.rowNumber, messages: r.errors }));
+  const warnings: ImportRowIssue[] = normalized
+    .filter((r) => r.record && r.warnings.length > 0)
+    .map((r) => ({ rowNumber: r.rowNumber, messages: r.warnings }));
+
+  const duplicates: ImportRowIssue[] = [];
+  const inFileRepeats = findInFileDuplicates(normalized);
+  inFileRepeats.forEach((first, rowNumber) =>
+    duplicates.push({ rowNumber, messages: [`Same customer, date and package as row ${first}`] })
+  );
+
+  let candidates = normalized.filter((r) => r.record && !inFileRepeats.has(r.rowNumber));
+
+  // Already in the system (same phone, enquiry date and package)?
+  const supabase = await createClient();
+  const phones = Array.from(new Set(candidates.map((r) => r.record!.phone)));
+  const existingKeys = new Set<string>();
+  for (let i = 0; i < phones.length; i += 200) {
+    const { data, error } = await supabase
+      .from('enquiries')
+      .select('phone, enquiry_date, destination')
+      .in('phone', phones.slice(i, i + 200))
+      .or('is_deleted.is.null,is_deleted.eq.false');
+    if (error) {
+      console.error('importEnquiries duplicate check failed:', error.message);
+      return { error: 'Could not check for existing enquiries. Has the enquiries migration been run?' };
+    }
+    (data ?? []).forEach((e: any) => existingKeys.add(importDuplicateKey(e)));
+  }
+  candidates = candidates.filter((r) => {
+    if (!existingKeys.has(importDuplicateKey(r.record!))) return true;
+    duplicates.push({ rowNumber: r.rowNumber, messages: ['Already in Enquiries (same customer, date and package)'] });
+    return false;
+  });
+  duplicates.sort((a, b) => a.rowNumber - b.rowNumber);
+
+  if (candidates.length === 0) {
+    return { imported: 0, enquiryNumbers: [], failed, duplicates, warnings };
+  }
+
+  const batchId = crypto.randomUUID();
+  const assignedTo = isAdminProfile(profile) ? null : profile.id;
+  const insertRows = candidates.map(({ record }) => ({
+    ...record!,
+    source: 'excel_import' as const,
+    status: 'new' as const,
+    priority: computePriorityFromTravelDate(record!.travel_date),
+    assigned_staff: assignedTo,
+    import_batch: batchId,
+    imported_by: profile.id,
+    is_deleted: false,
+  }));
+
+  const inserted: { id: string; enquiry_number: string }[] = [];
+  for (let i = 0; i < insertRows.length; i += 500) {
+    const { data, error } = await supabase
+      .from('enquiries')
+      .insert(insertRows.slice(i, i + 500))
+      .select('id, enquiry_number');
+    if (error) {
+      console.error('importEnquiries insert failed:', error.message);
+      // Undo the part of this upload that was already saved, so a retry does not create duplicates
+      if (inserted.length > 0) {
+        await supabase
+          .from('enquiries')
+          .update({ is_deleted: true, deleted_at: new Date().toISOString(), deleted_by: profile.id } as any)
+          .eq('import_batch', batchId);
+      }
+      return { error: 'The enquiries could not be saved. Nothing from this file was imported. Please try again.' };
+    }
+    inserted.push(...((data ?? []) as { id: string; enquiry_number: string }[]));
+  }
+
+  const fileLabel = payload.fileName ? String(payload.fileName).slice(0, 120) : 'Excel sheet';
+  for (let i = 0; i < inserted.length; i += 500) {
+    await supabase.from('enquiry_activities').insert(
+      inserted.slice(i, i + 500).map((e) => ({
+        enquiry_id: e.id,
+        activity_type: 'imported',
+        description: `Imported from ${fileLabel}`,
+        metadata: { import_batch: batchId },
+        performed_by: profile.id,
+      }))
+    );
+  }
+
+  revalidatePath(ENQUIRIES_PATH);
+  revalidatePath('/travinco_dashboard');
+  return {
+    imported: inserted.length,
+    enquiryNumbers: inserted.map((e) => e.enquiry_number),
+    failed,
+    duplicates,
+    warnings,
+  };
+}
+
+// ─── Table list ─────────────────────────────────────────────────────────────
 
 export interface EnquiryTableItem {
   id: string;
@@ -567,11 +901,14 @@ export interface EnquiryTableItem {
   phone: string;
   destination: string | null;
   travel_date: string | null;
-  status: string;
+  status: EnquiryStatus;
   priority: string;
+  source: string | null;
+  enquiry_received_from: string | null;
   next_followup_date: string | null;
   assigned_staff: string | null;
   assigned_staff_name: string;
+  enquiry_date: string;
   created_at: string;
 }
 
@@ -589,8 +926,35 @@ export interface EnquiryTabCounts {
   overdueCount: number;
 }
 
+const LIST_COLUMNS =
+  'id, enquiry_number, customer_name, phone, destination, travel_date, status, priority, source, enquiry_received_from, next_followup_date, enquiry_date, created_at, is_deleted, assigned_staff';
+const LEGACY_LIST_COLUMNS =
+  'id, enquiry_number, customer_name, phone, destination, travel_date, status, priority, source, next_followup_date, created_at, is_deleted, assigned_staff';
+
+/** Old status values each new status replaced ('booked' left out: it may not exist in the enum). */
+const LEGACY_STATUSES_FOR: Partial<Record<EnquiryStatus, string[]>> = {
+  follow_up: ['contacted', 'negotiation', 'quotation_sent'],
+  converted: ['confirmed'],
+  lost: ['closed'],
+};
+
+/** Postgres "undefined column" (42703) / PostgREST schema-cache miss. */
+function isMissingColumnError(error: { code?: string; message?: string }) {
+  return error.code === '42703' || error.code === 'PGRST204' || /column .* does not exist|enquiry_date|enquiry_received_from/i.test(error.message ?? '');
+}
+
+/** Search text is placed inside a PostgREST or() filter, where , ( ) are syntax. */
+function sanitizeSearch(term: string) {
+  return term.replace(/[,()*\\%]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 100);
+}
+
+/** Non-admin staff only ever see the enquiries assigned to them. */
+function scopeToProfile<Q>(query: Q, profile: CurrentProfile): Q {
+  return isAdminProfile(profile) ? query : (query as any).eq('assigned_staff', profile.id);
+}
+
 /**
- * Fast, lean query fetching strictly the 8 table columns:
+ * Fast, lean query fetching strictly the table columns:
  * Enquiry #, Customer, Destination/Travel, Status, Priority, Follow-up, Assigned, Date.
  * Excludes heavy requirement notes, preferences, budget, package pricing, etc.
  */
@@ -601,6 +965,9 @@ export async function getEnquiriesTableList({
   status = '',
   priority = '',
   view = '',
+  assigned = '',
+  from: dateFrom = '',
+  to: dateTo = '',
 }: {
   page?: number;
   pageSize?: number;
@@ -608,60 +975,86 @@ export async function getEnquiriesTableList({
   status?: string;
   priority?: string;
   view?: string;
+  /** Admin filter: '' (everyone), 'unassigned', or a staff id. */
+  assigned?: string;
+  /** Enquiry Date range, YYYY-MM-DD (inclusive). */
+  from?: string;
+  to?: string;
 } = {}): Promise<EnquiriesTableQueryResult> {
   const profile = await requireProfile();
-  await checkModulePermission(profile, 'enquiries', 'view');
+  const size = Math.min(100, Math.max(1, pageSize));
+  const currentPage = Math.max(1, page);
+  const empty = { enquiries: [], totalCount: 0, totalPages: 1, page: currentPage, pageSize: size };
+
+  const perm = await checkModulePermission(profile, 'enquiries', 'view');
+  if (!perm.allowed) return empty;
 
   const supabase = await createClient();
 
-  const currentPage = Math.max(1, page);
-  const from = (currentPage - 1) * pageSize;
-  const to = from + pageSize - 1;
+  const from = (currentPage - 1) * size;
+  const to = from + size - 1;
   const today = new Date().toISOString().slice(0, 10);
 
-  let query = supabase
-    .from('enquiries')
-    .select(
-      'id, enquiry_number, customer_name, phone, destination, travel_date, status, priority, next_followup_date, created_at, is_deleted, assigned_staff',
-      { count: 'exact' }
-    )
-    .or('is_deleted.is.null,is_deleted.eq.false')
-    .order('created_at', { ascending: false });
+  // `legacy` = the columns that exist before supabase/enquiries_merge_02_schema.sql
+  // is run, so the list still loads (sorted by created date) on a database
+  // that has not been migrated yet.
+  const buildQuery = (legacy: boolean) => {
+    let query = supabase
+      .from('enquiries')
+      .select(legacy ? LEGACY_LIST_COLUMNS : LIST_COLUMNS, { count: 'exact' })
+      .or('is_deleted.is.null,is_deleted.eq.false');
+    query = legacy
+      ? query.order('created_at', { ascending: false })
+      : query.order('enquiry_date', { ascending: false }).order('created_at', { ascending: false });
 
-  if (q && q.trim()) {
-    const term = q.trim();
-    query = query.or(
-      `customer_name.ilike.%${term}%,phone.ilike.%${term}%,enquiry_number.ilike.%${term}%,email.ilike.%${term}%`
-    );
-  }
+    query = scopeToProfile(query, profile);
 
-  if (status) {
-    let s = status;
-    if (s === 'pending') s = 'new';
-    if (s === 'not_interested') s = 'lost';
-    if (s === 'booked') {
-      query = query.or('status.eq.booked,status.eq.confirmed');
-    } else {
-      query = query.eq('status', s);
+    const term = sanitizeSearch(q);
+    if (term) {
+      query = query.or(
+        `customer_name.ilike.%${term}%,phone.ilike.%${term}%,enquiry_number.ilike.%${term}%,email.ilike.%${term}%,destination.ilike.%${term}%`
+      );
     }
-  }
 
-  if (priority) {
-    query = query.eq('priority', priority);
-  }
+    if (status) {
+      const s = normalizeEnquiryStatus(status === 'pending' ? 'new' : status);
+      // Rows not yet moved to the new pipeline by the migration still match their new status
+      query = query.in('status', [s, ...(LEGACY_STATUSES_FOR[s] ?? [])]);
+    }
 
-  if (view === 'followup_today') {
-    query = query.eq('next_followup_date', today);
-  } else if (view === 'overdue') {
-    query = query
-      .lt('next_followup_date', today)
-      .not('status', 'in', '("confirmed","booked","lost","closed")');
-  }
+    if (priority && ['urgent', 'high', 'medium', 'low'].includes(priority)) {
+      query = query.eq('priority', priority);
+    }
 
-  const [{ data: enquiries, count, error }, { data: staffList }] = await Promise.all([
-    query.range(from, to),
+    if (isAdminProfile(profile) && assigned) {
+      if (assigned === 'unassigned') query = query.is('assigned_staff', null);
+      else if (UUID_RE.test(assigned)) query = query.eq('assigned_staff', assigned);
+    }
+
+    if (view === 'followup_today') {
+      query = query.eq('next_followup_date', today);
+    } else if (view === 'overdue') {
+      query = query.lt('next_followup_date', today).not('status', 'in', RESOLVED_FILTER);
+    }
+
+    if (ISO_DATE_RE.test(dateFrom)) {
+      query = legacy ? query.gte('created_at', `${dateFrom}T00:00:00+05:30`) : query.gte('enquiry_date', dateFrom);
+    }
+    if (ISO_DATE_RE.test(dateTo)) {
+      query = legacy ? query.lte('created_at', `${dateTo}T23:59:59.999+05:30`) : query.lte('enquiry_date', dateTo);
+    }
+    return query.range(from, to);
+  };
+
+  const [first, { data: staffList }] = await Promise.all([
+    buildQuery(false),
     supabase.from('profiles').select('id, full_name'),
   ]);
+  let { data: enquiries, count, error } = first;
+  if (error && isMissingColumnError(error)) {
+    console.warn('Enquiries list: new columns missing, run supabase/enquiries_merge_02_schema.sql');
+    ({ data: enquiries, count, error } = await buildQuery(true));
+  }
 
   if (error) {
     console.error('Error fetching enquiries table list:', error.message);
@@ -677,23 +1070,26 @@ export async function getEnquiriesTableList({
     phone: e.phone,
     destination: e.destination || null,
     travel_date: e.travel_date || null,
-    status: e.status,
+    status: normalizeEnquiryStatus(e.status),
     priority: e.priority,
+    source: e.source ?? null,
+    enquiry_received_from: e.enquiry_received_from ?? null,
     next_followup_date: e.next_followup_date || null,
     assigned_staff: e.assigned_staff || null,
     assigned_staff_name: e.assigned_staff ? staffMap.get(e.assigned_staff) ?? 'Staff' : 'Unassigned',
+    enquiry_date: e.enquiry_date ?? String(e.created_at).slice(0, 10),
     created_at: e.created_at,
   }));
 
   const totalCount = count ?? items.length;
-  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+  const totalPages = Math.max(1, Math.ceil(totalCount / size));
 
   return {
     enquiries: items,
     totalCount,
     totalPages,
     page: currentPage,
-    pageSize,
+    pageSize: size,
   };
 }
 
@@ -702,27 +1098,24 @@ export async function getEnquiriesTableList({
  */
 export async function getEnquiryTabCounts(): Promise<EnquiryTabCounts> {
   const profile = await requireProfile();
-  await checkModulePermission(profile, 'enquiries', 'view');
+  const perm = await checkModulePermission(profile, 'enquiries', 'view');
+  if (!perm.allowed) return { allCount: 0, todayCount: 0, overdueCount: 0 };
 
   const supabase = await createClient();
   const today = new Date().toISOString().slice(0, 10);
+  const base = () =>
+    scopeToProfile(
+      supabase
+        .from('enquiries')
+        .select('*', { count: 'exact', head: true })
+        .or('is_deleted.is.null,is_deleted.eq.false'),
+      profile
+    );
 
   const [{ count: allCount }, { count: todayCount }, { count: overdueCount }] = await Promise.all([
-    supabase
-      .from('enquiries')
-      .select('*', { count: 'exact', head: true })
-      .or('is_deleted.is.null,is_deleted.eq.false'),
-    supabase
-      .from('enquiries')
-      .select('*', { count: 'exact', head: true })
-      .or('is_deleted.is.null,is_deleted.eq.false')
-      .eq('next_followup_date', today),
-    supabase
-      .from('enquiries')
-      .select('*', { count: 'exact', head: true })
-      .or('is_deleted.is.null,is_deleted.eq.false')
-      .lt('next_followup_date', today)
-      .not('status', 'in', '("confirmed","booked","lost","closed")'),
+    base(),
+    base().eq('next_followup_date', today),
+    base().lt('next_followup_date', today).not('status', 'in', RESOLVED_FILTER),
   ]);
 
   return {
@@ -732,59 +1125,158 @@ export async function getEnquiryTabCounts(): Promise<EnquiryTabCounts> {
   };
 }
 
-
-// ─── Clear Data: archive all enquiries to Google Sheets, then soft-delete ─────
+// ─── Clear Data: archive enquiries in a date range to Google Sheets, then delete ─
 const ENQUIRIES_SHEET_HEADERS = [
-  'ID', 'Enquiry #', 'Customer Name', 'Phone', 'WhatsApp', 'Email', 'Destination',
-  'Travel Date', 'Return Date', 'Adults', 'Children', 'Infants', 'Budget', 'Message',
+  'ID', 'Enquiry #', 'Enquiry Date', 'Enquiry Received From', 'Customer Name', 'Phone', 'WhatsApp', 'Email',
+  'Destination', 'Travel Date', 'Return Date', 'Days', 'Adults', 'Children', 'Infants', 'Budget', 'Message',
   'Source', 'Status', 'Priority', 'Assigned Staff', 'Last Contacted', 'Next Follow-up',
   'Notes', 'Created At', 'Cleared At', 'Cleared By',
 ];
 
-export async function clearAndArchiveEnquiries(): Promise<{ error?: string; count?: number }> {
+
+function validateRange(range: { from?: string; to?: string } | undefined): { from: string; to: string } | string {
+  const from = range?.from ?? '';
+  const to = range?.to ?? '';
+  if (!ISO_DATE_RE.test(from) || !ISO_DATE_RE.test(to)) return 'Choose both a From date and a To date.';
+  if (from > to) return 'The From date must be on or before the To date.';
+  return { from, to };
+}
+
+/** Clear Data only removes enquiries marked "Deal lost or not interested" ('closed' = legacy value). */
+const CLEARABLE_STATUSES = ['lost', 'closed'];
+
+/**
+ * Every "Deal lost or not interested" enquiry (including old soft-deleted ones)
+ * whose Enquiry Date falls in the range. Uses the created date on a database
+ * without enquiry_date.
+ */
+async function fetchEnquiriesInRange(from: string, to: string) {
+  const service = createServiceClient();
+  const PAGE = 1000;
+  const rows: Record<string, any>[] = [];
+  let dateColumn: 'enquiry_date' | 'created_at' = 'enquiry_date';
+
+  for (let offset = 0; ; offset += PAGE) {
+    let query = service
+      .from('enquiries')
+      .select('*')
+      .in('status', CLEARABLE_STATUSES)
+      .order('id')
+      .range(offset, offset + PAGE - 1);
+    query =
+      dateColumn === 'enquiry_date'
+        ? query.gte('enquiry_date', from).lte('enquiry_date', to)
+        : query.gte('created_at', `${from}T00:00:00+05:30`).lte('created_at', `${to}T23:59:59.999+05:30`);
+    const { data, error } = await query;
+    if (error && dateColumn === 'enquiry_date' && offset === 0 && isMissingColumnError(error)) {
+      dateColumn = 'created_at';
+      offset = -PAGE;
+      continue;
+    }
+    if (error) throw new Error(error.message);
+    rows.push(...(data ?? []));
+    if (!data || data.length < PAGE) break;
+  }
+  return rows;
+}
+
+/** How many "Deal lost or not interested" enquiries the Clear Data popup would remove for this range. */
+export async function countEnquiriesInRange(range: { from?: string; to?: string }): Promise<{ error?: string; count?: number }> {
   const profile = await requireProfile();
-  if (!['admin', 'super_admin'].includes(profile.role)) {
+  if (!isAdminProfile(profile)) return { error: 'Only admins can clear enquiries data.' };
+  const valid = validateRange(range);
+  if (typeof valid === 'string') return { error: valid };
+
+  // A normal GET (limit 1) rather than a HEAD request: a HEAD error has no body,
+  // so a missing enquiry_date column could not be told apart from other errors.
+  const service = createServiceClient();
+  let res = await service
+    .from('enquiries')
+    .select('id', { count: 'exact' })
+    .in('status', CLEARABLE_STATUSES)
+    .gte('enquiry_date', valid.from)
+    .lte('enquiry_date', valid.to)
+    .limit(1);
+  if (res.error && isMissingColumnError(res.error)) {
+    res = await service
+      .from('enquiries')
+      .select('id', { count: 'exact' })
+      .in('status', CLEARABLE_STATUSES)
+      .gte('created_at', `${valid.from}T00:00:00+05:30`)
+      .lte('created_at', `${valid.to}T23:59:59.999+05:30`)
+      .limit(1);
+  }
+  if (res.error) console.error('countEnquiriesInRange failed:', res.error);
+  if (res.error) return { error: 'Could not count the enquiries. Please try again.' };
+  return { count: res.count ?? 0 };
+}
+
+/**
+ * Saves every "Deal lost or not interested" enquiry with an Enquiry Date between
+ * `from` and `to` (inclusive) to the Google Sheet "Enquiries" tab, then deletes
+ * them from the database
+ * together with their activity log and follow-ups. Nothing is deleted if the
+ * sheet could not be written.
+ */
+export async function clearAndArchiveEnquiries(range: {
+  from?: string;
+  to?: string;
+}): Promise<{ error?: string; count?: number }> {
+  const profile = await requireProfile();
+  if (!isAdminProfile(profile)) {
     return { error: 'Only admins can clear enquiries data.' };
   }
+  const valid = validateRange(range);
+  if (typeof valid === 'string') return { error: valid };
 
+  let enquiries: Record<string, any>[];
   try {
-    // Fast exit: nothing to archive, skip the full fetch and Google entirely
-    if (!(await hasActiveRows('enquiries'))) return { count: 0 };
-
-
-    const enquiries = await fetchAllActiveRows<Record<string, any>>('enquiries');
-    if (enquiries.length === 0) return { count: 0 };
-
-    // Resolve assigned staff names for readability in the sheet
-    const staffIds = Array.from(new Set(enquiries.map((e) => e.assigned_staff).filter(Boolean)));
-    const staffNames = new Map<string, string>();
-    if (staffIds.length > 0) {
-      const { data: staff } = await createServiceClient()
-        .from('profiles')
-        .select('id, full_name')
-        .in('id', staffIds);
-      (staff ?? []).forEach((s: any) => staffNames.set(s.id, s.full_name));
-    }
-
-    const clearedAt = new Date().toISOString();
-    const clearedBy = profile.full_name || profile.email;
-    const rows = enquiries.map((e) => [
-      e.id, e.enquiry_number, e.customer_name, e.phone, e.whatsapp_number, e.email, e.destination,
-      e.travel_date, e.return_date, e.number_of_adults, e.number_of_children, e.number_of_infants,
-      e.budget, maskBadWords(e.message), e.source, e.status, e.priority,
-      e.assigned_staff ? staffNames.get(e.assigned_staff) ?? e.assigned_staff : null,
-      e.last_contacted_at, e.next_followup_date, e.notes, e.created_at, clearedAt, clearedBy,
-    ]);
-
-    // Only clear the table once the sheet write has succeeded
-    await appendRowsToSheet('Enquiries', ENQUIRIES_SHEET_HEADERS, rows);
-    await softDeleteRows('enquiries', enquiries.map((e) => e.id), profile.id);
-
-    revalidatePath('/travinco_dashboard/enquiries');
-    revalidatePath('/travinco_dashboard');
-    return { count: enquiries.length };
+    enquiries = await fetchEnquiriesInRange(valid.from, valid.to);
   } catch (err) {
-    console.error('clearAndArchiveEnquiries failed:', err);
-    return { error: 'Could not archive enquiries to Google Sheets. No data was cleared.' };
+    console.error('clearAndArchiveEnquiries fetch failed:', err);
+    return { error: 'Could not load the enquiries to clear. Please try again.' };
   }
+  if (enquiries.length === 0) return { count: 0 };
+
+  // Resolve assigned staff names for readability in the sheet
+  const staffIds = Array.from(new Set(enquiries.map((e) => e.assigned_staff).filter(Boolean)));
+  const staffNames = new Map<string, string>();
+  if (staffIds.length > 0) {
+    const { data: staff } = await createServiceClient().from('profiles').select('id, full_name').in('id', staffIds);
+    (staff ?? []).forEach((s: any) => staffNames.set(s.id, s.full_name));
+  }
+
+  const clearedAt = new Date().toISOString();
+  const clearedBy = profile.full_name || profile.email;
+  const rows = enquiries.map((e) => [
+    e.id, e.enquiry_number, e.enquiry_date ?? String(e.created_at).slice(0, 10), e.enquiry_received_from ?? null,
+    e.customer_name, e.phone, e.whatsapp_number, e.email, e.destination, e.travel_date, e.return_date,
+    e.number_of_days ?? null, e.number_of_adults, e.number_of_children, e.number_of_infants, e.budget,
+    maskBadWords(e.message), e.source, `${enquiryStatusLabel(e.status)}${e.is_deleted ? ' (deleted earlier)' : ''}`,
+    e.priority, e.assigned_staff ? staffNames.get(e.assigned_staff) ?? e.assigned_staff : null,
+    e.last_contacted_at, e.next_followup_date, e.notes, e.created_at, clearedAt, clearedBy,
+  ]);
+
+  // Only delete once the sheet write has succeeded
+  const archiveError = await archiveRows('Enquiries', ENQUIRIES_SHEET_HEADERS, rows);
+  if (archiveError) return { error: archiveError };
+
+  const supabase = await createClient();
+  let deleted = 0;
+  const ids = enquiries.map((e) => e.id as string);
+  for (let i = 0; i < ids.length; i += 500) {
+    const { data, error } = await supabase.rpc('hard_delete_enquiries', { p_ids: ids.slice(i, i + 500) });
+    if (error) {
+      revalidatePath(ENQUIRIES_PATH);
+      return {
+        error: `${deleted > 0 ? `${deleted} enquiries were deleted, then: ` : ''}${hardDeleteErrorMessage(error)}`,
+        count: deleted,
+      };
+    }
+    deleted += typeof data === 'number' ? data : Math.min(500, ids.length - i);
+  }
+
+  revalidatePath(ENQUIRIES_PATH);
+  revalidatePath('/travinco_dashboard');
+  return { count: deleted };
 }

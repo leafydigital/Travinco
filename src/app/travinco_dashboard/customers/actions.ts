@@ -11,6 +11,13 @@ import { z } from 'zod';
 import { isValidPhoneNumber } from 'libphonenumber-js/mobile';
 import { validateFullName, validateEmailAddress } from '@/lib/validations/contact-rules';
 import { isFakePhone } from '@/lib/validations/phone';
+import {
+  CUSTOMERS_SHEET_HEADERS,
+  CUSTOMERS_SHEET_TAB,
+  archiveRows,
+  hardDeleteErrorMessage,
+  sheetValue,
+} from '@/lib/hard-delete';
 
 /** The field a friendly error belongs to, so the form can show it under that input. */
 type CustomerField = 'full_name' | 'phone' | 'whatsapp_number' | 'email' | 'password';
@@ -210,6 +217,43 @@ export async function toggleCustomerStatus(id: string, active: boolean) {
   return { success: true };
 }
 
+/**
+ * Saves the customers to the Google Sheet "Customers" tab, then permanently
+ * removes each one together with their website login (so the same email can
+ * register again).
+ */
+async function archiveAndDeleteCustomers(
+  profile: { full_name: string | null; email: string },
+  customers: Record<string, any>[]
+): Promise<{ error?: string; deleted: number }> {
+  const deletedAt = new Date().toISOString();
+  const deletedBy = profile.full_name || profile.email;
+  const archiveError = await archiveRows(
+    CUSTOMERS_SHEET_TAB,
+    CUSTOMERS_SHEET_HEADERS,
+    customers.map((c) => [
+      c.id, c.full_name, c.phone, c.whatsapp_number, c.email, c.address, c.city, c.state, c.country,
+      c.source, sheetValue(c.notes), c.is_active === false ? 'No' : 'Yes', c.created_at, deletedAt, deletedBy,
+    ].map(sheetValue))
+  );
+  if (archiveError) return { error: archiveError, deleted: 0 };
+
+  const supabase = await createClient();
+  let deleted = 0;
+  for (const c of customers) {
+    const { error } = await supabase.rpc('hard_delete_customer', { p_id: c.id });
+    if (error) {
+      return {
+        error: `${deleted > 0 ? `${deleted} deleted, then: ` : ''}${c.full_name}: ${hardDeleteErrorMessage(error)}`,
+        deleted,
+      };
+    }
+    deleted++;
+    await supabase.from('website_settings').delete().in('key', [`deleted_customer_${c.id}`, `customer_status_${c.id}`]);
+  }
+  return { deleted };
+}
+
 export async function deleteCustomer(id: string) {
   const profile = await requireProfile();
   const perm = await checkModulePermission(profile, 'customers', 'edit');
@@ -218,36 +262,52 @@ export async function deleteCustomer(id: string) {
   }
 
   const supabase = await createClient();
+  const { data: customer } = await supabase.from('customers').select('*').eq('id', id).maybeSingle();
+  if (!customer) return { error: 'Customer not found.' };
 
-  // 1. Try RPC soft_delete_customer
-  const { error: rpcError } = await supabase.rpc('soft_delete_customer', {
-    cust_id: id,
-  });
+  const res = await archiveAndDeleteCustomers(profile, [customer]);
+  if (res.error) return { error: res.error };
 
-  // 2. Direct update fallback
-  if (rpcError) {
-    let { error } = await supabase.from('customers').update({ is_deleted: true } as any).eq('id', id);
-    if (error && error.message?.includes('is_deleted')) {
-      console.warn('Column is_deleted missing from customers table. Using website_settings marker.');
-    } else if (error) {
-      return { error: 'Could not delete customer: ' + error.message };
-    }
-  }
-
-  // 3. Fallback tracking in website_settings so it is always filtered out
-  try {
-    await supabase.from('website_settings').upsert({
-      key: `deleted_customer_${id}`,
-      value: { is_deleted: true, deleted_at: new Date().toISOString() },
-    }, { onConflict: 'key' });
-  } catch (err) {
-    console.warn('Failed to record deleted_customer marker:', err);
-  }
-
-  revalidatePath('/travinco_dashboard/customers');
   revalidatePath('/travinco_dashboard/customers');
   revalidatePath(`/travinco_dashboard/customers/${id}`);
   return {};
+}
+
+/** Customers soft-deleted before deletes became permanent (still in the database). */
+async function loadSoftDeletedCustomers() {
+  const supabase = await createClient();
+  const [{ data: flagged, error }, { data: markers }] = await Promise.all([
+    supabase.from('customers').select('*').eq('is_deleted', true),
+    supabase.from('website_settings').select('key').like('key', 'deleted_customer_%'),
+  ]);
+  const byId = new Map<string, Record<string, any>>();
+  if (!error) (flagged ?? []).forEach((c: any) => byId.set(c.id, c));
+  const markerIds = (markers ?? []).map((m) => m.key.replace('deleted_customer_', '')).filter((mid) => !byId.has(mid));
+  if (markerIds.length > 0) {
+    const { data } = await supabase.from('customers').select('*').in('id', markerIds);
+    (data ?? []).forEach((c: any) => byId.set(c.id, c));
+  }
+  return Array.from(byId.values());
+}
+
+export async function countSoftDeletedCustomers(): Promise<number> {
+  const profile = await requireProfile();
+  if (!['admin', 'super_admin'].includes(profile.role)) return 0;
+  return (await loadSoftDeletedCustomers()).length;
+}
+
+/** One-off clean-up of customers deleted before deletes became permanent. */
+export async function purgeSoftDeletedCustomers(): Promise<{ error?: string; count?: number }> {
+  const profile = await requireProfile();
+  if (!['admin', 'super_admin'].includes(profile.role)) {
+    return { error: 'Only admins can delete customers.' };
+  }
+  const targets = await loadSoftDeletedCustomers();
+  if (targets.length === 0) return { count: 0 };
+
+  const res = await archiveAndDeleteCustomers(profile, targets);
+  revalidatePath('/travinco_dashboard/customers');
+  return res.error ? { error: res.error, count: res.deleted } : { count: res.deleted };
 }
 
 export interface CustomerTableItem {
@@ -299,7 +359,7 @@ export async function getCustomersTableList({
   page?: number;
   pageSize?: number;
   q?: string;
-  /** '' (all) | 'active' | 'deactivated' | 'deleted' */
+  /** '' (all) | 'active' | 'deactivated' */
   status?: string;
 } = {}): Promise<CustomersTableQueryResult> {
   const profile = await requireProfile();
@@ -326,10 +386,10 @@ export async function getCustomersTableList({
     );
   }
 
-  if (status === 'deleted') {
-    query = query.eq('is_deleted', true);
-  } else if (status === 'active' || status === 'deactivated') {
-    query = query.or('is_deleted.is.null,is_deleted.eq.false').eq('is_active', status === 'active');
+  // Deleted customers are removed permanently; any left from the old soft delete stay hidden
+  query = query.or('is_deleted.is.null,is_deleted.eq.false');
+  if (status === 'active' || status === 'deactivated') {
+    query = query.eq('is_active', status === 'active');
   }
 
   const [{ data: customers, count, error }, { data: settingsData }] = await Promise.all([
@@ -373,8 +433,7 @@ export async function getCustomersTableList({
       }
     });
 
-  // Deleted customers stay in the list (shown with a "Deleted" status)
-  const items: CustomerTableItem[] = customerRows.filter(Boolean).map((c: any) => {
+  const items: CustomerTableItem[] = customerRows.filter((c: any) => c && !deletedKeys.has(c.id)).map((c: any) => {
     // The is_active column is authoritative; the website_settings marker is only a
     // fallback for databases without that column.
     const isActive =
@@ -524,30 +583,6 @@ export async function updateCustomerDetails(
     .eq('id', id);
 
   if (error) return { error: 'Could not update the customer. Please try again.' };
-
-  revalidatePath('/travinco_dashboard/customers');
-  revalidatePath(`/travinco_dashboard/customers/${id}`);
-  return {};
-}
-
-/** Restores a soft-deleted customer (admins only). */
-export async function restoreCustomer(id: string): Promise<{ error?: string }> {
-  const profile = await requireProfile();
-  if (!['admin', 'super_admin'].includes(profile.role)) {
-    return { error: 'Only admins can restore customers.' };
-  }
-
-  const supabase = await createClient();
-  const { data: customer } = await supabase.from('customers').select('id, email, phone').eq('id', id).maybeSingle();
-  if (!customer) return { error: 'Customer not found.' };
-
-  // Another active customer may have taken the email / phone in the meantime
-  const conflict = await findCustomerConflict({ email: customer.email, phone: customer.phone, excludeId: id });
-  if (conflict) return { error: `Cannot restore: ${conflict.error.charAt(0).toLowerCase()}${conflict.error.slice(1)}` };
-
-  const { error } = await supabase.from('customers').update({ is_deleted: false } as any).eq('id', id);
-  if (error && !error.message?.includes('is_deleted')) return { error: 'Could not restore the customer. Please try again.' };
-  await supabase.from('website_settings').delete().eq('key', `deleted_customer_${id}`);
 
   revalidatePath('/travinco_dashboard/customers');
   revalidatePath(`/travinco_dashboard/customers/${id}`);

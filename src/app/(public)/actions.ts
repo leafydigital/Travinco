@@ -7,6 +7,7 @@ import { enquiryFormSchema } from '@/lib/validations/enquiry';
 import { sendEnquiryEmailOtp, verifyEnquiryEmailOtp } from '@/lib/enquiry-otp';
 import { headers } from 'next/headers';
 import { revalidatePath } from 'next/cache';
+import { computePriorityFromTravelDate } from '@/lib/enquiry-status';
 
 export type EnquirySubmitState = {
   error?: string;
@@ -39,24 +40,6 @@ function isRateLimited(ip: string) {
   timestamps.push(now);
   submissionLog.set(ip, timestamps);
   return timestamps.length > RATE_LIMIT_MAX;
-}
-
-function computePriorityFromDate(travelDateStr?: string | null): 'urgent' | 'high' | 'medium' | 'low' {
-  if (!travelDateStr) return 'urgent';
-  try {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const travel = new Date(travelDateStr);
-    travel.setHours(0, 0, 0, 0);
-    const diffTime = travel.getTime() - today.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    if (diffDays <= 2) return 'urgent'; // today or upcoming within 48h
-    if (diffDays <= 7) return 'high';   // within a week
-    if (diffDays <= 30) return 'medium';
-    return 'low';
-  } catch {
-    return 'urgent';
-  }
 }
 
 /**
@@ -173,7 +156,7 @@ export async function verifyEnquiryOtpAndSubmit(
     console.warn('Could not associate customer record:', custErr);
   }
 
-  const initialPriority = computePriorityFromDate(parsed.data.travel_date);
+  const initialPriority = computePriorityFromTravelDate(parsed.data.travel_date);
   let enquiryNumber = `ENQ-${new Date().getFullYear()}-${Math.floor(10000 + Math.random() * 90000)}`;
 
   const isUuid = Boolean(

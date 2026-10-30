@@ -2,22 +2,21 @@ import { Suspense } from 'react';
 import { requireProfile, hasPageAccess, getStaffPermissions } from '@/lib/supabase/auth-helpers';
 import { navForProfile } from '@/lib/admin-nav';
 import { redirect } from 'next/navigation';
-import { Calendar } from 'lucide-react';
 import {
-  LeadsPipelineSection,
+  EnquiryStatsSection,
   FinancialOverviewSection,
   TopSellingPackagesSection,
-  RecentEnquiriesSection,
   SectionSkeleton,
-  currentMonthInfo,
+  monthInfo,
 } from './dashboard-sections';
+import { MonthPicker } from './month-picker';
 
 export const dynamic = 'force-dynamic';
 
 export default async function AdminDashboardPage({
   searchParams,
 }: {
-  searchParams?: { error?: string };
+  searchParams?: { error?: string; month?: string };
 }) {
   const profile = await requireProfile();
 
@@ -33,7 +32,9 @@ export default async function AdminDashboardPage({
     redirect('/app?reason=forbidden');
   }
 
-  const { name: currentMonthName } = currentMonthInfo();
+  // ?month=YYYY-MM picks the month every section shows (defaults to this month)
+  const month = monthInfo(searchParams?.month);
+  const thisMonth = monthInfo().key;
 
   // Each section fetches its own data behind a Suspense boundary, so the shell
   // renders immediately and sections stream in as their queries finish.
@@ -55,31 +56,22 @@ export default async function AdminDashboardPage({
             Welcome back, {profile.full_name.split(' ')[0]}
           </h1>
           <p className="text-sm text-ink-500">
-            Overview of your leads pipeline, monthly finances, and top performing packages.
+            Enquiries, income &amp; expense and top packages for {month.name}.
           </p>
         </div>
-        <div className="flex items-center gap-2.5">
-          <div className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-1.5 text-xs font-medium text-ink-600 shadow-xs">
-            <Calendar className="h-3.5 w-3.5 text-brand-600" />
-            <span>{currentMonthName}</span>
-          </div>
-        </div>
+        <MonthPicker value={month.key} currentMonth={thisMonth} />
       </div>
 
-      <Suspense fallback={<SectionSkeleton variant="cards4" />}>
-        <LeadsPipelineSection />
+      <Suspense key={`enq-${month.key}`} fallback={<SectionSkeleton variant="cards4" />}>
+        <EnquiryStatsSection month={month} />
       </Suspense>
 
-      <Suspense fallback={<SectionSkeleton variant="cards2" />}>
-        <FinancialOverviewSection />
+      <Suspense key={`fin-${month.key}`} fallback={<SectionSkeleton variant="cards2" />}>
+        <FinancialOverviewSection month={month} />
       </Suspense>
 
-      <Suspense fallback={<SectionSkeleton variant="list" />}>
-        <TopSellingPackagesSection />
-      </Suspense>
-
-      <Suspense fallback={<SectionSkeleton variant="list" />}>
-        <RecentEnquiriesSection />
+      <Suspense key={`pkg-${month.key}`} fallback={<SectionSkeleton variant="chart" />}>
+        <TopSellingPackagesSection month={month} />
       </Suspense>
     </div>
   );

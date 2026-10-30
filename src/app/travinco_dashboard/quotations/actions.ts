@@ -125,9 +125,9 @@ export async function saveQuotation(
     return { error: 'Could not save the quotation.' };
   }
 
-  // Keep the CRM in step: an enquiry with a saved quotation moves to "quotation sent".
+  // Keep the CRM in step: once the quotation is sent the enquiry moves to "Follow up".
   if (inputs.enquiry_id && status === 'sent') {
-    await supabase.from('enquiries').update({ status: 'quotation_sent' }).eq('id', inputs.enquiry_id);
+    await supabase.from('enquiries').update({ status: 'follow_up' }).eq('id', inputs.enquiry_id);
   }
 
   revalidatePath('/travinco_dashboard/quotations');
@@ -149,7 +149,7 @@ export async function setQuotationStatus(id: string, status: Status) {
     .eq('id', id);
   if (error) return { error: 'Could not update the status.' };
   if (q.enquiry_id && (status === 'sent' || status === 'accepted' || status === 'rejected')) {
-    const map = { sent: 'quotation_sent', accepted: 'confirmed', rejected: 'lost' } as const;
+    const map = { sent: 'follow_up', accepted: 'converted', rejected: 'lost' } as const;
     await s.supabase.from('enquiries').update({ status: map[status] }).eq('id', q.enquiry_id);
   }
   revalidatePath('/travinco_dashboard/quotations');

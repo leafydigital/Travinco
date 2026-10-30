@@ -9,12 +9,16 @@ export type CustomerSource =
 export type PackageStatus = 'draft' | 'published' | 'archived';
 export type PackageCategory =
   | 'honeymoon' | 'family' | 'adventure' | 'group' | 'luxury' | 'budget' | 'pilgrimage' | 'other';
+/**
+ * Pipeline: new (New lead) → pending_quote → follow_up → converted | lost.
+ * The remaining values are legacy and remapped by supabase/enquiries_merge_02_schema.sql.
+ */
 export type EnquiryStatus =
-  | 'new' | 'contacted' | 'follow_up' | 'quotation_sent' | 'negotiation'
-  | 'confirmed' | 'booked' | 'lost' | 'closed';
+  | 'new' | 'pending_quote' | 'follow_up' | 'converted' | 'lost'
+  | 'contacted' | 'quotation_sent' | 'negotiation' | 'confirmed' | 'booked' | 'closed';
 export type EnquiryPriority = 'low' | 'medium' | 'high' | 'urgent';
 export type EnquirySource =
-  | 'website' | 'whatsapp' | 'phone' | 'walk_in' | 'referral' | 'social_media' | 'other';
+  | 'website' | 'whatsapp' | 'phone' | 'walk_in' | 'referral' | 'social_media' | 'excel_import' | 'other';
 export type FollowupType = 'call' | 'whatsapp' | 'email' | 'meeting' | 'other';
 export type BookingStatus =
   | 'inquiry' | 'pending' | 'confirmed' | 'partially_paid' | 'fully_paid'
@@ -439,6 +443,12 @@ export interface Database {
           last_contacted_at: string | null;
           next_followup_date: string | null;
           notes: string | null;
+          enquiry_date: string;
+          enquiry_received_from: string | null;
+          number_of_days: number | null;
+          import_batch: string | null;
+          imported_by: string | null;
+          source_lead_id: string | null;
           created_at: string;
           updated_at: string;
           is_deleted?: boolean;

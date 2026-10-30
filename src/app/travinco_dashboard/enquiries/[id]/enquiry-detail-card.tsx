@@ -12,7 +12,6 @@ import { addYearsIso, todayIso } from '@/lib/utils/iso-date';
 import { PhoneInput, COUNTRY_PHONE_CODES } from '@/components/public/phone-input';
 import { AdminDateField, blockNonNumericKeys, parseNonNegative } from '@/components/admin/package-fields';
 import { updateEnquiryDetails } from '../actions';
-import { EnquiryStatusSelector } from '../enquiry-status-selector';
 import { EnquiryControls } from './enquiry-controls';
 import type { Tables } from '@/types/database';
 
@@ -31,6 +30,9 @@ type Values = {
   destination: string;
   travel_date: string;
   return_date: string;
+  enquiry_date: string;
+  enquiry_received_from: string;
+  number_of_days: number | '';
   number_of_adults: number | '';
   number_of_children: number | '';
   number_of_infants: number | '';
@@ -45,6 +47,9 @@ function initialValues(enquiry: Tables<'enquiries'>): Values {
     destination: enquiry.destination ?? '',
     travel_date: enquiry.travel_date ?? '',
     return_date: enquiry.return_date ?? '',
+    enquiry_date: enquiry.enquiry_date ?? enquiry.created_at.slice(0, 10),
+    enquiry_received_from: enquiry.enquiry_received_from ?? '',
+    number_of_days: enquiry.number_of_days ?? '',
     number_of_adults: enquiry.number_of_adults,
     number_of_children: enquiry.number_of_children,
     number_of_infants: enquiry.number_of_infants,
@@ -81,6 +86,7 @@ export function EnquiryDetailCard({
   packageTitle,
   staff,
   canEdit,
+  canAssign,
   initialEditing,
   children,
 }: {
@@ -88,6 +94,7 @@ export function EnquiryDetailCard({
   packageTitle: string | null;
   staff: { id: string; full_name: string }[];
   canEdit: boolean;
+  canAssign: boolean;
   initialEditing: boolean;
   /** Rest of the page (notes, timeline) — inside this wrapper so the header stays sticky. */
   children?: React.ReactNode;
@@ -102,7 +109,7 @@ export function EnquiryDetailCard({
   const [whatsappValue, setWhatsappValue] = useState(() => splitPhone(enquiry.whatsapp_number || enquiry.phone));
   const [whatsappValid, setWhatsappValid] = useState(true);
 
-  const { prefix: messagePrefix } = splitEnquiryMessage(enquiry.message);
+  const { prefix: messagePrefix, subject: contactSubject, isContactForm } = splitEnquiryMessage(enquiry.message);
   const sourceLabel = enquirySourceLabel(enquiry.source, enquiry.message);
 
   const isDirty = useMemo(() => JSON.stringify(values) !== JSON.stringify(baseline), [values, baseline]);
@@ -116,10 +123,13 @@ export function EnquiryDetailCard({
     setValues((v) => ({ ...v, [key]: value }));
   }
 
-  function numberProps(key: 'number_of_adults' | 'number_of_children' | 'number_of_infants' | 'budget', integer = true) {
+  function numberProps(
+    key: 'number_of_adults' | 'number_of_children' | 'number_of_infants' | 'number_of_days' | 'budget',
+    integer = true
+  ) {
     return {
       type: 'number',
-      min: key === 'number_of_adults' ? 1 : 0,
+      min: key === 'number_of_adults' || key === 'number_of_days' ? 1 : 0,
       step: integer ? 1 : 'any',
       inputMode: integer ? ('numeric' as const) : ('decimal' as const),
       value: values[key],
@@ -150,7 +160,13 @@ export function EnquiryDetailCard({
       if (/^0+$/.test(waDigits)) return 'WhatsApp number cannot be all zeros.';
       if (!whatsappValid) return 'Please enter a valid WhatsApp number.';
     }
-    if (values.travel_date && values.travel_date > maxTravelDate) return 'Travel date must be within 1 year from today.';
+    if (values.travel_date && values.travel_date !== baseline.travel_date && values.travel_date > maxTravelDate) {
+      return 'Travel date must be within 1 year from today.';
+    }
+    if (values.enquiry_date && values.enquiry_date > today) return 'Enquiry date cannot be in the future.';
+    if (values.number_of_days !== '' && (values.number_of_days < 1 || values.number_of_days > 365)) {
+      return 'Number of days must be between 1 and 365.';
+    }
     if (values.travel_date && values.return_date) {
       if (values.return_date < values.travel_date) return 'Return date cannot be before the travel date.';
       if (values.return_date > addYearsIso(values.travel_date, 1)) return 'Return date must be within 1 year of the travel date.';
@@ -178,6 +194,7 @@ export function EnquiryDetailCard({
         ...values,
         number_of_children: values.number_of_children === '' ? 0 : values.number_of_children,
         number_of_infants: values.number_of_infants === '' ? 0 : values.number_of_infants,
+        number_of_days: values.number_of_days === '' ? undefined : values.number_of_days,
         budget: values.budget === '' ? undefined : values.budget,
         // Keep the "[Contact form — subject]" marker so the source stays recognisable
         message: messagePrefix && message ? `${messagePrefix} ${message}` : message,
@@ -211,10 +228,8 @@ export function EnquiryDetailCard({
       <div className="sticky top-0 z-30 -mx-3.5 border-b border-ink-200 bg-ink-50/95 px-3.5 py-3 backdrop-blur-md sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl font-semibold text-ink-900">{enquiry.enquiry_number}</h1>
-              <EnquiryStatusSelector enquiryId={enquiry.id} currentStatus={enquiry.status} canEdit={canEdit} />
-            </div>
+            {/* Status is changed in the details card below */}
+            <h1 className="text-xl font-semibold text-ink-900">{enquiry.enquiry_number}</h1>
             <p className="truncate text-sm text-ink-500">{enquiry.customer_name}</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -279,6 +294,7 @@ export function EnquiryDetailCard({
           currentFollowupDate={enquiry.next_followup_date}
           staff={staff}
           canEdit={canEdit}
+          canAssign={canAssign}
         />
 
         <div className="grid grid-cols-2 gap-x-4 gap-y-4 border-t border-ink-100 pt-4 sm:grid-cols-4 lg:grid-cols-6">
@@ -309,6 +325,26 @@ export function EnquiryDetailCard({
             )}
           </Field>
           <Field label="Source">{sourceLabel}</Field>
+
+          <Field label="Enquiry date">
+            {editing ? (
+              <AdminDateField value={values.enquiry_date} onChange={(iso) => set('enquiry_date', iso)} min="2000-01-01" max={today} />
+            ) : (
+              formatDate(values.enquiry_date || null)
+            )}
+          </Field>
+          <Field label="Enquiry received from" span="col-span-2 lg:col-span-1">
+            {editing ? (
+              <input
+                value={values.enquiry_received_from}
+                maxLength={100}
+                onChange={(e) => set('enquiry_received_from', e.target.value)}
+                className="input"
+              />
+            ) : (
+              values.enquiry_received_from || <span className="text-ink-400">—</span>
+            )}
+          </Field>
 
           <Field label="WhatsApp" span={editing ? 'col-span-2 sm:col-span-4 lg:col-span-3' : 'col-span-2 lg:col-span-1'}>
             {editing ? (
@@ -388,6 +424,13 @@ export function EnquiryDetailCard({
               formatDate(values.return_date || null)
             )}
           </Field>
+          <Field label="Days">
+            {editing ? (
+              <input {...numberProps('number_of_days')} />
+            ) : (
+              values.number_of_days || <span className="text-ink-400">—</span>
+            )}
+          </Field>
           <Field label="Adults" required={editing}>
             {editing ? <input {...numberProps('number_of_adults')} /> : values.number_of_adults}
           </Field>
@@ -408,6 +451,16 @@ export function EnquiryDetailCard({
           </Field>
 
           {/* Message — shown once */}
+          {/* Contact page enquiries: the subject the visitor typed */}
+          {isContactForm && (
+            <Field label="Subject" span="col-span-2 sm:col-span-4 lg:col-span-6">
+              {contactSubject ? (
+                <p className="font-medium text-ink-900">{contactSubject}</p>
+              ) : (
+                <span className="text-ink-400">—</span>
+              )}
+            </Field>
+          )}
           <Field label="Message" span="col-span-2 sm:col-span-4 lg:col-span-6">
             {editing ? (
               <textarea rows={3} value={values.message} onChange={(e) => set('message', e.target.value)} className="input" />

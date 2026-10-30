@@ -18,13 +18,13 @@ export type FoodPreference = 'veg' | 'non_veg' | 'pure_veg';
 export type RoomType = 'ac' | 'non_ac' | 'semi_ac';
 
 export type EnquiryStatus =
-  | 'new' | 'contacted' | 'follow_up' | 'quotation_sent' | 'negotiation'
-  | 'confirmed' | 'lost' | 'closed';
+  | 'new' | 'pending_quote' | 'follow_up' | 'converted' | 'lost'
+  | 'contacted' | 'quotation_sent' | 'negotiation' | 'confirmed' | 'booked' | 'closed';
 
 export type EnquiryPriority = 'low' | 'medium' | 'high' | 'urgent';
 
 export type EnquirySource =
-  | 'website' | 'whatsapp' | 'phone' | 'walk_in' | 'referral' | 'social_media' | 'other';
+  | 'website' | 'whatsapp' | 'phone' | 'walk_in' | 'referral' | 'social_media' | 'excel_import' | 'other';
 
 export type FollowupType = 'call' | 'whatsapp' | 'email' | 'meeting' | 'other';
 

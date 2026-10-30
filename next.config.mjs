@@ -35,6 +35,12 @@ const nextConfig = {
         permanent: false,
       },
       {
+        // Leads were merged into Enquiries
+        source: '/travinco_dashboard/leads',
+        destination: '/travinco_dashboard/enquiries',
+        permanent: false,
+      },
+      {
         source: '/admin/:path*',
         destination: '/travinco_dashboard/:path*',
         permanent: false,

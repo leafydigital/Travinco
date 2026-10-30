@@ -6,7 +6,6 @@ import {
   Upload,
   Plus,
   Trash2,
-  RotateCcw,
   Pencil,
   Image as ImageIcon,
   Check,
@@ -234,21 +233,6 @@ export function QuotationLogosEditor({
     toast.success('Logo removed');
   }
 
-  function handleResetToDefaults() {
-    if (
-      !window.confirm(
-        'Reset all quotation logos to system defaults (Travinco, MSME, KTDC, ABAD, CGH Earth, Green Routes)?'
-      )
-    )
-      return;
-    setHeaderLogoUrl(DEFAULT_QUOTATION_LOGOS.header_logo_url || '/brand/travinco-logo.png');
-    setTourLogoUrl(DEFAULT_QUOTATION_LOGOS.tour_logo_url || '/brand/Tour_logo.jpg');
-    setRegisteredTitle(DEFAULT_QUOTATION_LOGOS.registered_title || 'Registered with');
-    setPartnersTitle(DEFAULT_QUOTATION_LOGOS.partners_title || 'Proud Booking partners of');
-    setLogos(DEFAULT_QUOTATION_LOGOS.logos);
-    toast.success('Reset to default logos. Click "Save settings" at the top to keep it.');
-  }
-
   // Saved by the page's single "Save settings" button
   useRegisterSettingsSave('quotation-logos', async () => {
     if (uploading) return { error: 'Please wait for the logo upload to finish.' };
@@ -276,16 +260,6 @@ export function QuotationLogosEditor({
           <p className="text-xs text-ink-500">
             These logos appear in the bottom trust footer of quotation previews and are automatically stamped on the bottom of every page in downloaded PDFs.
           </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={handleResetToDefaults}
-            className="btn-outline text-xs"
-            title="Restore default Travinco partner & accreditation logos"
-          >
-            <RotateCcw className="h-3.5 w-3.5" /> Reset to defaults
-          </button>
         </div>
       </div>
 

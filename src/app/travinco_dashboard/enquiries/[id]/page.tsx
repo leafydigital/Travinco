@@ -36,6 +36,8 @@ export default async function EnquiryDetailPage({
     ]);
 
   if (!enquiry || enquiry.is_deleted) notFound();
+  // Employees only work on the enquiries assigned to them
+  if (!isAdmin && enquiry.assigned_staff !== profile.id) notFound();
 
   const pkgRaw = enquiry.travel_packages as
     | { title: string; slug: string; base_price: number | null; discount_price: number | null }
@@ -49,6 +51,7 @@ export default async function EnquiryDetailPage({
       packageTitle={pkg?.title ?? null}
       staff={staff ?? []}
       canEdit={canEdit}
+      canAssign={isAdmin}
       initialEditing={isEditing}
     >
       <div className="grid gap-6 lg:grid-cols-2">

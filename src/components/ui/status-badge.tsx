@@ -7,7 +7,9 @@ const toneMap: Record<string, string> = {
   published: 'bg-brand-100 text-brand-800',
   archived: 'bg-ink-100 text-ink-500',
   // enquiry status
-  new: 'bg-amber-50 text-amber-800 border border-amber-200/80',
+  new: 'bg-sky-50 text-sky-800 border border-sky-200/80',
+  pending_quote: 'bg-amber-50 text-amber-800 border border-amber-200/80',
+  converted: 'bg-emerald-50 text-emerald-800 border border-emerald-200/80',
   contacted: 'bg-sand-100 text-sand-800 border border-sand-200',
   follow_up: 'bg-purple-50 text-purple-800 border border-purple-200/80',
   quotation_sent: 'bg-indigo-50 text-indigo-800 border border-indigo-200/80',
@@ -35,10 +37,12 @@ const toneMap: Record<string, string> = {
 };
 
 const labelOverrides: Record<string, string> = {
-  new: 'Pending',
-  follow_up: 'Follow Up',
+  new: 'New lead',
+  pending_quote: 'Pending for quote',
+  follow_up: 'Follow up',
+  converted: 'Converted',
   quotation_sent: 'Quotations Sent',
-  lost: 'Not Interested',
+  lost: 'Deal lost or not interested',
   confirmed: 'Confirmed',
   booked: 'Booked',
   urgent: 'Urgent',
