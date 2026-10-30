@@ -77,6 +77,13 @@ export const adminNav: NavSection[] = [
         pageKey: 'plugins',
         roles: ['admin', 'super_admin'],
       },
+      {
+        label: 'Settings',
+        href: '/travinco_dashboard/settings',
+        icon: 'Settings',
+        pageKey: 'settings',
+        roles: ['admin', 'super_admin'],
+      },
     ],
   },
   {
@@ -169,7 +176,7 @@ export function navForProfile(
         if (profile.role === 'super_admin') return true;
 
         // 2. Role Management & system configuration items are strictly restricted to admin & super_admin
-        if (item.pageKey === 'roles' || item.pageKey === 'users' || item.pageKey === 'plugins') {
+        if (item.pageKey === 'roles' || item.pageKey === 'users' || item.pageKey === 'plugins' || item.pageKey === 'settings') {
           return profile.role === 'admin';
         }
 

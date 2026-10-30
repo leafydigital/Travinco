@@ -5,11 +5,13 @@ import { useState, useEffect } from 'react';
 interface CustomerStatusBadgeProps {
   customerId: string;
   initialActive: boolean;
+  isDeleted?: boolean;
 }
 
 export function CustomerStatusBadge({
   customerId,
   initialActive,
+  isDeleted = false,
 }: CustomerStatusBadgeProps) {
   const [isActive, setIsActive] = useState(initialActive);
 
@@ -32,6 +34,10 @@ export function CustomerStatusBadge({
       window.removeEventListener('travinco:customer-status-changed', onStatusChange);
     };
   }, [customerId]);
+
+  if (isDeleted) {
+    return <span className="badge bg-red-100 text-red-700 border-red-200">Deleted</span>;
+  }
 
   return isActive ? (
     <span className="badge badge-success transition-all duration-200">Active</span>

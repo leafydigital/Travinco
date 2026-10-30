@@ -13,12 +13,15 @@ export function StagedImagePicker({
   onSave,
   disabled,
   onPendingChange,
+  multiple = true,
 }: {
   /** Uploads the files; resolve once done. Files that failed can be returned to keep them staged. */
   onSave: (files: File[]) => Promise<File[] | void>;
   disabled?: boolean;
   /** Notified with the number of selected-but-unsaved photos. */
   onPendingChange?: (count: number) => void;
+  /** false = pick a single photo (choosing another replaces the selection). */
+  multiple?: boolean;
 }) {
   const [staged, setStaged] = useState<Staged[]>([]);
   const [saving, setSaving] = useState(false);
@@ -36,7 +39,12 @@ export function StagedImagePicker({
   function handleSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
     if (files.length) {
-      setStaged((prev) => [...prev, ...files.map((file) => ({ file, preview: URL.createObjectURL(file) }))]);
+      const picked = files.map((file) => ({ file, preview: URL.createObjectURL(file) }));
+      setStaged((prev) => {
+        if (multiple) return [...prev, ...picked];
+        prev.forEach((s) => URL.revokeObjectURL(s.preview));
+        return picked.slice(0, 1);
+      });
     }
     e.target.value = '';
   }
@@ -70,7 +78,7 @@ export function StagedImagePicker({
         ref={inputRef}
         type="file"
         accept="image/jpeg,image/png,image/webp"
-        multiple
+        multiple={multiple}
         onChange={handleSelect}
         disabled={disabled || saving}
         className="block w-full text-sm text-ink-600 file:mr-3 file:rounded-full file:border-0 file:bg-brand-50 file:px-4 file:py-2 file:text-sm file:font-medium file:text-brand-700 hover:file:bg-brand-100"

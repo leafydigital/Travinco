@@ -84,18 +84,12 @@ export default async function AdminUsersPage() {
     }
   }
 
-  // Exclude soft-deleted users so they do not show in the tables, and attach custom role_title
-  const users = (allUsers ?? [])
-    .filter((u: any) => {
-      if (u.is_deleted === true) return false;
-      if (u.role_title === '[DELETED]') return false;
-      if (deletedUserIds.has(u.id)) return false;
-      return true;
-    })
-    .map((u: any) => ({
-      ...u,
-      role_title: u.role_title || customRoleMap.get(u.id) || null,
-    }));
+  // Soft-deleted users stay in the table with a "Deleted" status; attach custom role_title
+  const users = (allUsers ?? []).map((u: any) => ({
+    ...u,
+    is_deleted: u.is_deleted === true || u.role_title === '[DELETED]' || deletedUserIds.has(u.id),
+    role_title: (u.role_title === '[DELETED]' ? null : u.role_title) || customRoleMap.get(u.id) || null,
+  }));
 
   return (
     <div className="space-y-5">

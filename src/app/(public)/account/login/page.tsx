@@ -305,12 +305,13 @@ export default function LoginPage() {
       }
 
       // ── Signed in directly (no email OTP step) ──
+      // The "Signed in successfully" snackbar is shown by the destination page
+      // (AuthToastNotifier reads ?login=success), so it appears after the redirect.
+      // Keep the button in its "Signing in…" state until the next page opens.
       if (result.success) {
-        toast.success('Signed in successfully!');
         const target = getSafeRedirect(redirectTo);
         const separator = target.includes('?') ? '&' : '?';
         router.replace(`${target}${separator}login=success`);
-        router.refresh();
         return;
       }
 
@@ -324,11 +325,11 @@ export default function LoginPage() {
         setStep('otp');
         toast.success(`Verification code sent to ${result.maskedEmail || email}`);
       }
+      setIsLoading(false);
     } catch (err: any) {
       const message = err?.message || 'Unable to sign in right now. Please try again.';
       setLoginError({ message });
       toast.error(message);
-    } finally {
       setIsLoading(false);
     }
   }

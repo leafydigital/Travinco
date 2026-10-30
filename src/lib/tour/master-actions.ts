@@ -695,7 +695,7 @@ export async function deleteDayPlan(id: number | string) {
 // ---------- Quotation templates ----------------------------------------------
 
 export async function deleteQuotationTemplate(id: number | string) {
-  return remove('quotation_templates', 'template', id, ['/travinco_dashboard/quotations/settings']);
+  return remove('quotation_templates', 'template', id, ['/travinco_dashboard/settings']);
 }
 
 export async function toggleQuotationTemplate(id: number, is_active: boolean) {
@@ -703,7 +703,7 @@ export async function toggleQuotationTemplate(id: number, is_active: boolean) {
   if ('error' in c) return { error: c.error };
   const { error } = await c.supabase.from('quotation_templates').update({ is_active }).eq('id', id);
   if (error) return { error: dbError(error, 'template') };
-  revalidatePath('/travinco_dashboard/quotations/settings');
+  revalidatePath('/travinco_dashboard/settings');
   return {};
 }
 
@@ -759,7 +759,7 @@ export async function saveTourSettings(raw: Record<string, unknown>) {
   if (error) return { error: dbError(error, 'settings') };
   invalidateTourMastersCache();
   revalidatePath('/travinco_dashboard/quotations');
-  revalidatePath('/travinco_dashboard/quotations/settings');
+  revalidatePath('/travinco_dashboard/settings');
   return {};
 }
 
@@ -833,8 +833,8 @@ export async function saveQuotationLogos(logosConfig: QuotationLogosConfig): Pro
 
   invalidateTourMastersCache();
   revalidatePath('/travinco_dashboard/quotations');
-  revalidatePath('/travinco_dashboard/quotations/settings');
-  revalidatePath('/travinco_dashboard/quotations/settings');
+  revalidatePath('/travinco_dashboard/settings');
+  revalidatePath('/travinco_dashboard/settings');
   return {};
 }
 
@@ -871,9 +871,9 @@ export async function saveInvoiceSettings(invoiceSettings: InvoiceSettings): Pro
   }
 
   invalidateTourMastersCache();
-  revalidatePath('/travinco_dashboard/quotations/settings');
+  revalidatePath('/travinco_dashboard/settings');
   revalidatePath('/travinco_dashboard/invoices');
-  revalidatePath('/travinco_dashboard/quotations/settings');
+  revalidatePath('/travinco_dashboard/settings');
   revalidatePath('/travinco_dashboard/invoices');
   return {};
 }

@@ -44,7 +44,7 @@ export default async function EditUserPage({ params }: { params: { id: string } 
         </Link>
         <div>
           <h1 className="text-xl font-bold tracking-tight text-ink-900">Edit user — {user.full_name}</h1>
-          <p className="mt-0.5 text-xs text-ink-500">Change the name, role or password. Page access follows the role.</p>
+          <p className="mt-0.5 text-xs text-ink-500">Change the name, username, phone, role or password. Page access follows the role.</p>
         </div>
       </div>
       <UserForm
@@ -55,6 +55,8 @@ export default async function EditUserPage({ params }: { params: { id: string } 
         initial={{
           full_name: user.full_name,
           email: user.email,
+          username: user.username ?? null,
+          phone: user.phone ?? null,
           role_id: user.role_id ?? null,
           password: tempRes.error ? null : tempRes.data?.temp_password ?? null,
         }}

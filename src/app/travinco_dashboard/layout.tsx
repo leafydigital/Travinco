@@ -2,6 +2,11 @@ import { requireProfile, getStaffPermissions } from '@/lib/supabase/auth-helpers
 import { navForProfile } from '@/lib/admin-nav';
 import { SaveConfirmationProvider } from '@/components/admin/save-confirmation-provider';
 import { AdminDashboardLayout } from '@/components/admin/admin-dashboard-layout';
+import type { Metadata } from 'next';
+
+export const metadata: Metadata = {
+  icons: { icon: '/images/green_logo.png', apple: '/images/green_logo.png' },
+};
 
 export default async function AdminRootLayout({
   children,

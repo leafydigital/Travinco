@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { requireProfile, assertModulePermission } from '@/lib/supabase/auth-helpers';
 import { PackageForm } from '../package-form';
+import { getDestinationOptions } from '../destination-options';
 import Link from 'next/link';
 import { ArrowLeft, Layers } from 'lucide-react';
 
@@ -10,10 +11,7 @@ export default async function NewPackagePage() {
   const profile = await requireProfile();
   await assertModulePermission(profile, 'packages', 'edit');
   const supabase = await createClient();
-  const { data: destinations } = await supabase
-    .from('destinations')
-    .select('id, name')
-    .order('name');
+  const destinations = await getDestinationOptions(supabase);
 
   return (
     <PackageForm

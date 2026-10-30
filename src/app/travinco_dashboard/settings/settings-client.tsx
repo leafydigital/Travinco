@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from '@/lib/admin-alert';
 import { RefreshCw, Trash2 } from 'lucide-react';
 import { saveTourSettings, deleteQuotationTemplate, toggleQuotationTemplate, rebuildRateDateWindows } from '@/lib/tour/master-actions';
 import type { TourSettings } from '@/lib/tour/types';
+import { useRegisterSettingsSave } from './settings-save-bar';
 
 const NUMS: [keyof TourSettings, string, string][] = [
   ['markup_pct', 'Standard markup %', 'Staff quotes always use this'],
@@ -26,22 +27,19 @@ const TEXTS: [keyof TourSettings, string][] = [
 ];
 
 export function SettingsClient({ settings }: { settings: TourSettings }) {
-  const router = useRouter();
-  const [pending, start] = useTransition();
-  const submit = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const data = Object.fromEntries(new FormData(e.currentTarget).entries());
-    start(async () => {
-      const r = await saveTourSettings(data);
-      if (r.error) return void toast.error(r.error);
-      toast.success('Settings saved');
-      router.refresh();
-    });
-  };
+  const formRef = useRef<HTMLFormElement>(null);
+  // Saved by the page's single "Save settings" button
+  useRegisterSettingsSave('tour-settings', async () => {
+    const form = formRef.current;
+    if (!form) return;
+    if (!form.reportValidity()) return { error: 'Please fill in all the pricing fields.' };
+    const r = await saveTourSettings(Object.fromEntries(new FormData(form).entries()));
+    return r.error ? { error: r.error } : undefined;
+  });
   const val = (k: keyof TourSettings) => (settings[k] == null ? '' : String(settings[k]));
 
   return (
-    <form onSubmit={submit} className="space-y-5">
+    <form ref={formRef} onSubmit={(e) => e.preventDefault()} className="space-y-5">
       <div className="card p-5">
         <h2 className="mb-4 font-semibold text-ink-900">Pricing</h2>
         <div className="grid gap-4 sm:grid-cols-3">
@@ -95,9 +93,6 @@ export function SettingsClient({ settings }: { settings: TourSettings }) {
         </div>
       </div>
 
-      <div className="flex justify-end">
-        <button type="submit" className="btn-primary" disabled={pending}>{pending ? 'Saving…' : 'Save settings'}</button>
-      </div>
     </form>
   );
 }

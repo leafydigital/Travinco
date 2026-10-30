@@ -35,6 +35,7 @@ import {
   type SignupAvailability,
 } from '@/lib/auth/signup-otp';
 import { EMAIL_REGEX, USERNAME_MAX, USERNAME_MIN, escapeLike } from '@/lib/auth/signup-rules';
+import { validateFullName } from '@/lib/validations/contact-rules';
 
 // Any characters are allowed in usernames except whitespace
 const usernameRule = z
@@ -51,7 +52,13 @@ const emailRule = z
 
 const initiateSignupSchema = z
   .object({
-    full_name: z.string().min(1, 'Please enter your full name.'),
+    full_name: z
+      .string()
+      .trim()
+      .superRefine((v, ctx) => {
+        const err = validateFullName(v);
+        if (err) ctx.addIssue({ code: 'custom', message: err });
+      }),
     username: usernameRule,
     email: emailRule,
     phone: z.string().trim().min(1, 'Please enter your mobile number.'),

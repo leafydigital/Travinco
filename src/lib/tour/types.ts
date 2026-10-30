@@ -218,7 +218,7 @@ export const DEFAULT_INVOICE_SETTINGS: InvoiceSettings = {
   bank_account_number: '22040200004059',
   bank_ifsc: 'FDRL0002204',
   bank_upi_id: 'travinco1@fdl',
-  qr_code_mode: 'dynamic_upi',
+  qr_code_mode: 'custom_image',
   custom_qr_url: null,
   signature_url: '/brand/signature.png',
   authorized_signatory_label: 'Authorised Signatory',

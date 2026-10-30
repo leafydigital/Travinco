@@ -1,4 +1,5 @@
 import { createPublicClient } from '@/lib/supabase/public';
+import { BackButton } from '@/components/public/back-button';
 import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import Image from 'next/image';
@@ -176,6 +177,14 @@ export default async function PackageDetailPage({ params }: { params: { slug: st
             />
           )}
           <div className="absolute inset-0 bg-gradient-to-t from-navy-950/90 via-navy-950/40 to-transparent pointer-events-none" />
+
+          <div className="container-page absolute inset-x-0 top-4 sm:top-6 z-10">
+            <BackButton
+              fallbackHref="/packages"
+              label="Back to packages"
+              className="inline-flex items-center gap-1.5 rounded-full bg-black/40 px-3.5 py-1.5 text-xs sm:text-sm font-semibold text-white backdrop-blur-md transition hover:bg-black/60 cursor-pointer"
+            />
+          </div>
 
           <div className="container-page absolute inset-x-0 bottom-6 sm:bottom-8 text-white z-10">
             {destination && (

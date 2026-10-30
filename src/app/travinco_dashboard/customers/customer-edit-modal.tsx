@@ -4,7 +4,7 @@ import { useState, useEffect, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from '@/lib/admin-alert';
 import { X, Loader2, CheckCircle2 } from 'lucide-react';
-import { updateCustomerDetails, getCustomerById } from './actions';
+import { updateCustomerDetails, getCustomerById, checkCustomerAvailability } from './actions';
 import { HField } from '@/components/admin/horizontal-field';
 import { ModalPortal } from '@/components/ui/modal-portal';
 import { PhoneInput, COUNTRY_PHONE_CODES } from '@/components/public/phone-input';
@@ -50,6 +50,8 @@ export function CustomerEditModal({
   const [whatsappValid, setWhatsappValid] = useState(true);
   const [email, setEmail] = useState('');
   const [emailError, setEmailError] = useState<string | null>(null);
+  const [phoneError, setPhoneError] = useState<string | null>(null);
+  const [whatsappError, setWhatsappError] = useState<string | null>(null);
   const [address, setAddress] = useState('');
   const [source, setSource] = useState('website');
   const [notes, setNotes] = useState('');
@@ -85,6 +87,35 @@ export function CustomerEditModal({
     };
   }, [isOpen, customerId]);
 
+  // "Already taken" checks shown under the field as the team edits (no popups)
+  const phoneFull = joinPhone(phone);
+  useEffect(() => {
+    if (isLoading || !phoneFull || !phoneValid) return;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      const res = await checkCustomerAvailability({ phone: phoneFull, excludeId: customerId }).catch(() => null);
+      if (!cancelled && res) setPhoneError(res.phone);
+    }, 400);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [phoneFull, phoneValid, isLoading, customerId]);
+
+  const emailTrimmed = email.trim();
+  useEffect(() => {
+    if (isLoading || !emailTrimmed || validateEmailAddress(emailTrimmed)) return;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      const res = await checkCustomerAvailability({ email: emailTrimmed, excludeId: customerId }).catch(() => null);
+      if (!cancelled && res) setEmailError(res.email);
+    }, 500);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [emailTrimmed, isLoading, customerId]);
+
   if (!isOpen) return null;
 
   function handleNameChange(raw: string) {
@@ -95,37 +126,29 @@ export function CustomerEditModal({
     else if (nameError) setNameError(validateFullName(value));
   }
 
-  function validate(): string | null {
+  /** Shows every problem under its field; returns true when the form can be saved. */
+  function validate(): boolean {
     const nErr = validateFullName(fullName);
-    if (nErr) {
-      setNameError(nErr);
-      return nErr;
-    }
-    if (!phone.number) return 'Phone number is required';
-    if (!phoneValid) return 'Please enter a valid phone number';
-    if (hasWhatsapp) {
-      if (!whatsapp.number) return 'Please enter the WhatsApp number or untick the WhatsApp box';
-      if (!whatsappValid) return 'Please enter a valid WhatsApp number';
-    }
-    if (email.trim()) {
-      const eErr = validateEmailAddress(email);
-      if (eErr) {
-        setEmailError(eErr);
-        return eErr;
-      }
-    }
-    return null;
+    const pErr = !phone.number ? 'Phone number is required' : !phoneValid ? 'Please enter a valid phone number' : phoneError;
+    const wErr = !hasWhatsapp
+      ? null
+      : !whatsapp.number
+        ? 'Enter the WhatsApp number or untick the box'
+        : !whatsappValid
+          ? 'Please enter a valid WhatsApp number'
+          : null;
+    const eErr = email.trim() ? validateEmailAddress(email) ?? emailError : null;
+    setNameError(nErr);
+    setPhoneError(pErr);
+    setWhatsappError(wErr);
+    setEmailError(eErr);
+    return !nErr && !pErr && !wErr && !eErr;
   }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const error = validate();
-    if (error) {
-      toast.error(error);
-      return;
-    }
+    if (!validate()) return;
     startTransition(async () => {
-      const phoneFull = joinPhone(phone);
       const res = await updateCustomerDetails(customerId, {
         full_name: fullName.trim(),
         phone: phoneFull,
@@ -137,6 +160,11 @@ export function CustomerEditModal({
       });
 
       if (res.error) {
+        // Field problems (e.g. email / phone already taken) are shown under the field
+        if ('field' in res && res.field === 'email') return void setEmailError(res.error);
+        if ('field' in res && res.field === 'phone') return void setPhoneError(res.error);
+        if ('field' in res && res.field === 'full_name') return void setNameError(res.error);
+        if ('field' in res && res.field === 'whatsapp_number') return void setWhatsappError(res.error);
         toast.error(res.error);
         return;
       }
@@ -207,7 +235,7 @@ export function CustomerEditModal({
             </div>
           ) : (
             /* Form Body */
-            <form onSubmit={handleSubmit} className="p-6 space-y-3">
+            <form onSubmit={handleSubmit} noValidate className="p-6 space-y-3">
               <HField
                 label="Full name"
                 required
@@ -230,7 +258,13 @@ export function CustomerEditModal({
                 />
               </HField>
 
-              <HField label="Phone" required labelWidth="sm:w-28" fieldClassName="sm:max-w-[15rem]">
+              <HField
+                label="Phone"
+                required
+                labelWidth="sm:w-28"
+                fieldClassName="sm:max-w-[15rem]"
+                error={phoneError ?? undefined}
+              >
                 <PhoneInput
                   compact
                   name="phone"
@@ -238,11 +272,19 @@ export function CustomerEditModal({
                   placeholder="Phone number"
                   value={phone}
                   onValidityChange={setPhoneValid}
-                  onChange={setPhone}
+                  onChange={(v) => {
+                    setPhone(v);
+                    setPhoneError(null);
+                  }}
                 />
               </HField>
 
-              <HField label="WhatsApp" labelWidth="sm:w-28" fieldClassName="sm:max-w-[15rem]">
+              <HField
+                label="WhatsApp"
+                labelWidth="sm:w-28"
+                fieldClassName="sm:max-w-[15rem]"
+                error={whatsappError ?? undefined}
+              >
                 <label className="flex items-center gap-2 pt-2 text-sm text-ink-700">
                   <input
                     type="checkbox"
@@ -265,7 +307,10 @@ export function CustomerEditModal({
                     value={hasWhatsapp ? whatsapp : phone}
                     disabled={!hasWhatsapp}
                     onValidityChange={setWhatsappValid}
-                    onChange={setWhatsapp}
+                    onChange={(v) => {
+                      setWhatsapp(v);
+                      setWhatsappError(null);
+                    }}
                   />
                 </div>
               </HField>
@@ -283,9 +328,9 @@ export function CustomerEditModal({
                   value={email}
                   onChange={(e) => {
                     setEmail(e.target.value.trim());
-                    if (emailError) setEmailError(e.target.value.trim() ? validateEmailAddress(e.target.value) : null);
+                    setEmailError(null);
                   }}
-                  onBlur={() => setEmailError(email.trim() ? validateEmailAddress(email) : null)}
+                  onBlur={() => setEmailError(email.trim() ? validateEmailAddress(email) ?? emailError : null)}
                   aria-invalid={Boolean(emailError)}
                   className={`input text-sm ${emailError ? 'border-red-400 focus:border-red-500' : ''}`}
                   placeholder="e.g. customer@example.com"

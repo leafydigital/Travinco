@@ -129,14 +129,14 @@ export function InvoiceDocument({
   const upiUri = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(accName)}&am=${totalAmt.toFixed(2)}&cu=INR&tn=${encodeURIComponent(`Invoice ${inv.invoice_number}`)}`;
 
   const [qrSrc, setQrSrc] = useState<string>(
-    cfg.qr_code_mode === 'custom_image' && cfg.custom_qr_url
+    cfg.custom_qr_url
       ? cfg.custom_qr_url
       : `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(upiUri)}`
   );
 
   useEffect(() => {
     let active = true;
-    if (cfg.qr_code_mode === 'custom_image' && cfg.custom_qr_url) {
+    if (cfg.custom_qr_url) {
       setQrSrc(cfg.custom_qr_url);
       return;
     }
@@ -156,7 +156,7 @@ export function InvoiceDocument({
     return () => {
       active = false;
     };
-  }, [upiUri, cfg.qr_code_mode, cfg.custom_qr_url]);
+  }, [upiUri, cfg.custom_qr_url]);
 
   // Line items formatting: ensure the invoice always shows the total price everywhere
   const rawItems = Array.isArray(inv.items) && inv.items.length > 0 ? inv.items : [];
@@ -554,7 +554,7 @@ export function InvoiceDocument({
                 </tbody>
               </table>
 
-              {/* Dynamic QR Code */}
+              {/* Payment QR Code */}
               <div style={{ textAlign: 'center', flexShrink: 0, paddingRight: 4 }}>
                 <img
                   src={qrSrc}

@@ -3,7 +3,6 @@
 
 import {
   useState,
-  useTransition,
   useEffect,
   useRef,
   createContext,
@@ -12,19 +11,18 @@ import {
   type ChangeEvent,
   type RefObject,
 } from 'react';
-import { useRouter } from 'next/navigation';
 import { toast } from '@/lib/admin-alert';
 import {
   Building2,
   QrCode,
   Upload,
-  Check,
   RefreshCw,
   Eye,
   FileSignature,
   FileText,
   HelpCircle,
 } from 'lucide-react';
+import { useRegisterSettingsSave } from './settings-save-bar';
 import type { InvoiceSettings } from '@/lib/tour/types';
 import { DEFAULT_INVOICE_SETTINGS } from '@/lib/tour/types';
 import {
@@ -40,8 +38,6 @@ interface InvoiceSettingsContextType {
   settings: InvoiceSettings;
   update: (patch: Partial<InvoiceSettings>) => void;
   sampleQrDataUrl: string;
-  pending: boolean;
-  handleSave: () => void;
   handleReset: () => void;
   handleSignUpload: (e: ChangeEvent<HTMLInputElement>) => Promise<void>;
   handleQrUpload: (e: ChangeEvent<HTMLInputElement>) => Promise<void>;
@@ -71,8 +67,6 @@ export function InvoiceSettingsProvider({
   initialSettings?: InvoiceSettings;
   children: ReactNode;
 }) {
-  const router = useRouter();
-  const [pending, start] = useTransition();
   const [settings, setSettings] = useState<InvoiceSettings>(
     initialSettings || DEFAULT_INVOICE_SETTINGS
   );
@@ -90,7 +84,7 @@ export function InvoiceSettingsProvider({
     const sampleAmount = '211000.00';
     const sampleInvoice = 'TRV364';
 
-    if (settings.qr_code_mode === 'custom_image' && settings.custom_qr_url) {
+    if (settings.custom_qr_url) {
       setSampleQrDataUrl(settings.custom_qr_url);
       return;
     }
@@ -132,23 +126,19 @@ export function InvoiceSettingsProvider({
     setSettings((prev) => ({ ...prev, ...patch }));
   };
 
-  const handleSave = () => {
-    start(async () => {
-      const res = await saveInvoiceSettings(settings);
-      if (res?.error) {
-        toast.error(res.error);
-        return;
-      }
-      toast.success('Invoice design and bank settings saved successfully!');
-      router.refresh();
-    });
+  // Saved by the page's single "Save settings" button
+  const handleSave = async () => {
+    if (uploadingSign || uploadingQr) return { error: 'Please wait for the image upload to finish.' };
+    const res = await saveInvoiceSettings(settings);
+    return res?.error ? { error: res.error } : undefined;
   };
+  useRegisterSettingsSave('invoice-settings', handleSave);
 
   const handleReset = () => {
     if (!window.confirm('Reset all invoice bank details and terms back to official defaults?'))
       return;
     setSettings(DEFAULT_INVOICE_SETTINGS);
-    toast.info('Reset to default invoice configuration. Click "Save Invoice Settings" to confirm.');
+    toast.info('Reset to default invoice configuration. Click "Save settings" at the top to keep it.');
   };
 
   const handleSignUpload = async (e: ChangeEvent<HTMLInputElement>) => {
@@ -199,8 +189,6 @@ export function InvoiceSettingsProvider({
         settings,
         update,
         sampleQrDataUrl,
-        pending,
-        handleSave,
         handleReset,
         handleSignUpload,
         handleQrUpload,
@@ -222,8 +210,6 @@ function InvoiceSettingsEditorForm() {
   const {
     settings,
     update,
-    pending,
-    handleSave,
     handleReset,
     handleSignUpload,
     handleQrUpload,
@@ -245,7 +231,7 @@ function InvoiceSettingsEditorForm() {
             </h2>
           </div>
           <p className="mt-1 text-xs text-ink-500">
-            Configure bank account particulars, dynamic amount-embedded UPI QR code, official seal,
+            Configure bank account particulars, payment QR code image, official seal,
             and terms shown on the tax invoice.
           </p>
         </div>
@@ -254,25 +240,8 @@ function InvoiceSettingsEditorForm() {
             type="button"
             onClick={handleReset}
             className="btn-outline h-8 text-xs text-ink-600 hover:text-ink-900"
-            disabled={pending}
           >
             <RefreshCw className="h-3.5 w-3.5" /> Reset Defaults
-          </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={pending}
-            className="btn-primary h-8 text-xs font-semibold"
-          >
-            {pending ? (
-              <>
-                <RefreshCw className="h-3.5 w-3.5 animate-spin" /> Saving…
-              </>
-            ) : (
-              <>
-                <Check className="h-3.5 w-3.5" /> Save Invoice Settings
-              </>
-            )}
           </button>
         </div>
       </div>
@@ -380,79 +349,36 @@ function InvoiceSettingsEditorForm() {
               <QrCode className="h-4 w-4 text-emerald-700" />
               <h3 className="text-sm font-semibold text-ink-900">Payment QR Code</h3>
             </div>
-            <span className="rounded bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
-              Auto-generates with amount
-            </span>
           </div>
 
-          <div className="space-y-3">
-            <div className="flex flex-wrap gap-4 text-xs">
-              <label className="flex cursor-pointer items-center gap-2">
-                <input
-                  type="radio"
-                  name="qr_mode"
-                  checked={settings.qr_code_mode === 'dynamic_upi'}
-                  onChange={() => update({ qr_code_mode: 'dynamic_upi' })}
-                  className="text-brand-700"
+          <div className="space-y-2 rounded-lg border border-ink-200 bg-ink-50/50 p-3">
+            <label className="label text-xs">Upload Custom QR Code Image</label>
+            <div className="flex flex-wrap items-center gap-3">
+              {settings.custom_qr_url && (
+                <img
+                  src={settings.custom_qr_url}
+                  alt="Payment QR code"
+                  className="h-20 w-20 rounded border border-ink-200 bg-white object-contain p-1"
                 />
-                <span>
-                  <strong className="text-ink-900">Dynamic UPI QR Code</strong> (Recommended)
-                </span>
-              </label>
-              <label className="flex cursor-pointer items-center gap-2">
-                <input
-                  type="radio"
-                  name="qr_mode"
-                  checked={settings.qr_code_mode === 'custom_image'}
-                  onChange={() => update({ qr_code_mode: 'custom_image' })}
-                  className="text-brand-700"
-                />
-                <span>
-                  <strong className="text-ink-900">Custom QR Image</strong>
-                </span>
-              </label>
+              )}
+              <input
+                ref={qrFileRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleQrUpload}
+              />
+              <button
+                type="button"
+                onClick={() => qrFileRef.current?.click()}
+                disabled={uploadingQr}
+                className="btn-outline h-8 text-xs bg-white"
+              >
+                <Upload className="h-3.5 w-3.5" />
+                {uploadingQr ? 'Uploading…' : settings.custom_qr_url ? 'Change QR image' : 'Choose QR image'}
+              </button>
             </div>
-
-            {settings.qr_code_mode === 'dynamic_upi' ? (
-              <div className="rounded-lg bg-emerald-50/50 p-3 text-xs text-emerald-900 border border-emerald-100">
-                <p className="flex items-start gap-1.5 leading-relaxed">
-                  <Check className="h-4 w-4 shrink-0 text-emerald-600 mt-0.5" />
-                  <span>
-                    Each invoice automatically renders a real-time UPI QR code encoding the recipient
-                    UPI ID (<strong>{settings.bank_upi_id || 'travinco1@fdl'}</strong>) and the
-                    exact invoice balance amount. When guests scan with GPay / PhonePe / Paytm, the
-                    payment amount is pre-filled automatically!
-                  </span>
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-2 rounded-lg border border-ink-200 bg-ink-50/50 p-3">
-                <label className="label text-xs">Upload Custom QR Code Image</label>
-                <div className="flex items-center gap-2">
-                  <input
-                    ref={qrFileRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={handleQrUpload}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => qrFileRef.current?.click()}
-                    disabled={uploadingQr}
-                    className="btn-outline h-8 text-xs bg-white"
-                  >
-                    <Upload className="h-3.5 w-3.5" />
-                    {uploadingQr ? 'Uploading…' : 'Choose QR image'}
-                  </button>
-                  {settings.custom_qr_url && (
-                    <span className="truncate text-xs text-ink-500 font-mono">
-                      {settings.custom_qr_url.split('/').pop()}
-                    </span>
-                  )}
-                </div>
-              </div>
-            )}
+            <p className="text-[11px] text-ink-400">This image is printed on every invoice as the payment QR code.</p>
           </div>
         </div>
 
@@ -549,26 +475,6 @@ function InvoiceSettingsEditorForm() {
             onChange={(e) => update({ terms_and_conditions: e.target.value })}
             placeholder="Booking and cancellation terms printed on the invoice footer…"
           />
-        </div>
-
-        {/* Bottom Save Action */}
-        <div className="flex justify-end pt-2">
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={pending}
-            className="btn-primary h-9 px-5 text-xs font-semibold"
-          >
-            {pending ? (
-              <>
-                <RefreshCw className="h-4 w-4 animate-spin" /> Saving…
-              </>
-            ) : (
-              <>
-                <Check className="h-4 w-4" /> Save Invoice Settings
-              </>
-            )}
-          </button>
         </div>
       </div>
     </div>
@@ -738,7 +644,7 @@ export function BankDetailsLivePreview() {
           <HelpCircle className="h-3.5 w-3.5 shrink-0 text-sky-600 mt-0.5" />
           <span>
             Edits made in the Bank &amp; Invoice Settings on the left reflect here in real-time.
-            Click <b>Save Invoice Settings</b> to commit changes.
+            Click <b>Save settings</b> at the top to commit changes.
           </span>
         </div>
       </div>

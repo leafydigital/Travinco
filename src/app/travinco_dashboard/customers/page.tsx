@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { Search, Plus, ArrowLeft } from 'lucide-react';
 import { CustomerRowActions } from './customer-row-actions';
 import { CustomerStatusBadge } from './customer-status-badge';
+import { CustomerRestoreButton } from './customer-restore-button';
+import { StatusFilterSelect } from './status-filter-select';
 import { getCustomersTableList } from './actions';
 
 export const dynamic = 'force-dynamic';
@@ -56,7 +58,7 @@ async function CustomersTableContent({
   isAdmin,
   canEdit,
 }: {
-  searchParams: { q?: string; page?: string };
+  searchParams: { q?: string; page?: string; status?: string };
   isAdmin: boolean;
   canEdit: boolean;
 }) {
@@ -67,6 +69,7 @@ async function CustomersTableContent({
     page,
     pageSize: PAGE_SIZE,
     q,
+    status: searchParams.status ?? '',
   });
 
   const { customers, totalCount, totalPages } = result;
@@ -95,10 +98,15 @@ async function CustomersTableContent({
               </tr>
             )}
             {customers.map((c) => (
-              <tr key={c.id} className="border-b border-ink-50 last:border-0 hover:bg-ink-50/50">
+              <tr
+                key={c.id}
+                className={`border-b border-ink-50 last:border-0 hover:bg-ink-50/50 ${c.is_deleted ? 'bg-ink-50/40 text-ink-400' : ''}`}
+              >
                 {/* 1. Customer */}
                 <td className="px-5 py-3">
-                  <span className="font-medium text-ink-900">{c.full_name}</span>
+                  <span className={c.is_deleted ? 'font-medium text-ink-500 line-through decoration-ink-300' : 'font-medium text-ink-900'}>
+                    {c.full_name}
+                  </span>
                 </td>
 
                 {/* 2. Phone */}
@@ -115,17 +123,25 @@ async function CustomersTableContent({
 
                 {/* 6. Status */}
                 <td className="px-5 py-3">
-                  <CustomerStatusBadge customerId={c.id} initialActive={c.is_active} />
+                  <CustomerStatusBadge customerId={c.id} initialActive={c.is_active} isDeleted={c.is_deleted} />
                 </td>
 
                 {/* 7. Actions */}
                 <td className="px-5 py-3 text-right">
-                  <CustomerRowActions
-                    customer={c}
-                    isActive={c.is_active}
-                    canEdit={canEdit}
-                    isAdmin={isAdmin}
-                  />
+                  {c.is_deleted ? (
+                    isAdmin ? (
+                      <CustomerRestoreButton customerId={c.id} customerName={c.full_name} />
+                    ) : (
+                      <span className="text-xs text-ink-400">—</span>
+                    )
+                  ) : (
+                    <CustomerRowActions
+                      customer={c}
+                      isActive={c.is_active}
+                      canEdit={canEdit}
+                      isAdmin={isAdmin}
+                    />
+                  )}
                 </td>
               </tr>
             ))}
@@ -157,7 +173,7 @@ async function CustomersTableContent({
 export default async function AdminCustomersPage({
   searchParams,
 }: {
-  searchParams: { q?: string; page?: string };
+  searchParams: { q?: string; page?: string; status?: string };
 }) {
   const profile = await requireProfile();
   await assertModulePermission(profile, 'customers', 'view');
@@ -165,7 +181,7 @@ export default async function AdminCustomersPage({
   const isAdmin = ['admin', 'super_admin'].includes(profile.role);
   const canEdit = isAdmin || profile.role === 'sales_staff';
 
-  const suspKey = `${searchParams.q ?? ''}-${searchParams.page ?? '1'}`;
+  const suspKey = `${searchParams.q ?? ''}-${searchParams.status ?? ''}-${searchParams.page ?? '1'}`;
 
   return (
     <div className="space-y-5">
@@ -198,6 +214,7 @@ export default async function AdminCustomersPage({
             className="input pl-9 w-full"
           />
         </div>
+        <StatusFilterSelect defaultValue={searchParams.status} />
         <button type="submit" className="btn-outline w-full sm:w-auto">
           Search
         </button>

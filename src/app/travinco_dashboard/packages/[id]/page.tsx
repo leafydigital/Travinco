@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
+import { getDestinationOptions } from '../destination-options';
 import { requireProfile, assertModulePermission } from '@/lib/supabase/auth-helpers';
 import { notFound } from 'next/navigation';
 import { PackageForm } from '../package-form';
@@ -33,7 +34,7 @@ export default async function EditPackagePage({ params }: { params: { id: string
     { data: videos },
   ] = await Promise.all([
       supabase.from('travel_packages').select('*').eq('id', params.id).single(),
-      supabase.from('destinations').select('id, name').order('name'),
+      getDestinationOptions(supabase).then((data) => ({ data })),
       supabase
         .from('package_itineraries')
         .select('*')
@@ -66,6 +67,17 @@ export default async function EditPackagePage({ params }: { params: { id: string
         .order('sort_order'),
     ]);
 
+  // Keep the package's current destination selectable even if it was deleted later
+  let destinationOptions = destinations ?? [];
+  if (pkg?.destination_id && !destinationOptions.some((d) => d.id === pkg.destination_id)) {
+    const { data: current } = await supabase
+      .from('destinations')
+      .select('id, name')
+      .eq('id', pkg.destination_id)
+      .maybeSingle();
+    if (current) destinationOptions = [...destinationOptions, current];
+  }
+
   if (!pkg) notFound();
 
   return (
@@ -90,7 +102,7 @@ export default async function EditPackagePage({ params }: { params: { id: string
       </div>
 
       <PackageForm
-        destinations={destinations ?? []}
+        destinations={destinationOptions}
         packageId={pkg.id}
         currentStatus={pkg.status}
         initialValues={{

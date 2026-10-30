@@ -35,6 +35,7 @@ export interface PackageDetailViewProps {
     duration_nights: number;
     base_price: number;
     discount_price: number | null;
+    child_price?: number | null;
     currency: string;
     full_description: string | null;
     short_description: string | null;
@@ -710,10 +711,16 @@ export function PackageDetailView({
                   <span className="text-sm font-normal text-ink-500">/ person</span>
                 </p>
               )}
+              {Number(pkg.child_price) > 0 && (
+                <p className="mt-1.5 text-sm font-semibold text-ink-700">
+                  {formatCurrency(Number(pkg.child_price), pkg.currency)}{' '}
+                  <span className="text-xs font-normal text-ink-500">/ child</span>
+                </p>
+              )}
             </div>
 
             <p className="mt-3 text-xs text-ink-400">
-              * Starting price per person • Taxes &amp; fees included
+              * Starting price per {Number(pkg.child_price) > 0 ? 'adult' : 'person'} • Taxes &amp; fees included
             </p>
 
             {pkg.total_seats && (

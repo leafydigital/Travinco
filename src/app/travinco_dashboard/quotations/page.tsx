@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Suspense } from 'react';
-import { Plus, Search, Settings } from 'lucide-react';
+import { Plus, Search } from 'lucide-react';
 import { requireProfile, assertPageAccess } from '@/lib/supabase/auth-helpers';
 import { assertTourAccess, isAdminRole } from '@/lib/tour/access';
 import { formatDate } from '@/lib/utils/format';
@@ -258,15 +258,6 @@ export default async function QuotationsPage({
           </p>
         </div>
         <div className="flex gap-2">
-          {isAdminRole(profile) && (
-            <Link
-              href="/travinco_dashboard/quotations/settings"
-              prefetch={true}
-              className="btn-outline"
-            >
-              <Settings className="h-4 w-4" /> Settings
-            </Link>
-          )}
           <Link
             href="/travinco_dashboard/quotations/new"
             prefetch={true}

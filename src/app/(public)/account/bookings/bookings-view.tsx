@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { formatDate } from '@/lib/utils/format';
 import type { CustomerDashboardData } from '@/lib/services/customer-account';
+import { ListPagination, PAGE_SIZE_OPTIONS } from '@/components/public/list-pagination';
 
 type Tab = 'invoices' | 'enquiries';
 
@@ -110,6 +111,26 @@ export function BookingsView({ data }: { data: CustomerDashboardData }) {
   const [activeTab, setActiveTab] = useState<Tab>(
     invoices.length === 0 && enquiries.length > 0 ? 'enquiries' : 'invoices'
   );
+  const [pageSize, setPageSize] = useState<number>(PAGE_SIZE_OPTIONS[0]);
+  const [invoicePage, setInvoicePage] = useState(1);
+  const [enquiryPage, setEnquiryPage] = useState(1);
+
+  const pageCount = (n: number) => Math.max(1, Math.ceil(n / pageSize));
+  const safeInvoicePage = Math.min(invoicePage, pageCount(invoices.length));
+  const safeEnquiryPage = Math.min(enquiryPage, pageCount(enquiries.length));
+  const visibleInvoices = invoices.slice((safeInvoicePage - 1) * pageSize, safeInvoicePage * pageSize);
+  const visibleEnquiries = enquiries.slice((safeEnquiryPage - 1) * pageSize, safeEnquiryPage * pageSize);
+
+  function changePageSize(size: number) {
+    setPageSize(size);
+    setInvoicePage(1);
+    setEnquiryPage(1);
+  }
+
+  function goToPage(setter: (p: number) => void, p: number) {
+    setter(p);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
 
   return (
     <div className="space-y-6">
@@ -151,7 +172,7 @@ export function BookingsView({ data }: { data: CustomerDashboardData }) {
           />
         ) : (
           <div className="space-y-4">
-            {invoices.map((inv) => {
+            {visibleInvoices.map((inv) => {
               const tripTitle =
                 inv.trip_title || inv.items?.[0]?.description?.split('.')[0] || 'Tour Package Invoice';
               const href = `/account/bookings/invoices/${inv.id}`;
@@ -210,6 +231,14 @@ export function BookingsView({ data }: { data: CustomerDashboardData }) {
                 </div>
               );
             })}
+            <ListPagination
+              page={safeInvoicePage}
+              pageSize={pageSize}
+              totalItems={invoices.length}
+              itemLabel="invoices"
+              onPageChange={(p) => goToPage(setInvoicePage, p)}
+              onPageSizeChange={changePageSize}
+            />
           </div>
         ))}
 
@@ -223,7 +252,7 @@ export function BookingsView({ data }: { data: CustomerDashboardData }) {
           />
         ) : (
           <div className="space-y-3">
-            {enquiries.map((enquiry) => {
+            {visibleEnquiries.map((enquiry) => {
               const status = enquiryStatus(enquiry.status);
               const travellers = travellersLabel(
                 enquiry.number_of_adults,
@@ -265,6 +294,14 @@ export function BookingsView({ data }: { data: CustomerDashboardData }) {
                 </div>
               );
             })}
+            <ListPagination
+              page={safeEnquiryPage}
+              pageSize={pageSize}
+              totalItems={enquiries.length}
+              itemLabel="enquiries"
+              onPageChange={(p) => goToPage(setEnquiryPage, p)}
+              onPageSizeChange={changePageSize}
+            />
           </div>
         ))}
     </div>

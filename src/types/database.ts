@@ -113,7 +113,10 @@ export interface Database {
           id: string;
           full_name: string;
           email: string;
+          /** Sign-in name for the /app team login (alternative to the email). */
+          username?: string | null;
           phone: string | null;
+          address?: string | null;
           role: UserRole;
           role_title: string | null;
           /** Assigned role (staff_roles.id) — the pages this user can open come from it. */

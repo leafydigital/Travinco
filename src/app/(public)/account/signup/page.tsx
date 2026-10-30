@@ -29,6 +29,7 @@ import {
 } from '../actions';
 import { PhoneInput } from '@/components/public/phone-input';
 import { validateEmailFormat, validateUsernameFormat } from '@/lib/auth/signup-rules';
+import { validateFullName } from '@/lib/validations/contact-rules';
 
 function PasswordRule({ met, label }: { met: boolean; label: string }) {
   return (
@@ -141,6 +142,7 @@ export default function SignupPage() {
   const [step, setStep] = useState<'credentials' | 'otp'>('credentials');
   const [isLoading, setIsLoading] = useState(false);
   const [fullName, setFullName] = useState('');
+  const [fullNameError, setFullNameError] = useState<string | null>(null);
   const [username, setUsername] = useState('');
   const [usernameTouched, setUsernameTouched] = useState(false);
   const [usernameError, setUsernameError] = useState<string | null>(null);
@@ -213,6 +215,38 @@ export default function SignupPage() {
     if (!formatError) runAvailabilityCheck('email', email.trim());
   }
 
+  // Validate (and check availability) shortly after a value changes — not only on blur,
+  // so values filled in by the browser's autofill are checked too.
+  useEffect(() => {
+    if (!fullName) return;
+    const timer = setTimeout(() => setFullNameError(validateFullName(fullName)), 500);
+    return () => clearTimeout(timer);
+  }, [fullName]);
+
+  useEffect(() => {
+    if (!username) return;
+    const timer = setTimeout(() => {
+      setUsernameTouched(true);
+      const formatError = validateUsername(username);
+      setUsernameError(formatError);
+      if (!formatError) runAvailabilityCheck('username', username.trim());
+    }, 600);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [username]);
+
+  useEffect(() => {
+    if (!email) return;
+    const timer = setTimeout(() => {
+      setEmailTouched(true);
+      const formatError = validateEmailFormat(email);
+      setEmailError(formatError);
+      if (!formatError) runAvailabilityCheck('email', email.trim());
+    }, 600);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [email]);
+
   const phoneE164 = phoneValue.number ? `${phoneValue.dialCode}${phoneValue.number}` : '';
 
   // Check the mobile number once it is a complete, valid number
@@ -266,6 +300,11 @@ export default function SignupPage() {
   // Stage 1: Validate details, check duplicates, send OTP
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    const nErr = validateFullName(fullName);
+    if (nErr) {
+      setFullNameError(nErr);
+      return;
+    }
     const uErr = validateUsername(username);
     if (uErr) {
       setUsernameTouched(true);
@@ -285,13 +324,13 @@ export default function SignupPage() {
     }
 
     if (isLoading || !allRulesMet || !emailIsValidDomain || !passwordsMatch) return;
-    if (emailError || phoneTakenError || usernameError) return;
+    if (emailError || phoneTakenError || usernameError || fullNameError) return;
 
     setIsLoading(true);
     setSignupError(null);
     try {
       const result = await initiateCustomerSignup({
-        full_name: fullName,
+        full_name: fullName.trim().replace(/\s+/g, ' '),
         username: username.trim(),
         email,
         phone: phoneE164,
@@ -501,13 +540,26 @@ export default function SignupPage() {
                         disabled={isLoading}
                         placeholder="John Doe"
                         value={fullName}
-                        onChange={(e) => setFullName(e.target.value)}
-                        className="input pl-10 pr-4 py-2.5 text-sm rounded-xl border-ink-200 focus:border-emerald-600 focus:ring-emerald-600 disabled:opacity-60 transition"
+                        onChange={(e) => {
+                          setFullName(e.target.value);
+                          if (fullNameError) setFullNameError(validateFullName(e.target.value));
+                        }}
+                        onBlur={() => setFullNameError(validateFullName(fullName))}
+                        maxLength={120}
+                        className={`input pl-10 pr-4 py-2.5 text-sm rounded-xl border-ink-200 focus:border-emerald-600 focus:ring-emerald-600 disabled:opacity-60 transition ${
+                          fullNameError ? 'border-coral-400 focus:ring-coral-400 bg-coral-50/20' : ''
+                        }`}
                         autoComplete="name"
                         autoFocus
                       />
                       <User className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-400" />
                     </div>
+                    {fullNameError && (
+                      <p className="mt-1.5 flex items-center gap-1 text-xs text-coral-600">
+                        <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                        <span>{fullNameError}</span>
+                      </p>
+                    )}
                   </div>
 
                   {/* Username (New field placed directly below Full Name) */}
@@ -695,6 +747,7 @@ export default function SignupPage() {
                     disabled={
                       isLoading ||
                       !fullName.trim() ||
+                      Boolean(fullNameError) ||
                       !username.trim() ||
                       Boolean(usernameError) ||
                       Boolean(emailError) ||

@@ -7,6 +7,9 @@ import { toast } from '@/lib/admin-alert';
 import { cn } from '@/lib/utils/cn';
 import { validateFullName, validateEmailAddress } from '@/lib/validations/contact-rules';
 import { PASSWORD_RULES, generateTempPassword, passwordMeetsRules } from '@/lib/temp-password';
+import { validateStaffUsername } from '@/lib/validations/staff-account';
+import { splitPhone, joinPhone, type PhoneParts } from '@/lib/utils/phone-parts';
+import { PhoneInput } from '@/components/public/phone-input';
 import { ASSIGNABLE_PAGE_GROUPS } from '@/lib/staff-roles';
 import { createStaffUser, updateStaffUser, resetStaffTempPassword } from './actions';
 import type { RoleOption } from './users-table';
@@ -18,7 +21,14 @@ type Props =
       roles: RoleOption[];
       userId: string;
       /** password: the admin-set password, or null once the user has changed it themselves */
-      initial: { full_name: string; email: string; role_id: string | null; password: string | null };
+      initial: {
+        full_name: string;
+        email: string;
+        username: string | null;
+        phone: string | null;
+        role_id: string | null;
+        password: string | null;
+      };
       /** Editing your own account: role can't be changed */
       isSelf?: boolean;
     };
@@ -71,6 +81,9 @@ export function UserForm(props: Props) {
 
   const [fullName, setFullName] = useState(isEdit ? props.initial.full_name : '');
   const [email, setEmail] = useState(isEdit ? props.initial.email : '');
+  const [username, setUsername] = useState(isEdit ? props.initial.username ?? '' : '');
+  const [phone, setPhone] = useState<PhoneParts>(() => splitPhone(isEdit ? props.initial.phone : null));
+  const [phoneValid, setPhoneValid] = useState(false);
   const [roleId, setRoleId] = useState(isEdit ? props.initial.role_id ?? '' : '');
   const initialPassword = isEdit ? props.initial.password ?? '' : '';
   const [password, setPassword] = useState(initialPassword);
@@ -79,7 +92,7 @@ export function UserForm(props: Props) {
 
   const selectedRole = useMemo(() => props.roles.find((r) => r.id === roleId), [props.roles, roleId]);
   const isSelf = isEdit && Boolean(props.isSelf);
-  // Admins set other people's passwords here; their own goes through Forgot password
+  // Admins set other people's passwords here; their own goes through Profile / Reset password
   const showPasswordField = !isEdit || !isSelf;
   const passwordChanged = isEdit && password !== initialPassword && password !== '';
 
@@ -87,6 +100,8 @@ export function UserForm(props: Props) {
     const next: Record<string, string | null> = {
       full_name: validateFullName(fullName),
       email: isEdit ? null : validateEmailAddress(email),
+      username: validateStaffUsername(username),
+      phone: !phone.number ? 'Phone number is required' : phoneValid ? null : 'Please enter a valid phone number',
       role: roleId ? null : 'Please choose a role',
       password:
         isEdit && !passwordChanged
@@ -105,9 +120,10 @@ export function UserForm(props: Props) {
     if (err) return void toast.error(err);
 
     startTransition(async () => {
+      const details = { full_name: fullName.trim(), username: username.trim(), phone: joinPhone(phone), role_id: roleId };
       const res = isEdit
-        ? await updateStaffUser(props.userId, { full_name: fullName.trim(), role_id: roleId })
-        : await createStaffUser({ full_name: fullName.trim(), email: email.trim(), role_id: roleId, password });
+        ? await updateStaffUser(props.userId, details)
+        : await createStaffUser({ ...details, email: email.trim(), password });
       if (res.error) return void toast.error(res.error);
       if (isEdit && passwordChanged) {
         const pw = await resetStaffTempPassword(props.userId, password);
@@ -200,6 +216,51 @@ export function UserForm(props: Props) {
           ) : (
             isEdit && <p className="mt-1 text-xs text-ink-400">The email is the sign-in ID and can&apos;t be changed.</p>
           )}
+        </div>
+
+        <div>
+          <label htmlFor="user-username" className="mb-1 block text-sm font-medium text-ink-700">
+            Username <span className="text-red-500">*</span>
+          </label>
+          <input
+            id="user-username"
+            maxLength={30}
+            autoComplete="off"
+            autoCapitalize="none"
+            spellCheck={false}
+            value={username}
+            onChange={(e) => {
+              const v = e.target.value.replace(/\s/g, '');
+              setUsername(v);
+              if (errors.username) setErrors((x) => ({ ...x, username: validateStaffUsername(v) }));
+            }}
+            onBlur={() => setErrors((x) => ({ ...x, username: validateStaffUsername(username) }))}
+            placeholder="e.g. rahul.sharma"
+            className={cn('input', errors.username && 'border-red-400 focus:border-red-500')}
+          />
+          {errors.username ? (
+            <p className="field-error">{errors.username}</p>
+          ) : (
+            <p className="mt-1 text-xs text-ink-400">Can be used instead of the email to sign in.</p>
+          )}
+        </div>
+
+        <div>
+          <label className="mb-1 block text-sm font-medium text-ink-700">
+            Phone number <span className="text-red-500">*</span>
+          </label>
+          <PhoneInput
+            name="phone"
+            required
+            placeholder="Phone number"
+            value={phone}
+            onValidityChange={setPhoneValid}
+            onChange={(v) => {
+              setPhone(v);
+              if (errors.phone) setErrors((x) => ({ ...x, phone: null }));
+            }}
+          />
+          {errors.phone && <p className="field-error">{errors.phone}</p>}
         </div>
 
         <div>

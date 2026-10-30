@@ -85,8 +85,11 @@ export function PackageForm({
   const [showSeoFields, setShowSeoFields] = useState(Boolean(packageId));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitted, setSubmitted] = useState(false);
-  const [uploadedUrls, setUploadedUrls] = useState<string[]>([]);
-  const [pendingPhotos, setPendingPhotos] = useState(0);
+  // Cover image (one) and gallery images (many); saved as [cover, ...gallery]
+  const [coverUrl, setCoverUrl] = useState<string | null>(null);
+  const [galleryUrls, setGalleryUrls] = useState<string[]>([]);
+  const [pendingCover, setPendingCover] = useState(0);
+  const [pendingGallery, setPendingGallery] = useState(0);
   const [videoUrlsText, setVideoUrlsText] = useState('');
   const [itineraryDays, setItineraryDays] = useState<DraftItineraryDay[]>([]);
   const [dayToDeleteIndex, setDayToDeleteIndex] = useState<number | null>(null);
@@ -184,9 +187,9 @@ export function PackageForm({
     set('is_featured', true);
   }
 
-  /** Uploads the staged photos once the admin clicks "Save photos". Returns the files that failed. */
-  async function uploadPhotos(files: File[]) {
-    const newUrls: string[] = [];
+  /** Uploads staged photos once the admin clicks "Save photos". Returns the uploaded URLs and failed files. */
+  async function uploadFiles(files: File[]) {
+    const urls: string[] = [];
     const failed: File[] = [];
     const errorsList: string[] = [];
     for (const file of files) {
@@ -197,18 +200,29 @@ export function PackageForm({
         failed.push(file);
         errorsList.push(`${file.name}: ${result.error}`);
       } else if (result.url) {
-        newUrls.push(result.url);
+        urls.push(result.url);
       }
     }
-    if (newUrls.length > 0) setUploadedUrls((prev) => [...prev, ...newUrls]);
     if (errorsList.length > 0) toast.error(errorsList.join(' • '));
-    else if (newUrls.length > 0)
-      toast.success(newUrls.length === 1 ? 'Photo uploaded' : `${newUrls.length} photos uploaded`);
+    return { urls, failed };
+  }
+
+  async function uploadCover(files: File[]) {
+    const { urls, failed } = await uploadFiles(files.slice(0, 1));
+    if (urls[0]) {
+      setCoverUrl(urls[0]);
+      toast.success('Cover image uploaded');
+    }
     return failed;
   }
 
-  function removeUploaded(url: string) {
-    setUploadedUrls((prev) => prev.filter((u) => u !== url));
+  async function uploadGallery(files: File[]) {
+    const { urls, failed } = await uploadFiles(files);
+    if (urls.length > 0) {
+      setGalleryUrls((prev) => [...prev, ...urls]);
+      toast.success(urls.length === 1 ? 'Gallery image uploaded' : `${urls.length} gallery images uploaded`);
+    }
+    return failed;
   }
 
   function addItineraryDay() {
@@ -254,11 +268,13 @@ export function PackageForm({
     e.preventDefault();
     setSubmitted(true);
 
-    if (pendingPhotos > 0) {
+    if (pendingCover > 0 || pendingGallery > 0) {
       toast.warning('Photos not uploaded yet', {
-        description: 'Click "Save photos" to upload the selected photos, or remove them, before saving the package.',
+        description: 'Click "Save photo(s)" to upload the selected images, or remove them, before saving the package.',
       });
-      document.getElementById('package-photos')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      document
+        .getElementById(pendingCover > 0 ? 'package-cover' : 'package-gallery')
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
 
@@ -301,7 +317,8 @@ export function PackageForm({
     };
 
     startTransition(async () => {
-      const allImageUrls = uploadedUrls;
+      // The first image is the package cover (createPackage stores it as cover_image_url)
+      const allImageUrls = coverUrl ? [coverUrl, ...galleryUrls] : galleryUrls;
       const videoUrls = videoUrlsText
         .split(/[\n,]/)
         .map((u) => u.trim())
@@ -734,33 +751,57 @@ export function PackageForm({
 
       {!packageId && (
         <div className="grid gap-3 lg:grid-cols-2">
-          <div id="package-photos" className="card space-y-2.5 p-4">
-            <h2 className="text-sm font-semibold text-ink-800">Photos</h2>
+          <div id="package-cover" className="card space-y-2.5 p-4">
+            <h2 className="text-sm font-semibold text-ink-800">Cover image</h2>
             <p className="text-xs text-ink-400">
-              JPG, PNG or WEBP — the first photo is the cover.{' '}
-              <strong>At least one is required to publish.</strong>
+              JPG, PNG or WEBP — shown at the top of the package page and on package cards.{' '}
+              <strong>An image is required to publish.</strong>
             </p>
 
-            {uploadedUrls.length > 0 && (
+            {coverUrl && (
+              <div className="relative aspect-video w-full max-w-xs overflow-hidden rounded-lg border border-ink-100">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={coverUrl} alt="Cover" className="h-full w-full object-cover" />
+                <button
+                  type="button"
+                  data-no-confirm-save="true"
+                  onClick={() => setCoverUrl(null)}
+                  className="absolute right-1 top-1 rounded-full bg-coral-600 p-1 text-white shadow"
+                  aria-label="Remove cover image"
+                >
+                  <Trash2 className="h-3 w-3" />
+                </button>
+              </div>
+            )}
+
+            <StagedImagePicker
+              multiple={false}
+              onSave={uploadCover}
+              disabled={isPending}
+              onPendingChange={setPendingCover}
+            />
+            {coverUrl && <p className="text-[11px] text-ink-400">Choosing a new photo replaces the current cover.</p>}
+          </div>
+
+          <div id="package-gallery" className="card space-y-2.5 p-4">
+            <h2 className="text-sm font-semibold text-ink-800">Gallery images</h2>
+            <p className="text-xs text-ink-400">JPG, PNG or WEBP — shown in the photo gallery on the package page.</p>
+
+            {galleryUrls.length > 0 && (
               <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-5">
-                {uploadedUrls.map((url, i) => (
+                {galleryUrls.map((url) => (
                   <div
                     key={url}
                     className="relative aspect-square overflow-hidden rounded-lg border border-ink-100"
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={url} alt="" className="h-full w-full object-cover" />
-                    {i === 0 && (
-                      <span className="absolute left-1 top-1 rounded-full bg-brand-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">
-                        Cover
-                      </span>
-                    )}
                     <button
                       type="button"
                       data-no-confirm-save="true"
-                      onClick={() => removeUploaded(url)}
+                      onClick={() => setGalleryUrls((prev) => prev.filter((u) => u !== url))}
                       className="absolute right-1 top-1 rounded-full bg-coral-600 p-1 text-white shadow"
-                      aria-label="Remove photo"
+                      aria-label="Remove gallery image"
                     >
                       <Trash2 className="h-3 w-3" />
                     </button>
@@ -769,12 +810,12 @@ export function PackageForm({
               </div>
             )}
 
-            <StagedImagePicker onSave={uploadPhotos} disabled={isPending} onPendingChange={setPendingPhotos} />
+            <StagedImagePicker onSave={uploadGallery} disabled={isPending} onPendingChange={setPendingGallery} />
 
-            {uploadedUrls.length === 0 && (
+            {!coverUrl && galleryUrls.length === 0 && (
               <p className="rounded-lg bg-sand-50 px-3 py-2 text-xs text-sand-800">
-                No photos saved yet — at least one image is needed before this package can be published. You can
-                still save it as a draft now and add photos later.
+                No images saved yet — an image is needed before this package can be published. You can still save
+                it as a draft now and add images later.
               </p>
             )}
           </div>

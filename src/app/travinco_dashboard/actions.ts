@@ -21,11 +21,32 @@ const resetPasswordSchema = z
     path: ['confirmPassword'],
   });
 
+/** True when the typed username / email belongs to the signed-in account. */
+function matchesOwnAccount(profile: { email: string; username?: string | null }, identifier: string) {
+  const v = (identifier || '').trim().toLowerCase();
+  if (!v) return false;
+  return v === profile.email?.toLowerCase() || (!!profile.username && v === profile.username.toLowerCase());
+}
+
+/** Reset password, step 1: confirm the username / email before choosing a new password. */
+export async function verifyOwnAccountIdentifier(identifier: string) {
+  const profile = await requireProfile();
+  if (!matchesOwnAccount(profile, identifier)) {
+    return { error: 'This username / email does not match your account.' };
+  }
+  return { success: true };
+}
+
+/** Reset password, step 2: new password + confirm (the identifier is checked again). */
 export async function resetStaffPasswordAction(data: {
+  identifier: string;
   password: string;
   confirmPassword: string;
 }) {
   const profile = await requireProfile();
+  if (!matchesOwnAccount(profile, data?.identifier)) {
+    return { error: 'This username / email does not match your account.' };
+  }
 
   const parsed = resetPasswordSchema.safeParse(data);
   if (!parsed.success) {

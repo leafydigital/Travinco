@@ -8,20 +8,13 @@ import {
   clearLoginAttempts,
 } from '@/lib/auth/login-limiter';
 import { z } from 'zod';
-import {
-  sendPasswordOtp,
-  resendPasswordOtp,
-  verifyResetOtp,
-  readVerifiedTicket,
-  saveResetPassword,
-} from '@/lib/auth/password-reset-otp';
 import { getStaffAccountStatus, accountStatusMessage } from '@/lib/auth/account-status';
 import { escapeLike } from '@/lib/auth/signup-rules';
 
 const STAFF_ROLES = ['super_admin', 'admin', 'sales_staff', 'accounts_staff'];
 
 const staffLoginSchema = z.object({
-  email: z.string().trim().toLowerCase().email('Enter a valid email address'),
+  identifier: z.string().trim().toLowerCase().min(1, 'Enter your username or email'),
   password: z.string().min(1, 'Password is required'),
   redirectTo: z.string().optional(),
 });
@@ -46,8 +39,19 @@ function safeDashboardPath(raw: string | undefined): string {
   return raw;
 }
 
+/** Resolves a username to the account's email; anything containing "@" is treated as the email itself. */
+async function resolveStaffEmail(identifier: string): Promise<string | null> {
+  if (identifier.includes('@')) return identifier;
+  const { data } = await createServiceClient()
+    .from('profiles')
+    .select('email')
+    .ilike('username', escapeLike(identifier))
+    .limit(1);
+  return data?.[0]?.email?.toLowerCase() ?? null;
+}
+
 /**
- * Staff / admin sign-in for the internal team (/app).
+ * Staff / admin sign-in for the internal team (/app), by username or email.
  * Customers sign in separately at /account/login.
  * Failed attempts are limited per device (5 attempts, then this device waits 15 minutes).
  */
@@ -56,7 +60,9 @@ export async function staffLogin(raw: unknown): Promise<StaffLoginResult> {
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? 'Please check the form.' };
   }
-  const { email, password, redirectTo } = parsed.data;
+  const { identifier, password, redirectTo } = parsed.data;
+  // Unknown usernames still go through sign-in (and fail) so attempts are counted the same way
+  const email = (await resolveStaffEmail(identifier)) ?? identifier;
 
   const lockout = await checkLoginLockout(email, 'admin');
   if (lockout.isLocked) {
@@ -99,7 +105,7 @@ export async function staffLogin(raw: unknown): Promise<StaffLoginResult> {
     }
     const remaining = attempt.remainingAttempts;
     return {
-      error: `Incorrect email or password. ${remaining} attempt${remaining === 1 ? '' : 's'} left on this device.`,
+      error: `Incorrect username/email or password. ${remaining} attempt${remaining === 1 ? '' : 's'} left on this device.`,
       remainingAttempts: remaining,
     };
   }
@@ -130,73 +136,4 @@ export async function staffLogin(raw: unknown): Promise<StaffLoginResult> {
 
   // Staff without dashboard access are forwarded to their first allowed page by /travinco_dashboard
   return { success: true, redirectUrl: safeDashboardPath(redirectTo) };
-}
-
-// ─── Staff "Forgot password" (stays on /app) ──────────────────────────────────
-// 1. Email -> must be an active staff account -> 6-digit code emailed
-// 2. Code -> verified
-// 3. New password + confirm -> saved. The emailed code proves the person owns the
-//    mailbox, so knowing a staff email alone is never enough to change the password.
-
-async function findActiveStaff(email: string) {
-  const service = createServiceClient();
-  const { data } = await service
-    .from('profiles')
-    .select('*')
-    .ilike('email', escapeLike(email))
-    .limit(1);
-  const profile = data?.[0];
-  if (!profile) return { error: 'No team account found with this email address.' };
-
-  const blocked = accountStatusMessage(await getStaffAccountStatus(profile));
-  if (blocked) return { error: blocked };
-
-  if (!STAFF_ROLES.includes(profile.role)) return { error: 'No team account found with this email address.' };
-  return { profile };
-}
-
-export async function startStaffPasswordReset(
-  rawEmail: string
-): Promise<{ success: boolean; resetTicket?: string; maskedEmail?: string; error?: string }> {
-  const email = (rawEmail || '').trim().toLowerCase();
-  if (!z.string().email().safeParse(email).success) {
-    return { success: false, error: 'Enter a valid email address.' };
-  }
-  const found = await findActiveStaff(email);
-  if (found.error) return { success: false, error: found.error };
-  return sendPasswordOtp({ scope: 'staff', email, fullName: found.profile!.full_name || undefined });
-}
-
-export async function resendStaffResetCode(
-  resetTicket: string
-): Promise<{ success: boolean; resetTicket?: string; error?: string }> {
-  return resendPasswordOtp(resetTicket, 'staff');
-}
-
-export async function verifyStaffResetCode(input: {
-  resetTicket: string;
-  code: string;
-}): Promise<{ success?: boolean; verifiedTicket?: string; error?: string }> {
-  return verifyResetOtp(input.resetTicket, input.code, 'staff');
-}
-
-export async function saveStaffNewPassword(input: {
-  verifiedTicket: string;
-  password: string;
-  confirmPassword: string;
-}): Promise<{ success?: boolean; error?: string }> {
-  // Re-check: the account may have been deactivated / deleted while the code was pending
-  const ticket = await readVerifiedTicket(input?.verifiedTicket, 'staff');
-  if (ticket) {
-    const found = await findActiveStaff(ticket.email);
-    if (found.error) return { error: found.error };
-  }
-
-  const result = await saveResetPassword({
-    verifiedTicket: input?.verifiedTicket,
-    password: input?.password,
-    confirmPassword: input?.confirmPassword,
-    scope: 'staff',
-  });
-  return result.success ? { success: true } : { error: result.error };
 }

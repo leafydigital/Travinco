@@ -15,11 +15,12 @@ import {
   Eye,
   EyeOff,
   Copy,
+  RotateCcw,
 } from 'lucide-react';
 import { toast, confirmAlert } from '@/lib/admin-alert';
 import { formatDate } from '@/lib/utils/format';
 import { cn } from '@/lib/utils/cn';
-import { setStaffActive, deleteStaffUser } from './actions';
+import { setStaffActive, deleteStaffUser, restoreStaffUser } from './actions';
 import type { Tables } from '@/types/database';
 
 export type RoleOption = { id: string; name: string; pages: string[]; isSystem: boolean };
@@ -41,6 +42,7 @@ export function UsersTable({ initialUsers, currentUserId, currentUserRole, roles
   const [statusFilter, setStatusFilter] = useState('all');
   const [pendingActiveId, setPendingActiveId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [restoringId, setRestoringId] = useState<string | null>(null);
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -73,10 +75,14 @@ export function UsersTable({ initialUsers, currentUserId, currentUserRole, roles
       !q ||
       u.full_name?.toLowerCase().includes(q) ||
       u.email?.toLowerCase().includes(q) ||
+      u.username?.toLowerCase().includes(q) ||
+      u.phone?.toLowerCase().includes(q) ||
       roleLabel(u).toLowerCase().includes(q);
     const matchesRole = roleFilter === 'all' || roleKey(u) === roleFilter;
     const matchesStatus =
-      statusFilter === 'all' || (statusFilter === 'active' && u.is_active) || (statusFilter === 'inactive' && !u.is_active);
+      statusFilter === 'all' ||
+      (statusFilter === 'deleted' && u.is_deleted) ||
+      (!u.is_deleted && ((statusFilter === 'active' && u.is_active) || (statusFilter === 'inactive' && !u.is_active)));
     return matchesSearch && matchesRole && matchesStatus;
   });
 
@@ -94,7 +100,10 @@ export function UsersTable({ initialUsers, currentUserId, currentUserRole, roles
   ].map((o) => ({ ...o, label: `${o.label} (${roleCounts[o.value] ?? 0})` }));
 
   /** Admins can't manage the Super Admin, and only the Super Admin manages other admins. */
+  const canManageRole = (u: Tables<'profiles'>) =>
+    u.role !== 'super_admin' && !(u.role === 'admin' && currentUserRole !== 'super_admin');
   const canManage = (u: Tables<'profiles'>) =>
+    !u.is_deleted &&
     u.role !== 'super_admin' && !(u.role === 'admin' && currentUserRole !== 'super_admin');
 
   async function handleToggleActive(user: Tables<'profiles'>) {
@@ -125,9 +134,30 @@ export function UsersTable({ initialUsers, currentUserId, currentUserRole, roles
     const res = await deleteStaffUser(user.id).catch(() => ({ error: 'Failed to delete the user.' }));
     setDeletingId(null);
     if ('error' in res && res.error) return void toast.error(res.error);
-    setUsers((prev) => prev.filter((item) => item.id !== user.id));
+    setUsers((prev) =>
+      prev.map((item) => (item.id === user.id ? { ...item, is_deleted: true, is_active: false } : item))
+    );
     router.refresh();
     void toast.success('User deleted successfully');
+  }
+
+  async function handleRestore(user: Tables<'profiles'>) {
+    const ok = await confirmAlert({
+      title: `Restore ${user.full_name}?`,
+      text: `${user.email} will be able to sign in again.`,
+      confirmText: 'Restore',
+      icon: 'question',
+    });
+    if (!ok) return;
+    setRestoringId(user.id);
+    const res = await restoreStaffUser(user.id).catch(() => ({ error: 'Failed to restore the user.' }));
+    setRestoringId(null);
+    if ('error' in res && res.error) return void toast.error(res.error);
+    setUsers((prev) =>
+      prev.map((item) => (item.id === user.id ? { ...item, is_deleted: false, is_active: true } : item))
+    );
+    router.refresh();
+    void toast.success('User restored successfully');
   }
 
   async function copyPassword(password: string) {
@@ -157,7 +187,7 @@ export function UsersTable({ initialUsers, currentUserId, currentUserRole, roles
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search by name, email, or role…"
+              placeholder="Search by name, username, email, phone or role…"
               className="input h-10 w-full pl-9 text-sm"
             />
           </div>
@@ -182,6 +212,7 @@ export function UsersTable({ initialUsers, currentUserId, currentUserRole, roles
               <option value="all">All statuses</option>
               <option value="active">Active</option>
               <option value="inactive">Deactivated</option>
+              <option value="deleted">Deleted</option>
             </select>
           </div>
         </div>
@@ -189,16 +220,16 @@ export function UsersTable({ initialUsers, currentUserId, currentUserRole, roles
 
       {/* Table */}
       <div className="card overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[860px] text-left text-sm">
+        <div>
+          <table className="w-full table-fixed text-left text-sm">
             <thead>
               <tr className="border-b border-ink-100 bg-ink-50/60 text-xs font-semibold uppercase tracking-wider text-ink-500">
-                <th className="px-5 py-3.5">User</th>
-                <th className="px-5 py-3.5">Role</th>
-                <th className="px-5 py-3.5">Password</th>
-                <th className="px-5 py-3.5">Status</th>
-                <th className="px-5 py-3.5">Joined</th>
-                <th className="whitespace-nowrap px-5 py-3.5 text-right">Actions</th>
+                <th className="w-[30%] px-3 py-3.5 lg:px-4">User</th>
+                <th className="hidden px-3 py-3.5 md:table-cell lg:px-4">Role</th>
+                <th className="hidden px-3 py-3.5 lg:table-cell lg:px-4">Password</th>
+                <th className="px-3 py-3.5 lg:px-4">Status</th>
+                <th className="hidden px-3 py-3.5 xl:table-cell xl:px-4">Joined</th>
+                <th className="w-[7.5rem] px-3 py-3.5 text-right sm:w-[10rem] xl:w-[18rem] lg:px-4">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-ink-50">
@@ -219,12 +250,12 @@ export function UsersTable({ initialUsers, currentUserId, currentUserRole, roles
                   const temp = tempPasswords?.[u.id];
                   const shown = revealed.has(u.id);
                   return (
-                    <tr key={u.id} className="transition-colors hover:bg-ink-50/40">
-                      <td className="px-5 py-3.5">
+                    <tr key={u.id} className={cn('transition-colors hover:bg-ink-50/40', u.is_deleted && 'bg-ink-50/40')}>
+                      <td className="px-3 py-3.5 lg:px-4">
                         <div className="flex items-center gap-3">
                           <div
                             className={cn(
-                              'flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold',
+                              'hidden h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold sm:flex',
                               isAdminUser(u) ? 'bg-purple-100 text-purple-700' : 'bg-brand-100 text-brand-700'
                             )}
                           >
@@ -244,12 +275,16 @@ export function UsersTable({ initialUsers, currentUserId, currentUserRole, roles
                                 </span>
                               )}
                             </div>
-                            <p className="truncate text-xs text-ink-400">{u.email}</p>
+                            <p className="truncate text-xs text-ink-400">
+                              {u.username ? `@${u.username} · ` : ''}
+                              {u.email}
+                            </p>
+                            {u.phone && <p className="truncate text-xs text-ink-400">{u.phone}</p>}
                           </div>
                         </div>
                       </td>
 
-                      <td className="px-5 py-3.5">
+                      <td className="hidden px-3 py-3.5 md:table-cell lg:px-4">
                         <span
                           className={cn(
                             'inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-semibold',
@@ -264,8 +299,10 @@ export function UsersTable({ initialUsers, currentUserId, currentUserRole, roles
                         </span>
                       </td>
 
-                      <td className="px-5 py-3.5">
-                        {temp ? (
+                      <td className="hidden px-3 py-3.5 lg:table-cell lg:px-4">
+                        {u.is_deleted ? (
+                          <span className="text-xs text-ink-400">—</span>
+                        ) : temp ? (
                           <div className="flex items-center gap-1">
                             <code className="rounded bg-ink-100 px-2 py-0.5 font-mono text-xs text-ink-800">
                               {shown ? temp.password : '••••••••••'}
@@ -311,71 +348,100 @@ export function UsersTable({ initialUsers, currentUserId, currentUserRole, roles
                         )}
                       </td>
 
-                      <td className="px-5 py-3.5">
-                        <span
-                          className={cn(
-                            'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium',
-                            u.is_active
-                              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                              : 'border-ink-200 bg-ink-100 text-ink-500'
-                          )}
-                        >
-                          <span className={cn('h-1.5 w-1.5 rounded-full', u.is_active ? 'bg-emerald-500' : 'bg-ink-400')} />
-                          {u.is_active ? 'Active' : 'Deactivated'}
-                        </span>
+                      <td className="px-3 py-3.5 lg:px-4">
+                        {u.is_deleted ? (
+                          <span className="inline-flex items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-2.5 py-0.5 text-xs font-medium text-red-700">
+                            <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+                            Deleted
+                          </span>
+                        ) : (
+                          <span
+                            className={cn(
+                              'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium',
+                              u.is_active
+                                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                                : 'border-ink-200 bg-ink-100 text-ink-500'
+                            )}
+                          >
+                            <span className={cn('h-1.5 w-1.5 rounded-full', u.is_active ? 'bg-emerald-500' : 'bg-ink-400')} />
+                            {u.is_active ? 'Active' : 'Deactivated'}
+                          </span>
+                        )}
                       </td>
 
-                      <td className="px-5 py-3.5 text-xs text-ink-400">{formatDate(u.created_at)}</td>
+                      <td className="hidden px-3 py-3.5 text-xs text-ink-400 xl:table-cell xl:px-4">{formatDate(u.created_at)}</td>
 
-                      <td className="px-5 py-3.5 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => handleToggleActive(u)}
-                            disabled={isSelf || !manageable || pendingActiveId === u.id}
-                            title={isSelf ? 'You cannot deactivate your own account' : u.is_active ? 'Deactivate user' : 'Activate user'}
-                            className={cn(
-                              'inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40',
-                              u.is_active
-                                ? 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100'
-                                : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                            )}
-                          >
-                            {pendingActiveId === u.id ? (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            ) : u.is_active ? (
-                              <PowerOff className="h-3 w-3" />
-                            ) : (
-                              <Power className="h-3 w-3" />
-                            )}
-                            {u.is_active ? 'Deactivate' : 'Activate'}
-                          </button>
-
-                          {manageable ? (
-                            <Link
-                              href={`/travinco_dashboard/users/${u.id}`}
-                              className="inline-flex items-center gap-1 rounded-lg border border-ink-200 bg-white px-2.5 py-1 text-xs font-medium text-ink-700 transition-colors hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700"
+                      <td className="px-3 py-3.5 text-right lg:px-4">
+                        {u.is_deleted ? (
+                          canManageRole(u) ? (
+                            <button
+                              type="button"
+                              data-no-confirm-save="true"
+                              onClick={() => handleRestore(u)}
+                              disabled={restoringId === u.id}
+                              className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-100 disabled:opacity-50"
                             >
-                              <Pencil className="h-3 w-3" /> Edit
-                            </Link>
+                              {restoringId === u.id ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <RotateCcw className="h-3 w-3" />
+                              )}
+                              Restore
+                            </button>
                           ) : (
-                            <span className="inline-flex cursor-not-allowed items-center gap-1 rounded-lg border border-ink-100 bg-ink-50 px-2.5 py-1 text-xs font-medium text-ink-300">
-                              <Pencil className="h-3 w-3" /> Edit
-                            </span>
-                          )}
+                            <span className="text-xs text-ink-400">—</span>
+                          )
+                        ) : (
+                          <div className="flex flex-wrap items-center justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleToggleActive(u)}
+                              disabled={isSelf || !manageable || pendingActiveId === u.id}
+                              title={isSelf ? 'You cannot deactivate your own account' : u.is_active ? 'Deactivate user' : 'Activate user'}
+                              className={cn(
+                                'inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40',
+                                u.is_active
+                                  ? 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100'
+                                  : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                              )}
+                            >
+                              {pendingActiveId === u.id ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : u.is_active ? (
+                                <PowerOff className="h-3 w-3" />
+                              ) : (
+                                <Power className="h-3 w-3" />
+                              )}
+                              <span className="hidden xl:inline">{u.is_active ? 'Deactivate' : 'Activate'}</span>
+                            </button>
 
-                          <button
-                            type="button"
-                            data-no-confirm-save="true"
-                            onClick={() => handleDelete(u)}
-                            disabled={isSelf || !manageable || deletingId === u.id}
-                            title={isSelf ? 'You cannot delete yourself' : 'Delete user'}
-                            className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-medium text-red-600 transition-colors hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40"
-                          >
-                            {deletingId === u.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
-                            Delete
-                          </button>
-                        </div>
+                            {manageable ? (
+                              <Link
+                                href={`/travinco_dashboard/users/${u.id}`}
+                                title="Edit user"
+                                className="inline-flex items-center gap-1 rounded-lg border border-ink-200 bg-white px-2.5 py-1 text-xs font-medium text-ink-700 transition-colors hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700"
+                              >
+                                <Pencil className="h-3 w-3" /> <span className="hidden xl:inline">Edit</span>
+                              </Link>
+                            ) : (
+                              <span className="inline-flex cursor-not-allowed items-center gap-1 rounded-lg border border-ink-100 bg-ink-50 px-2.5 py-1 text-xs font-medium text-ink-300">
+                                <Pencil className="h-3 w-3" /> <span className="hidden xl:inline">Edit</span>
+                              </span>
+                            )}
+
+                            <button
+                              type="button"
+                              data-no-confirm-save="true"
+                              onClick={() => handleDelete(u)}
+                              disabled={isSelf || !manageable || deletingId === u.id}
+                              title={isSelf ? 'You cannot delete yourself' : 'Delete user'}
+                              className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-medium text-red-600 transition-colors hover:border-red-300 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                              {deletingId === u.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+                              <span className="hidden xl:inline">Delete</span>
+                            </button>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   );

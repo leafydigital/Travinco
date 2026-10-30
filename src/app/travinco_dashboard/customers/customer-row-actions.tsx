@@ -183,8 +183,8 @@ export function CustomerRowActions({
         description={
           <>
             Are you sure you want to delete customer{' '}
-            <strong className="text-ink-900">{customer.full_name}</strong>? This
-            action will remove them from the active customers list.
+            <strong className="text-ink-900">{customer.full_name}</strong>? They will stay in the
+            customers list with the status <strong className="text-ink-900">Deleted</strong>.
           </>
         }
         onConfirm={handleDelete}

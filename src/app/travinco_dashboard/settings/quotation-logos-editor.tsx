@@ -1,7 +1,6 @@
 'use client';
 
-import { useState, useTransition, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useRef } from 'react';
 import { toast } from '@/lib/admin-alert';
 import {
   Upload,
@@ -20,6 +19,7 @@ import {
   X,
 } from 'lucide-react';
 import { saveQuotationLogos, uploadQuotationLogo } from '@/lib/tour/master-actions';
+import { useRegisterSettingsSave } from './settings-save-bar';
 import type { QuotationLogosConfig, QuotationLogoItem } from '@/lib/tour/types';
 import { DEFAULT_QUOTATION_LOGOS } from '@/lib/tour/types';
 import { ModalPortal } from '@/components/ui/modal-portal';
@@ -69,8 +69,6 @@ export function QuotationLogosEditor({
 }: {
   initialConfig?: QuotationLogosConfig;
 }) {
-  const router = useRouter();
-  const [pending, startTransition] = useTransition();
 
   const [headerLogoUrl, setHeaderLogoUrl] = useState(
     initialConfig?.header_logo_url || DEFAULT_QUOTATION_LOGOS.header_logo_url || '/brand/travinco-logo.png'
@@ -248,28 +246,21 @@ export function QuotationLogosEditor({
     setRegisteredTitle(DEFAULT_QUOTATION_LOGOS.registered_title || 'Registered with');
     setPartnersTitle(DEFAULT_QUOTATION_LOGOS.partners_title || 'Proud Booking partners of');
     setLogos(DEFAULT_QUOTATION_LOGOS.logos);
-    toast.success('Reset to default logos. Click "Save logo settings" to persist.');
+    toast.success('Reset to default logos. Click "Save settings" at the top to keep it.');
   }
 
-  function handleSaveAll() {
-    const configToSave: QuotationLogosConfig = {
+  // Saved by the page's single "Save settings" button
+  useRegisterSettingsSave('quotation-logos', async () => {
+    if (uploading) return { error: 'Please wait for the logo upload to finish.' };
+    const res = await saveQuotationLogos({
       header_logo_url: headerLogoUrl,
       tour_logo_url: tourLogoUrl,
       registered_title: registeredTitle.trim() || 'Registered with',
       partners_title: partnersTitle.trim() || 'Proud Booking partners of',
       logos,
-    };
-
-    startTransition(async () => {
-      const res = await saveQuotationLogos(configToSave);
-      if (res?.error) {
-        toast.error(res.error);
-      } else {
-        toast.success('Quotation logos & branding saved successfully!');
-        router.refresh();
-      }
     });
-  }
+    return res?.error ? { error: res.error } : undefined;
+  });
 
   const registeredLogos = logos.filter((l) => l.category === 'registered');
   const partnerLogos = logos.filter((l) => l.category === 'partner');
@@ -294,20 +285,6 @@ export function QuotationLogosEditor({
             title="Restore default Travinco partner & accreditation logos"
           >
             <RotateCcw className="h-3.5 w-3.5" /> Reset to defaults
-          </button>
-          <button
-            type="button"
-            onClick={handleSaveAll}
-            disabled={pending || uploading}
-            className="btn-primary text-xs"
-          >
-            {pending ? (
-              <>
-                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Saving…
-              </>
-            ) : (
-              'Save logo settings'
-            )}
           </button>
         </div>
       </div>
@@ -674,24 +651,6 @@ export function QuotationLogosEditor({
             </div>
           </div>
         </div>
-      </div>
-
-      {/* Save Button */}
-      <div className="flex justify-end pt-2">
-        <button
-          type="button"
-          onClick={handleSaveAll}
-          disabled={pending || uploading}
-          className="btn-primary"
-        >
-          {pending ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" /> Saving settings…
-            </>
-          ) : (
-            'Save logo settings'
-          )}
-        </button>
       </div>
 
       {/* Add / Edit Logo Modal Dialog */}

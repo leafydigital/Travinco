@@ -7,6 +7,7 @@ import { requireProfile } from '@/lib/supabase/auth-helpers';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { validateFullName, validateEmailAddress } from '@/lib/validations/contact-rules';
+import { staffUsernameSchema, staffPhoneSchema, findStaffIdentityConflict } from '@/lib/validations/staff-account';
 
 const passwordSchema = z
   .string()
@@ -27,6 +28,8 @@ const nameSchema = z
 
 const createUserSchema = z.object({
   full_name: nameSchema,
+  username: staffUsernameSchema,
+  phone: staffPhoneSchema,
   email: z
     .string()
     .trim()
@@ -101,6 +104,8 @@ export async function createStaffUser(raw: unknown) {
   const baseRole = resolved.baseRole;
 
   const normalizedEmail = parsed.data.email.trim().toLowerCase();
+  const username = parsed.data.username;
+  const phone = parsed.data.phone;
 
   // Check if a profile with this email already exists (active or soft-deleted)
   const { data: existingProfile } = await supabase
@@ -111,11 +116,15 @@ export async function createStaffUser(raw: unknown) {
 
   if (existingProfile) {
     if ((existingProfile as any).is_deleted || (existingProfile as any).role_title === '[DELETED]') {
+      const conflict = await findStaffIdentityConflict(createServiceClient(), { username, excludeId: existingProfile.id });
+      if (conflict) return { error: conflict };
       // Re-activate a soft-deleted user with the new role and temporary password
       await supabase
         .from('profiles')
         .update({
           full_name: parsed.data.full_name,
+          username,
+          phone,
           role: baseRole,
           role_title: rawRole,
           role_id: roleId,
@@ -136,6 +145,9 @@ export async function createStaffUser(raw: unknown) {
     }
     return { error: 'A staff member with this email address already exists.' };
   }
+
+  const conflict = await findStaffIdentityConflict(createServiceClient(), { username });
+  if (conflict) return { error: conflict };
 
   let newUserId: string | null = null;
   let creationErrorMessage: string | null = null;
@@ -219,6 +231,8 @@ export async function createStaffUser(raw: unknown) {
       role_title: rawRole,
       role_id: roleId,
       full_name: parsed.data.full_name,
+      username,
+      phone,
       is_active: true,
       is_deleted: false,
     } as any)
@@ -234,8 +248,10 @@ export async function createStaffUser(raw: unknown) {
       .update({
         role: baseRole,
         full_name: parsed.data.full_name,
+        username,
+        phone,
         is_active: true,
-      })
+      } as any)
       .eq('id', newUserId);
     profileUpdateError = retry.error;
   }
@@ -247,6 +263,8 @@ export async function createStaffUser(raw: unknown) {
         id: newUserId,
         email: normalizedEmail,
         full_name: parsed.data.full_name,
+        username,
+        phone,
         role: baseRole,
         role_title: rawRole,
         role_id: roleId,
@@ -277,14 +295,24 @@ async function setAuthPassword(profileId: string, password: string): Promise<{ e
   }
 }
 
-/** Edits a user's name and role from the Users page. Email stays fixed (it is the sign-in id). */
-export async function updateStaffUser(profileId: string, raw: { full_name: string; role_id: string }) {
+/** Edits a user's name, username, phone and role from the Users page. Email stays fixed. */
+export async function updateStaffUser(
+  profileId: string,
+  raw: { full_name: string; username: string; phone: string; role_id: string }
+) {
   const requester = await requireProfile();
   if (requester.role !== 'admin' && requester.role !== 'super_admin') {
     return { error: 'Only administrators can edit users.' };
   }
 
-  const parsed = z.object({ full_name: nameSchema, role_id: z.string().uuid('Please choose a role') }).safeParse(raw);
+  const parsed = z
+    .object({
+      full_name: nameSchema,
+      username: staffUsernameSchema,
+      phone: staffPhoneSchema,
+      role_id: z.string().uuid('Please choose a role'),
+    })
+    .safeParse(raw);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Please check the form.' };
 
   const supabase = await createClient();
@@ -301,10 +329,18 @@ export async function updateStaffUser(profileId: string, raw: { full_name: strin
   const resolved = await resolveRole(supabase, parsed.data.role_id, requester.role);
   if (resolved.error || !resolved.role || !resolved.baseRole) return { error: resolved.error };
 
+  const conflict = await findStaffIdentityConflict(createServiceClient(), {
+    username: parsed.data.username,
+    excludeId: profileId,
+  });
+  if (conflict) return { error: conflict };
+
   const { error } = await supabase
     .from('profiles')
     .update({
       full_name: parsed.data.full_name.replace(/\s+/g, ' '),
+      username: parsed.data.username,
+      phone: parsed.data.phone,
       role_id: resolved.role.id,
       role_title: resolved.role.name,
       // Keep your own tier when editing yourself (admins can't demote themselves)
@@ -440,6 +476,36 @@ export async function deleteStaffUser(profileId: string) {
   } else if (softDeleteErr) {
     return { error: softDeleteErr.message || 'Could not soft-delete staff member.' };
   }
+
+  revalidatePath('/travinco_dashboard', 'layout');
+  revalidatePath('/travinco_dashboard/users');
+  return { success: true };
+}
+
+/** Restores a soft-deleted staff account: it can sign in again with its role. */
+export async function restoreStaffUser(profileId: string) {
+  const requester = await requireProfile();
+  if (requester.role !== 'admin' && requester.role !== 'super_admin') {
+    return { error: 'Only administrators can restore staff accounts.' };
+  }
+
+  const supabase = await createClient();
+  const { data: target } = await supabase.from('profiles').select('id, role, role_title').eq('id', profileId).maybeSingle();
+  if (!target) return { error: 'Staff member not found.' };
+  if (target.role === 'admin' && requester.role !== 'super_admin') {
+    return { error: 'Only the Super Admin can restore Admin accounts.' };
+  }
+
+  const { error } = await supabase
+    .from('profiles')
+    .update({
+      is_deleted: false,
+      is_active: true,
+      ...(target.role_title === '[DELETED]' ? { role_title: null } : {}),
+    } as any)
+    .eq('id', profileId);
+  if (error) return { error: 'Could not restore the user. Please try again.' };
+  await supabase.from('website_settings').delete().eq('key', `deleted_user_${profileId}`);
 
   revalidatePath('/travinco_dashboard', 'layout');
   revalidatePath('/travinco_dashboard/users');

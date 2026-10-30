@@ -81,7 +81,7 @@ export default async function InvoicePage({ params }: { params: { id: string } }
         </div>
         {!settings.company_gstin && (
           <p className="rounded-lg bg-sand-50 px-3 py-2 text-sm text-sand-900">
-            Add your GSTIN, address and bank details under <Link href="/travinco_dashboard/quotations/settings" className="underline">Quotations › Settings</Link> so they print on invoices.
+            Add your GSTIN, address and bank details under <Link href="/travinco_dashboard/settings" className="underline">Settings</Link> so they print on invoices.
           </p>
         )}
       </div>

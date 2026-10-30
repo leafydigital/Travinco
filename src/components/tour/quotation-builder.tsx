@@ -66,6 +66,7 @@ const groupRates = (rows: RateRow[]) => {
 
 /** Letters with single spaces and . ' - only (e.g. "Mary-Ann O'Neil"). */
 const GUEST_NAME_RE = /^[\p{L}][\p{L}\p{M} .'-]*$/u;
+const GUEST_NAME_ERROR = 'Enter valid Name';
 
 /** Live-cleans typed guest names: drops digits/symbols, leading and repeated spaces. */
 function sanitizeGuestName(v: string) {
@@ -141,6 +142,7 @@ export function QuotationBuilder({
   const saving = savingAs !== null;
   const upd = (patch: Partial<QuoteInputs>) => setInputs((s) => ({ ...s, ...patch }));
   const [phoneValid, setPhoneValid] = useState(true);
+  const [guestNameError, setGuestNameError] = useState<string | null>(null);
 
   // Load Rate Master rows for any stay location we have not fetched yet.
   const stayKey = inputs.stays.map((s) => s.location_id).join(',');
@@ -176,10 +178,8 @@ export function QuotationBuilder({
 
   const save = (status?: 'draft' | 'sent') => {
     const name = inputs.guest_name.trim();
-    if (!name) return void toast.error('Please enter the guest name.');
-    if (!GUEST_NAME_RE.test(name)) {
-      return void toast.error('Guest name can only contain letters and spaces (no numbers or symbols).');
-    }
+    // Shown under the Guest name field (no popup)
+    if (!name || !GUEST_NAME_RE.test(name)) return void setGuestNameError(GUEST_NAME_ERROR);
     const dateError = validateStartDate(inputs.start_date, initial.start_date);
     if (dateError) return void toast.error(dateError);
     if (inputs.guest_phone.replace(/\D/g, '') && !phoneValid) {
@@ -688,7 +688,14 @@ export function QuotationBuilder({
               {/* Section 1: Guest & Tour Specs */}
               <div>
                 <SectionHeader title="1. Guest & Trip Specifications" subtitle="Guest information, group composition, dates and category preference." />
-                <GuestSection m={m} inputs={inputs} upd={upd} onPhoneValidity={setPhoneValid} />
+                <GuestSection
+                  m={m}
+                  inputs={inputs}
+                  upd={upd}
+                  onPhoneValidity={setPhoneValid}
+                  guestNameError={guestNameError}
+                  onGuestNameError={setGuestNameError}
+                />
               </div>
 
               <hr className="border-ink-100" />
@@ -885,11 +892,15 @@ function GuestSection({
   inputs,
   upd,
   onPhoneValidity,
+  guestNameError,
+  onGuestNameError,
 }: {
   m: TourMasters;
   inputs: QuoteInputs;
   upd: (p: Partial<QuoteInputs>) => void;
   onPhoneValidity: (valid: boolean) => void;
+  guestNameError: string | null;
+  onGuestNameError: (error: string | null) => void;
 }) {
   const [phone, setPhone] = useState(() => splitPhone(inputs.guest_phone));
   const [emailTouched, setEmailTouched] = useState(false);
@@ -906,7 +917,12 @@ function GuestSection({
   const drops = m.points.filter((p) => p.use_for_drop);
   return (
     <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-2 xl:grid-cols-3">
-      <CustomerPicker inputs={inputs} upd={upd} className="col-span-2 sm:col-span-2 md:col-span-2 lg:col-span-2 xl:col-span-2" />
+      <CustomerPicker
+        inputs={inputs}
+        upd={upd}
+        error={guestNameError}
+        onError={onGuestNameError}
+        className="col-span-2 sm:col-span-2 md:col-span-2 lg:col-span-2 xl:col-span-2" />
       <Field label="Phone" className="col-span-2 text-xs [&_.input]:h-8 [&_.input]:py-1 [&_.input]:text-xs">
         <PhoneInput
           name="guest_phone"
@@ -1078,12 +1094,26 @@ function StartDateField({ value, onChange }: { value: string; onChange: (v: stri
   );
 }
 
-function CustomerPicker({ inputs, upd, className }: { inputs: QuoteInputs; upd: (p: Partial<QuoteInputs>) => void; className?: string }) {
+function CustomerPicker({
+  inputs,
+  upd,
+  error,
+  onError,
+  className,
+}: {
+  inputs: QuoteInputs;
+  upd: (p: Partial<QuoteInputs>) => void;
+  error: string | null;
+  onError: (error: string | null) => void;
+  className?: string;
+}) {
   const [open, setOpen] = useState(false);
   const [results, setResults] = useState<{ id: string; full_name: string; phone: string; email: string | null; city: string | null }[]>([]);
   const timer = useRef<ReturnType<typeof setTimeout>>();
   const onChange = (raw: string) => {
     const v = sanitizeGuestName(raw);
+    // Numbers, symbols or a leading space were typed (and removed): say so under the field
+    onError(v !== raw ? GUEST_NAME_ERROR : null);
     upd({ guest_name: v, customer_id: null });
     clearTimeout(timer.current);
     if (v.trim().length < 2) return setResults([]);
@@ -1098,16 +1128,17 @@ function CustomerPicker({ inputs, upd, className }: { inputs: QuoteInputs; upd: 
         <div className="relative">
           <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-400" />
           <input
-            className="input h-8 pl-7 text-xs py-1 pr-2"
+            className={cn('input h-8 pl-7 text-xs py-1 pr-2', error && 'border-red-400 focus:border-red-500')}
             placeholder="Search / enter name"
             maxLength={150}
-            aria-invalid={Boolean(inputs.guest_name.trim()) && !GUEST_NAME_RE.test(inputs.guest_name.trim())}
+            aria-invalid={Boolean(error)}
             value={inputs.guest_name}
             onChange={(e) => onChange(e.target.value)}
             onFocus={() => results.length && setOpen(true)}
             onBlur={() => setTimeout(() => setOpen(false), 150)}
           />
         </div>
+        {error && <p className="mt-0.5 text-[10px] leading-tight text-red-600">{error}</p>}
       </Field>
       {open && results.length > 0 && (
         <ul className="absolute z-20 mt-1 w-full min-w-[200px] overflow-hidden rounded-lg border border-ink-100 bg-white shadow-lg">
@@ -1117,6 +1148,7 @@ function CustomerPicker({ inputs, upd, className }: { inputs: QuoteInputs; upd: 
                 type="button"
                 className="block w-full px-3 py-1.5 text-left text-xs hover:bg-brand-50"
                 onMouseDown={() => {
+                  onError(null);
                   upd({ customer_id: c.id, guest_name: c.full_name, guest_phone: c.phone ?? '', guest_email: c.email ?? '' });
                   setOpen(false);
                 }}

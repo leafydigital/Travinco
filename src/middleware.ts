@@ -234,7 +234,13 @@ export async function middleware(request: NextRequest) {
 
   if (needsCustomerCheck) {
     try {
-      const { data: { user } } = await customerSupabase.auth.getUser();
+      // getClaims() verifies the JWT locally (asymmetric keys) instead of a network round
+      // trip to Supabase Auth on every account page; same check the staff branch uses.
+      const { data: claimsData } = await customerSupabase.auth.getClaims();
+      const claims = claimsData?.claims;
+      const user = claims?.sub
+        ? { id: claims.sub as string, user_metadata: (claims.user_metadata ?? {}) as Record<string, any> }
+        : null;
       if (user) {
         const isCustomerMeta =
           user.user_metadata?.is_customer_signup === 'true' ||

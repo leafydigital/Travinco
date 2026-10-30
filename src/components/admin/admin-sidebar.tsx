@@ -4,17 +4,15 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
-import { toast } from '@/lib/admin-alert';
 import { cn } from '@/lib/utils/cn';
 import type { NavSection, IconName } from '@/lib/admin-nav';
 import {
   LayoutDashboard, Package, MapPin, Inbox, CalendarCheck, Image as ImageIcon,
   Settings, Tag, BookOpen, Users, LogOut, TrendingUp, Receipt,
   UsersRound, Database, FileText, ReceiptText, Hotel, Car, MapPinned, Landmark,
-  ShieldCheck, ClipboardList, Menu, X, Loader2, Palette, PanelLeftClose, Blocks,
+  ShieldCheck, ClipboardList, Menu, X, Loader2, Palette, PanelLeftClose, Blocks, UserCircle,
   type LucideIcon,
 } from 'lucide-react';
-import { ResetPasswordModal } from '@/components/admin/reset-password-modal';
 
 const iconMap: Record<IconName, LucideIcon> = {
   LayoutDashboard, Package, MapPin, Inbox, CalendarCheck, ImageIcon, Settings, Tag, BookOpen, Users,
@@ -54,16 +52,6 @@ export function AdminSidebar({
     document.body.appendChild(form);
     form.submit();
   };
-
-  // "Signed in" toast after arriving from the /app sign-in page
-  useEffect(() => {
-    try {
-      if (sessionStorage.getItem('tv_staff_login_success')) {
-        sessionStorage.removeItem('tv_staff_login_success');
-        toast.success('Signed in successfully');
-      }
-    } catch {}
-  }, []);
 
   useEffect(() => {
     setPendingHref(null);
@@ -150,7 +138,18 @@ export function AdminSidebar({
 
       <div className="border-t border-ink-100 p-3 bg-ink-50/70 space-y-1.5 shrink-0">
 
-        <ResetPasswordModal userEmail={userEmail} variant="sidebar" />
+        <Link
+          href="/travinco_dashboard/profile"
+          className={cn(
+            'flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors',
+            pathname === '/travinco_dashboard/profile'
+              ? 'bg-brand-50 font-medium text-brand-700'
+              : 'text-ink-600 hover:bg-ink-100 hover:text-ink-900'
+          )}
+        >
+          <UserCircle className="h-4 w-4 text-ink-500" />
+          <span>My profile</span>
+        </Link>
 
         <button
           type="button"

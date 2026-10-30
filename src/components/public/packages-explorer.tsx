@@ -6,8 +6,6 @@ import {
   Search,
   X,
   SlidersHorizontal,
-  ChevronLeft,
-  ChevronRight,
   MapPin,
   Compass,
   ShieldCheck,
@@ -17,6 +15,7 @@ import {
   ArrowUpDown,
 } from 'lucide-react';
 import { PackageCard, type PackageCardData } from './package-card';
+import { ListPagination, PAGE_SIZE_OPTIONS } from './list-pagination';
 import type { PackagesPageContent } from '@/lib/packages-page-content-types';
 import { DEFAULT_PACKAGES_PAGE_CONTENT } from '@/lib/packages-page-content-types';
 
@@ -46,7 +45,6 @@ interface PackagesExplorerProps {
   isLoading?: boolean;
 }
 
-const ITEMS_PER_PAGE = 6;
 
 const CATEGORIES = [
   { value: '', label: 'All Categories' },
@@ -74,13 +72,14 @@ export function PackagesExplorer({
   const [selectedCategory, setSelectedCategory] = useState(initialCategory);
   const [sortBy, setSortBy] = useState<'featured' | 'price-asc' | 'price-desc' | 'duration-asc' | 'duration-desc'>('featured');
   const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(PAGE_SIZE_OPTIONS[0]);
 
   const listRef = useRef<HTMLDivElement>(null);
 
   // Reset to page 1 whenever search or filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, selectedDestination, selectedCategory, sortBy]);
+  }, [searchQuery, selectedDestination, selectedCategory, sortBy, pageSize]);
 
   // Filter and sort packages
   const filteredAndSortedPackages = useMemo(() => {
@@ -142,13 +141,13 @@ export function PackagesExplorer({
 
   // Pagination calculation
   const totalItems = filteredAndSortedPackages.length;
-  const totalPages = Math.max(1, Math.ceil(totalItems / ITEMS_PER_PAGE));
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
   const validPage = Math.min(Math.max(1, currentPage), totalPages);
 
   const paginatedPackages = useMemo(() => {
-    const start = (validPage - 1) * ITEMS_PER_PAGE;
-    return filteredAndSortedPackages.slice(start, start + ITEMS_PER_PAGE);
-  }, [filteredAndSortedPackages, validPage]);
+    const start = (validPage - 1) * pageSize;
+    return filteredAndSortedPackages.slice(start, start + pageSize);
+  }, [filteredAndSortedPackages, validPage, pageSize]);
 
   const handlePageChange = (newPage: number) => {
     setCurrentPage(newPage);
@@ -397,66 +396,14 @@ export function PackagesExplorer({
             </div>
 
             {/* ── 4. PAGINATION CONTROLS ── */}
-            {totalPages > 1 && (
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-6 border-t border-ink-200">
-                <p className="text-xs font-medium text-ink-500">
-                  Showing{' '}
-                  <span className="font-bold text-ink-900">
-                    {(validPage - 1) * ITEMS_PER_PAGE + 1}
-                  </span>{' '}
-                  to{' '}
-                  <span className="font-bold text-ink-900">
-                    {Math.min(validPage * ITEMS_PER_PAGE, totalItems)}
-                  </span>{' '}
-                  of <span className="font-bold text-ink-900">{totalItems}</span> packages
-                </p>
-
-                <nav aria-label="Pagination" className="inline-flex items-center gap-1.5">
-                  {/* Previous Button */}
-                  <button
-                    type="button"
-                    onClick={() => handlePageChange(validPage - 1)}
-                    disabled={validPage <= 1}
-                    className="inline-flex items-center gap-1 rounded-xl border border-ink-200 bg-white px-3 py-2 text-xs font-semibold text-ink-700 transition hover:bg-ink-50 disabled:opacity-40 disabled:pointer-events-none shadow-xs cursor-pointer"
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                    <span className="hidden sm:inline">Previous</span>
-                  </button>
-
-                  {/* Page Numbers */}
-                  {Array.from({ length: totalPages }).map((_, idx) => {
-                    const pageNum = idx + 1;
-                    const isActive = pageNum === validPage;
-                    return (
-                      <button
-                        key={pageNum}
-                        type="button"
-                        onClick={() => handlePageChange(pageNum)}
-                        aria-current={isActive ? 'page' : undefined}
-                        className={`h-9 min-w-[36px] px-2 rounded-xl text-xs font-bold transition shadow-xs cursor-pointer ${
-                          isActive
-                            ? 'bg-brand-600 text-white shadow-brand-600/25'
-                            : 'bg-white border border-ink-200 text-ink-700 hover:bg-ink-50'
-                        }`}
-                      >
-                        {pageNum}
-                      </button>
-                    );
-                  })}
-
-                  {/* Next Button */}
-                  <button
-                    type="button"
-                    onClick={() => handlePageChange(validPage + 1)}
-                    disabled={validPage >= totalPages}
-                    className="inline-flex items-center gap-1 rounded-xl border border-ink-200 bg-white px-3 py-2 text-xs font-semibold text-ink-700 transition hover:bg-ink-50 disabled:opacity-40 disabled:pointer-events-none shadow-xs cursor-pointer"
-                  >
-                    <span className="hidden sm:inline">Next</span>
-                    <ChevronRight className="h-4 w-4" />
-                  </button>
-                </nav>
-              </div>
-            )}
+            <ListPagination
+              page={validPage}
+              pageSize={pageSize}
+              totalItems={totalItems}
+              itemLabel="packages"
+              onPageChange={handlePageChange}
+              onPageSizeChange={setPageSize}
+            />
           </div>
         )}
       </section>

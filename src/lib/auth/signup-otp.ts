@@ -95,7 +95,7 @@ async function isEmailAlreadyTaken(email: string): Promise<boolean> {
 }
 
 /** Formats a stored phone may be in (E.164, digits with/without +, national, 0-prefixed). */
-function phoneVariants(e164: string): string[] {
+export function phoneVariants(e164: string): string[] {
   const parsed = parsePhoneNumberFromString(e164);
   const variants = new Set<string>([e164, e164.replace(/^\+/, '')]);
   if (parsed) {

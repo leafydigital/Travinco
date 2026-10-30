@@ -123,6 +123,9 @@ export type BulkPackageDraft = {
   faqs: { question: string; answer: string }[];
 
   // Media & SEO
+  /** Cover image (shown on cards and at the top of the package page). */
+  cover_image: string | null;
+  /** Gallery images. */
   images: string[];
   imageUrlsText: string;
   videoUrlsText: string;
@@ -163,6 +166,7 @@ function createEmptyPackageDraft(index: number): BulkPackageDraft {
       { day_number: 3, title: 'Departure', description: 'Breakfast, check out, and drop off.' },
     ],
     faqs: [],
+    cover_image: null,
     images: [],
     imageUrlsText: '',
     videoUrlsText: '',
@@ -170,6 +174,11 @@ function createEmptyPackageDraft(index: number): BulkPackageDraft {
     meta_description: '',
     status: 'draft',
   };
+}
+
+/** Cover + gallery images attached to a draft. */
+function photoCount(p: BulkPackageDraft) {
+  return (p.cover_image ? 1 : 0) + (p.images?.length || 0);
 }
 
 export function BulkPackagesEditor({ destinations }: { destinations: DestinationOption[] }) {
@@ -184,6 +193,7 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
   const [formError, setFormError] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [singleImageUrlInput, setSingleImageUrlInput] = useState('');
+  const [coverUrlInput, setCoverUrlInput] = useState('');
   /** Inline errors per draft id (set when "Bulk Save" validation fails). */
   const [errorsById, setErrorsById] = useState<Record<string, Record<string, string>>>({});
   const [showRowErrors, setShowRowErrors] = useState(false);
@@ -256,7 +266,7 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
       .map((p) => ({
         id: p.id,
         title: p.title,
-        cover_image_url: p.images[0] ?? null,
+        cover_image_url: p.cover_image ?? p.images[0] ?? null,
         kind: 'draft' as const,
       }));
     if (stillFeatured.length + batchFeatured.length >= MAX_FEATURED_PACKAGES) {
@@ -346,8 +356,8 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
     toast.success('Package duplicated');
   }
 
-  async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files ?? []);
+  async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>, target: 'cover' | 'gallery' = 'gallery') {
+    const files = Array.from(e.target.files ?? []).slice(0, target === 'cover' ? 1 : undefined);
     if (files.length === 0) return;
 
     setIsUploading(true);
@@ -368,21 +378,34 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
       setPackages((prev) =>
         prev.map((pkg, idx) => {
           if (idx !== activeIdx) return pkg;
-          return {
-            ...pkg,
-            images: [...(pkg.images || []), ...newUrls],
-          };
+          return target === 'cover'
+            ? { ...pkg, cover_image: newUrls[0] ?? pkg.cover_image }
+            : { ...pkg, images: [...(pkg.images || []), ...newUrls] };
         })
       );
       toast.success(
-        newUrls.length === 1
-          ? 'Image uploaded successfully'
-          : `${newUrls.length} images uploaded successfully`
+        target === 'cover'
+          ? 'Cover image uploaded'
+          : newUrls.length === 1
+            ? 'Gallery image uploaded'
+            : `${newUrls.length} gallery images uploaded`
       );
     }
 
     setIsUploading(false);
     e.target.value = '';
+  }
+
+  function handleAddCoverUrl() {
+    const url = coverUrlInput.trim();
+    if (!url) return;
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      toast.error('Please enter a valid image URL starting with http:// or https://');
+      return;
+    }
+    updateCurrent('cover_image', url);
+    setCoverUrlInput('');
+    toast.success('Cover image set');
   }
 
   function handleAddImageUrl() {
@@ -418,22 +441,17 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
   }
 
   function setCoverImage(imageIndex: number) {
-    if (imageIndex === 0) return;
     setPackages((prev) =>
       prev.map((pkg, idx) => {
         if (idx !== activeIdx) return pkg;
-        const currentImages = [...(pkg.images || [])];
-        const [target] = currentImages.splice(imageIndex, 1);
-        if (target) {
-          currentImages.unshift(target);
-        }
-        return {
-          ...pkg,
-          images: currentImages,
-        };
+        const gallery = [...(pkg.images || [])];
+        const [target] = gallery.splice(imageIndex, 1);
+        if (!target) return pkg;
+        if (pkg.cover_image) gallery.unshift(pkg.cover_image);
+        return { ...pkg, cover_image: target, images: gallery };
       })
     );
-    toast.success('Set as package cover photo');
+    toast.success('Set as package cover image');
   }
 
   function moveImage(fromIndex: number, toIndex: number) {
@@ -507,7 +525,9 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
         .map((u) => u.trim())
         .filter(Boolean);
 
-      const allImages = Array.from(new Set([...(p.images || []), ...pastedImages]));
+      const allImages = Array.from(
+        new Set([...(p.cover_image ? [p.cover_image] : []), ...(p.images || []), ...pastedImages])
+      );
 
       const validVideos = p.videoUrlsText
         .split(/[\n,]/)
@@ -687,9 +707,9 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex items-center gap-2.5 min-w-0">
                       <div className="relative h-10 w-10 shrink-0 rounded-lg overflow-hidden border border-ink-200 bg-ink-100 flex items-center justify-center">
-                        {pkg.images && pkg.images.length > 0 ? (
+                        {pkg.cover_image || pkg.images?.length ? (
                           // eslint-disable-next-line @next/next/no-img-element
-                          <img src={pkg.images[0]} alt="" className="h-full w-full object-cover" />
+                          <img src={pkg.cover_image ?? pkg.images[0]} alt="" className="h-full w-full object-cover" />
                         ) : (
                           <span
                             className={`flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold ${
@@ -754,10 +774,10 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
                     <span className="font-semibold text-brand-700">
                       {pkg.base_price ? `${pkg.currency || 'INR'} ${Number(pkg.base_price).toLocaleString('en-IN')}` : 'Price not set'}
                     </span>
-                    {pkg.images && pkg.images.length > 0 ? (
+                    {photoCount(pkg) > 0 ? (
                       <span className="inline-flex items-center gap-1 rounded bg-brand-50 px-1.5 py-0.5 text-[10px] font-semibold text-brand-700">
                         <ImageIcon className="h-2.5 w-2.5" />
-                        {pkg.images.length} {pkg.images.length === 1 ? 'photo' : 'photos'}
+                        {photoCount(pkg)} {photoCount(pkg) === 1 ? 'photo' : 'photos'}
                       </span>
                     ) : (
                       <span className="inline-flex items-center gap-1 rounded bg-ink-50 border border-ink-150 px-1.5 py-0.5 text-[10px] text-ink-400">
@@ -846,7 +866,7 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
               { id: 'inclusions', label: '4. Inclusions & FAQs' },
               {
                 id: 'media',
-                label: `5. Photos & Video${currentPkg?.images?.length ? ` (${currentPkg.images.length})` : ''}`,
+                label: `5. Photos & Video${currentPkg && photoCount(currentPkg) ? ` (${photoCount(currentPkg)})` : ''}`,
               },
               { id: 'seo', label: '6. SEO' },
             ].map((tab) => (
@@ -987,9 +1007,9 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
                 <div className="sm:col-span-2 lg:col-span-6 rounded-xl border border-ink-150 p-3.5 bg-ink-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
                     <div className="relative h-14 w-20 shrink-0 rounded-lg overflow-hidden border border-ink-200 bg-ink-100 flex items-center justify-center">
-                      {currentPkg?.images && currentPkg.images.length > 0 ? (
+                      {currentPkg?.cover_image || currentPkg?.images?.length ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={currentPkg.images[0]} alt="" className="h-full w-full object-cover" />
+                        <img src={currentPkg.cover_image ?? currentPkg.images[0]} alt="" className="h-full w-full object-cover" />
                       ) : (
                         <div className="text-center">
                           <ImageIcon className="h-5 w-5 text-ink-300 mx-auto" />
@@ -999,12 +1019,13 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
                     </div>
                     <div>
                       <h4 className="text-xs font-bold text-ink-800">
-                        Cover Photo {currentPkg?.images && currentPkg.images.length > 0 ? `(${currentPkg.images.length} photos added)` : 'Not Set'}
+                        Cover Image {currentPkg?.cover_image ? 'Set' : 'Not Set'}
+                        {currentPkg?.images?.length ? ` · ${currentPkg.images.length} gallery image${currentPkg.images.length === 1 ? '' : 's'}` : ''}
                       </h4>
                       <p className="text-[11px] text-ink-400 mt-0.5">
-                        {currentPkg?.images && currentPkg.images.length > 0
-                          ? 'First photo is used as cover image on public listings.'
-                          : 'Upload at least one photo for this package (required to publish).'}
+                        {currentPkg?.cover_image
+                          ? 'Shown on public package cards and at the top of the package page.'
+                          : 'Add a cover image in the Photos & Video tab (an image is required to publish).'}
                       </p>
                     </div>
                   </div>
@@ -1415,21 +1436,97 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
           {/* TAB 5: Photos & Video */}
           {activeTab === 'media' && (
             <div className="space-y-6 animate-in fade-in duration-100">
-              {/* Photo Upload Card */}
+              {/* Cover Image Card */}
+              <div className="rounded-xl border border-ink-150 p-5 bg-white space-y-4 shadow-2xs">
+                <div>
+                  <h3 className="text-xs font-bold text-ink-900 flex items-center gap-1.5">
+                    <Star className="h-4 w-4 text-amber-500" />
+                    <span>Cover Image</span>
+                  </h3>
+                  <p className="text-[11px] text-ink-400 mt-0.5">
+                    Shown on package cards and at the top of the package page. Uploading a new one replaces the current cover.
+                  </p>
+                </div>
+
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+                  <div className="relative aspect-video w-full sm:w-56 shrink-0 overflow-hidden rounded-xl border border-ink-200 bg-ink-100 flex items-center justify-center">
+                    {currentPkg?.cover_image ? (
+                      <>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={currentPkg.cover_image} alt="Cover" className="h-full w-full object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => updateCurrent('cover_image', null)}
+                          className="absolute top-2 right-2 rounded-md bg-coral-600/90 hover:bg-coral-600 p-1 text-white shadow-xs cursor-pointer"
+                          title="Remove cover image"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      </>
+                    ) : (
+                      <div className="text-center">
+                        <ImageIcon className="h-6 w-6 text-ink-300 mx-auto" />
+                        <span className="text-[10px] text-ink-400 block font-medium">No cover image</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex-1 space-y-3">
+                    <label className="btn-primary h-8 text-xs inline-flex items-center gap-1.5 px-3 cursor-pointer">
+                      <UploadCloud className="h-3.5 w-3.5" />
+                      <span>{currentPkg?.cover_image ? 'Replace Cover Image' : 'Upload Cover Image'}</span>
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        onChange={(e) => handleFileSelect(e, 'cover')}
+                        disabled={isUploading}
+                        className="sr-only"
+                      />
+                    </label>
+                    <div>
+                      <span className="text-[11px] font-semibold text-ink-600 block mb-1.5">Or use an image URL</span>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="url"
+                          value={coverUrlInput}
+                          onChange={(e) => setCoverUrlInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleAddCoverUrl();
+                            }
+                          }}
+                          placeholder="https://images.unsplash.com/photo-..."
+                          className="input h-8 text-xs flex-1 font-mono"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleAddCoverUrl}
+                          className="btn-outline h-8 text-xs px-3 font-semibold shrink-0 cursor-pointer"
+                        >
+                          Set Cover
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Gallery Upload Card */}
               <div className="rounded-xl border border-ink-150 p-5 bg-white space-y-4 shadow-2xs">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div>
                     <h3 className="text-xs font-bold text-ink-900 flex items-center gap-1.5">
                       <ImageIcon className="h-4 w-4 text-brand-600" />
-                      <span>Package Photos ({currentPkg?.images?.length || 0})</span>
+                      <span>Gallery Images ({currentPkg?.images?.length || 0})</span>
                     </h3>
                     <p className="text-[11px] text-ink-400 mt-0.5">
-                      Upload JPG, PNG or WEBP photos directly. The first photo automatically becomes the package cover.
+                      Upload JPG, PNG or WEBP photos for the gallery on the package page.
                     </p>
                   </div>
                   <label className="btn-primary h-8 text-xs inline-flex items-center gap-1.5 px-3 cursor-pointer shrink-0">
                     <UploadCloud className="h-3.5 w-3.5" />
-                    <span>Upload Photos</span>
+                    <span>Upload Gallery Images</span>
                     <input
                       type="file"
                       accept="image/jpeg,image/png,image/webp"
@@ -1504,10 +1601,10 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
                   <div className="pt-2">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-[11px] font-bold text-ink-700 uppercase tracking-wide">
-                        Attached Photos ({currentPkg.images.length})
+                        Gallery ({currentPkg.images.length})
                       </span>
                       <span className="text-[11px] text-ink-400">
-                        Hover an image to set as cover or reorder
+                        Hover an image to use it as the cover or reorder
                       </span>
                     </div>
 
@@ -1524,22 +1621,16 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
                             className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
                           />
 
-                          {/* Cover badge or Set Cover button */}
-                          {i === 0 ? (
-                            <span className="absolute top-2 left-2 inline-flex items-center gap-1 rounded-md bg-brand-600 px-2 py-0.5 text-[10px] font-bold text-white shadow-xs">
-                              <Star className="h-2.5 w-2.5 fill-current" /> Cover Photo
-                            </span>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => setCoverImage(i)}
-                              className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 transition rounded-md bg-white/95 hover:bg-white px-2 py-0.5 text-[10px] font-semibold text-ink-800 shadow-xs flex items-center gap-1 cursor-pointer"
-                              title="Set as package cover photo"
-                            >
-                              <Star className="h-2.5 w-2.5 text-amber-500 fill-amber-500" />
-                              <span>Set Cover</span>
-                            </button>
-                          )}
+                          {/* Use this gallery image as the cover */}
+                          <button
+                            type="button"
+                            onClick={() => setCoverImage(i)}
+                            className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 transition rounded-md bg-white/95 hover:bg-white px-2 py-0.5 text-[10px] font-semibold text-ink-800 shadow-xs flex items-center gap-1 cursor-pointer"
+                            title="Use as package cover image"
+                          >
+                            <Star className="h-2.5 w-2.5 text-amber-500 fill-amber-500" />
+                            <span>Set Cover</span>
+                          </button>
 
                           {/* Delete button */}
                           <button
@@ -1581,7 +1672,7 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
                 ) : (
                   <div className="text-center py-6 border border-dashed border-ink-200 rounded-xl bg-ink-50/30">
                     <ImageIcon className="h-8 w-8 text-ink-300 mx-auto mb-1.5" />
-                    <p className="text-xs text-ink-500 font-medium">No photos added to this package yet.</p>
+                    <p className="text-xs text-ink-500 font-medium">No gallery images added yet.</p>
                     <p className="text-[11px] text-ink-400">Upload photos above or paste URLs below.</p>
                   </div>
                 )}
@@ -1589,9 +1680,9 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
 
               {/* Batch Paste Image URLs (Collapsible or secondary) */}
               <div className="rounded-xl border border-ink-150 p-4 bg-white space-y-2 shadow-2xs">
-                <label className="label mb-0">Paste Multiple Photo URLs (Optional)</label>
+                <label className="label mb-0">Paste Multiple Gallery Image URLs (Optional)</label>
                 <p className="text-[11px] text-ink-400">
-                  If you have external CDN or hosted URLs, paste them here (one per line). They will be merged with uploaded photos.
+                  If you have external CDN or hosted URLs, paste them here (one per line). They are added to the gallery.
                 </p>
                 <textarea
                   rows={3}

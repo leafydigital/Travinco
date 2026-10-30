@@ -2,45 +2,171 @@
 
 import { createClient } from '@/lib/supabase/server';
 import { requireProfile, checkModulePermission } from '@/lib/supabase/auth-helpers';
-import { customerSchema } from '@/lib/validations/customer';
+import { createServiceClient } from '@/lib/supabase/service';
+import { customerSchema, newCustomerSchema } from '@/lib/validations/customer';
+import { escapeLike } from '@/lib/auth/signup-rules';
+import { isUsernameAlreadyTaken, phoneVariants } from '@/lib/auth/signup-otp';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { isValidPhoneNumber } from 'libphonenumber-js/mobile';
 import { validateFullName, validateEmailAddress } from '@/lib/validations/contact-rules';
 import { isFakePhone } from '@/lib/validations/phone';
 
-export async function createCustomer(raw: unknown) {
+/** The field a friendly error belongs to, so the form can show it under that input. */
+type CustomerField = 'full_name' | 'phone' | 'whatsapp_number' | 'email' | 'password';
+type CustomerActionError = { error: string; field?: CustomerField };
+
+function firstIssue(error: z.ZodError): CustomerActionError {
+  const issue = error.issues[0];
+  return {
+    error: issue?.message ?? 'Please check the form.',
+    field: (issue?.path[0] as CustomerField | undefined) ?? undefined,
+  };
+}
+
+/**
+ * Returns a friendly message when another (not deleted) customer already has this
+ * email or phone number, or (for new logins) the email already belongs to an account.
+ */
+async function findCustomerConflict(
+  { email, phone, excludeId }: { email?: string | null; phone?: string | null; excludeId?: string },
+  checkAccounts = false
+): Promise<CustomerActionError | null> {
+  const service = createServiceClient();
+  const others = (rows: unknown) =>
+    ((rows as { id: string; is_deleted?: boolean | null }[] | null) ?? []).filter(
+      (r) => r.id !== excludeId && r.is_deleted !== true
+    );
+
+  if (email) {
+    const { data } = await service.from('customers').select('id, is_deleted').ilike('email', escapeLike(email)).limit(5);
+    if (others(data).length) {
+      return { field: 'email', error: 'A customer with this email address already exists.' };
+    }
+    if (checkAccounts) {
+      const [accountRes, staffRes] = await Promise.all([
+        service.from('customer_accounts').select('id').ilike('email', escapeLike(email)).limit(1),
+        service.from('profiles').select('id').ilike('email', escapeLike(email)).limit(1),
+      ]);
+      if (accountRes.data?.length) {
+        return { field: 'email', error: 'This email address is already registered on the website.' };
+      }
+      if (staffRes.data?.length) {
+        return { field: 'email', error: 'This email address belongs to a team member. Please use another email.' };
+      }
+    }
+  }
+
+  if (phone) {
+    const { data } = await service.from('customers').select('id, is_deleted').in('phone', phoneVariants(phone)).limit(5);
+    if (others(data).length) {
+      return { field: 'phone', error: 'A customer with this phone number already exists.' };
+    }
+  }
+  return null;
+}
+
+/** A unique website username from the email prefix (rahul, rahul2, rahul3 …). */
+async function uniqueCustomerUsername(email: string): Promise<string> {
+  const base = (email.split('@')[0] || 'customer').replace(/\s+/g, '').slice(0, 24) || 'customer';
+  for (let i = 1; i < 50; i++) {
+    const candidate = i === 1 ? base : `${base}${i}`;
+    if (!(await isUsernameAlreadyTaken(candidate))) return candidate;
+  }
+  return `${base}${Date.now().toString().slice(-6)}`;
+}
+
+/**
+ * Creates a customer from the dashboard, together with their website login
+ * (email + the password entered by the team).
+ */
+export async function createCustomer(raw: unknown): Promise<CustomerActionError | { id: string; error?: undefined }> {
   const profile = await requireProfile();
   const perm = await checkModulePermission(profile, 'customers', 'edit');
   if (!perm.allowed) return { error: perm.error || 'You do not have permission to create customers.' };
 
-  const parsed = customerSchema.safeParse(raw);
-  if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? 'Please check the form.' };
-  }
+  const parsed = newCustomerSchema.safeParse(raw);
+  if (!parsed.success) return firstIssue(parsed.error);
 
+  const { password, ...customer } = parsed.data;
+  const email = customer.email.toLowerCase();
+  const fullName = customer.full_name.replace(/\s+/g, ' ');
+
+  const conflict = await findCustomerConflict({ email, phone: customer.phone }, true);
+  if (conflict) return conflict;
+
+  // 1. Website login
+  const service = createServiceClient();
+  const username = await uniqueCustomerUsername(email);
+  const { data: authData, error: authError } = await service.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+    user_metadata: {
+      full_name: fullName,
+      username,
+      phone: customer.phone,
+      role: 'customer',
+      is_customer_signup: 'true',
+    },
+  });
+  if (authError || !authData?.user) {
+    if (authError?.message?.toLowerCase().includes('already')) {
+      return { field: 'email', error: 'This email address is already registered on the website.' };
+    }
+    console.error('createCustomer auth error:', authError);
+    return { error: 'Could not create the customer login. Please try again.' };
+  }
+  const userId = authData.user.id;
+
+  await service.from('customer_accounts').upsert(
+    {
+      id: userId,
+      full_name: fullName,
+      username,
+      email,
+      phone: customer.phone,
+      address: customer.address || null,
+    } as any,
+    { onConflict: 'id' }
+  );
+
+  // 2. Customer record
   const supabase = await createClient();
   const { data, error } = await supabase
     .from('customers')
-    .insert({ ...parsed.data, email: parsed.data.email || null, created_by: profile.id })
+    .insert({
+      ...customer,
+      full_name: fullName,
+      email,
+      whatsapp_number: customer.whatsapp_number || customer.phone,
+      created_by: profile.id,
+    })
     .select('id')
     .single();
 
-  if (error) return { error: 'Could not create customer.' };
+  if (error) {
+    // Don't leave a login behind without its customer record
+    await service.from('customer_accounts').delete().eq('id', userId);
+    await service.auth.admin.deleteUser(userId);
+    console.error('createCustomer insert error:', error);
+    return { error: 'Could not create the customer. Please try again.' };
+  }
 
   revalidatePath('/travinco_dashboard/customers');
   return { id: data.id };
 }
 
-export async function updateCustomer(id: string, raw: unknown) {
+export async function updateCustomer(id: string, raw: unknown): Promise<CustomerActionError | { error?: undefined }> {
   const profile = await requireProfile();
   const perm = await checkModulePermission(profile, 'customers', 'edit');
   if (!perm.allowed) return { error: perm.error || 'You do not have permission to edit customers.' };
 
   const parsed = customerSchema.safeParse(raw);
-  if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? 'Please check the form.' };
-  }
+  if (!parsed.success) return firstIssue(parsed.error);
+
+  const conflict = await findCustomerConflict({ email: parsed.data.email, phone: parsed.data.phone, excludeId: id });
+  if (conflict) return conflict;
 
   const supabase = await createClient();
   const { error } = await supabase
@@ -48,7 +174,7 @@ export async function updateCustomer(id: string, raw: unknown) {
     .update({ ...parsed.data, email: parsed.data.email || null })
     .eq('id', id);
 
-  if (error) return { error: 'Could not update customer.' };
+  if (error) return { error: 'Could not update the customer. Please try again.' };
 
   revalidatePath('/travinco_dashboard/customers');
   revalidatePath('/travinco_dashboard/customers');
@@ -132,6 +258,8 @@ export interface CustomerTableItem {
   city: string | null;
   source: string | null;
   is_active: boolean;
+  /** Soft-deleted: still listed in the table with a "Deleted" status, but read-only. */
+  is_deleted: boolean;
 }
 
 export interface CustomersTableQueryResult {
@@ -148,6 +276,7 @@ export interface FullCustomerDetail {
   phone: string | null;
   whatsapp_number: string | null;
   email: string | null;
+  address: string | null;
   city: string | null;
   state: string | null;
   country: string | null;
@@ -158,17 +287,20 @@ export interface FullCustomerDetail {
 
 /**
  * Fast, lean query fetching strictly the 6 table columns:
- * Customer (id, full_name), Phone, Email, City, Source, Status (is_active).
+ * Customer (id, full_name), Phone, Email, City, Source, Status (is_active / is_deleted).
  * Excludes heavy notes, whatsapp_number, state, country, etc.
  */
 export async function getCustomersTableList({
   page = 1,
   pageSize = 20,
   q = '',
+  status = '',
 }: {
   page?: number;
   pageSize?: number;
   q?: string;
+  /** '' (all) | 'active' | 'deactivated' | 'deleted' */
+  status?: string;
 } = {}): Promise<CustomersTableQueryResult> {
   const profile = await requireProfile();
   await checkModulePermission(profile, 'customers', 'view');
@@ -192,6 +324,12 @@ export async function getCustomersTableList({
     query = query.or(
       `full_name.ilike.%${term}%,phone.ilike.%${term}%,email.ilike.%${term}%`
     );
+  }
+
+  if (status === 'deleted') {
+    query = query.eq('is_deleted', true);
+  } else if (status === 'active' || status === 'deactivated') {
+    query = query.or('is_deleted.is.null,is_deleted.eq.false').eq('is_active', status === 'active');
   }
 
   const [{ data: customers, count, error }, { data: settingsData }] = await Promise.all([
@@ -235,16 +373,8 @@ export async function getCustomersTableList({
       }
     });
 
-  const visibleCustomers = customerRows.filter(
-    (c: any) =>
-      c &&
-      c.is_deleted !== true &&
-      c.is_deleted !== 'true' &&
-      c.is_deleted !== 1 &&
-      !deletedKeys.has(c.id)
-  );
-
-  const items: CustomerTableItem[] = visibleCustomers.map((c: any) => {
+  // Deleted customers stay in the list (shown with a "Deleted" status)
+  const items: CustomerTableItem[] = customerRows.filter(Boolean).map((c: any) => {
     // The is_active column is authoritative; the website_settings marker is only a
     // fallback for databases without that column.
     const isActive =
@@ -262,6 +392,8 @@ export async function getCustomersTableList({
       city: c.city || null,
       source: c.source || null,
       is_active: isActive,
+      is_deleted:
+        c.is_deleted === true || c.is_deleted === 'true' || c.is_deleted === 1 || deletedKeys.has(c.id),
     };
   });
 
@@ -319,6 +451,7 @@ export async function getCustomerById(id: string): Promise<{ data?: FullCustomer
       phone: data.phone || null,
       whatsapp_number: data.whatsapp_number || null,
       email: data.email || null,
+      address: data.address || null,
       city: data.city || null,
       state: data.state || null,
       country: data.country || null,
@@ -361,15 +494,21 @@ const customerQuickEditSchema = z.object({
   notes: z.string().max(2000).nullable().optional(),
 });
 
-export async function updateCustomerDetails(id: string, raw: unknown) {
+export async function updateCustomerDetails(
+  id: string,
+  raw: unknown
+): Promise<CustomerActionError | { error?: undefined }> {
   const profile = await requireProfile();
   const perm = await checkModulePermission(profile, 'customers', 'edit');
   if (!perm.allowed) return { error: perm.error || 'You do not have permission to edit customers.' };
 
   const parsed = customerQuickEditSchema.safeParse(raw);
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Please check the form.' };
+  if (!parsed.success) return firstIssue(parsed.error);
 
   const d = parsed.data;
+  const conflict = await findCustomerConflict({ email: d.email, phone: d.phone, excludeId: id });
+  if (conflict) return conflict;
+
   const supabase = await createClient();
   const { error } = await supabase
     .from('customers')
@@ -384,9 +523,56 @@ export async function updateCustomerDetails(id: string, raw: unknown) {
     })
     .eq('id', id);
 
-  if (error) return { error: 'Could not update customer.' };
+  if (error) return { error: 'Could not update the customer. Please try again.' };
 
   revalidatePath('/travinco_dashboard/customers');
   revalidatePath(`/travinco_dashboard/customers/${id}`);
   return {};
+}
+
+/** Restores a soft-deleted customer (admins only). */
+export async function restoreCustomer(id: string): Promise<{ error?: string }> {
+  const profile = await requireProfile();
+  if (!['admin', 'super_admin'].includes(profile.role)) {
+    return { error: 'Only admins can restore customers.' };
+  }
+
+  const supabase = await createClient();
+  const { data: customer } = await supabase.from('customers').select('id, email, phone').eq('id', id).maybeSingle();
+  if (!customer) return { error: 'Customer not found.' };
+
+  // Another active customer may have taken the email / phone in the meantime
+  const conflict = await findCustomerConflict({ email: customer.email, phone: customer.phone, excludeId: id });
+  if (conflict) return { error: `Cannot restore: ${conflict.error.charAt(0).toLowerCase()}${conflict.error.slice(1)}` };
+
+  const { error } = await supabase.from('customers').update({ is_deleted: false } as any).eq('id', id);
+  if (error && !error.message?.includes('is_deleted')) return { error: 'Could not restore the customer. Please try again.' };
+  await supabase.from('website_settings').delete().eq('key', `deleted_customer_${id}`);
+
+  revalidatePath('/travinco_dashboard/customers');
+  revalidatePath(`/travinco_dashboard/customers/${id}`);
+  return {};
+}
+
+/**
+ * Live "already taken" check for the customer forms (run as the team types / leaves a field).
+ * `newLogin` also checks website and team accounts, as a new customer gets a website login.
+ */
+export async function checkCustomerAvailability(input: {
+  email?: string;
+  phone?: string;
+  excludeId?: string;
+  newLogin?: boolean;
+}): Promise<{ email: string | null; phone: string | null }> {
+  const profile = await requireProfile();
+  const perm = await checkModulePermission(profile, 'customers', 'view');
+  if (!perm.allowed) return { email: null, phone: null };
+
+  const email = input.email?.trim().toLowerCase() || null;
+  const phone = input.phone?.trim() || null;
+  const [emailConflict, phoneConflict] = await Promise.all([
+    email ? findCustomerConflict({ email, excludeId: input.excludeId }, Boolean(input.newLogin)) : null,
+    phone ? findCustomerConflict({ phone, excludeId: input.excludeId }) : null,
+  ]);
+  return { email: emailConflict?.error ?? null, phone: phoneConflict?.error ?? null };
 }

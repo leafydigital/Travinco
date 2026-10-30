@@ -12,9 +12,11 @@ import {
   Loader2,
   ShieldCheck,
   AlertCircle,
+  User,
+  ArrowLeft,
 } from 'lucide-react';
 import { toast } from '@/lib/admin-alert';
-import { resetStaffPasswordAction } from '@/app/travinco_dashboard/actions';
+import { resetStaffPasswordAction, verifyOwnAccountIdentifier } from '@/app/travinco_dashboard/actions';
 
 interface ResetPasswordModalProps {
   userEmail?: string;
@@ -29,6 +31,9 @@ export function ResetPasswordModal({
 }: ResetPasswordModalProps) {
   const [mounted, setMounted] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
+  // Step 1: confirm username / email -> Step 2: new password + confirm
+  const [step, setStep] = useState<'identify' | 'password'>('identify');
+  const [identifier, setIdentifier] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -42,7 +47,7 @@ export function ResetPasswordModal({
 
   const rules = useMemo(
     () => ({
-      length: newPassword.length >= 8,
+      length: newPassword.length >= 7,
       upper: /[A-Z]/.test(newPassword),
       lower: /[a-z]/.test(newPassword),
       number: /[0-9]/.test(newPassword),
@@ -61,6 +66,8 @@ export function ResetPasswordModal({
     rules.matches;
 
   const handleOpen = () => {
+    setStep('identify');
+    setIdentifier('');
     setNewPassword('');
     setConfirmPassword('');
     setShowPassword(false);
@@ -87,6 +94,23 @@ export function ResetPasswordModal({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, isPending, handleClose]);
 
+  const handleVerify = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!identifier.trim() || isPending) return;
+
+    setErrorMessage(null);
+    startTransition(async () => {
+      const res = await verifyOwnAccountIdentifier(identifier);
+      if (res?.error) {
+        setErrorMessage(res.error);
+        return;
+      }
+      setNewPassword('');
+      setConfirmPassword('');
+      setStep('password');
+    });
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!allRulesMet || isPending) return;
@@ -94,6 +118,7 @@ export function ResetPasswordModal({
     setErrorMessage(null);
     startTransition(async () => {
       const res = await resetStaffPasswordAction({
+        identifier,
         password: newPassword,
         confirmPassword,
       });
@@ -144,11 +169,11 @@ export function ResetPasswordModal({
                 <h3 className="text-base font-bold text-ink-900">
                   Reset Account Password
                 </h3>
-                {userEmail && (
-                  <p className="text-xs text-ink-500">
-                    Updating password for <span className="font-medium text-ink-700">{userEmail}</span>
-                  </p>
-                )}
+                <p className="text-xs text-ink-500">
+                  {step === 'identify'
+                    ? 'Step 1 of 2 — enter your username or email to continue'
+                    : 'Step 2 of 2 — choose your new password'}
+                </p>
               </div>
             </div>
   
@@ -160,7 +185,58 @@ export function ResetPasswordModal({
               </div>
             )}
   
-            {/* Form */}
+            {/* Step 1: verify username / email */}
+            {step === 'identify' && (
+              <form onSubmit={handleVerify} className="mt-5 space-y-4" noValidate>
+                <div>
+                  <label htmlFor="reset-identifier" className="block text-xs font-semibold text-ink-700 mb-1">
+                    Username / Email <span className="text-coral-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      id="reset-identifier"
+                      type="text"
+                      value={identifier}
+                      onChange={(e) => {
+                        setIdentifier(e.target.value);
+                        if (errorMessage) setErrorMessage(null);
+                      }}
+                      placeholder="Username or email"
+                      autoComplete="username"
+                      autoCapitalize="none"
+                      spellCheck={false}
+                      autoFocus
+                      required
+                      disabled={isPending}
+                      className="w-full rounded-lg border border-ink-200 bg-white px-3.5 py-2 pl-9 text-sm text-ink-900 placeholder:text-ink-400 focus:border-brand-500 focus:outline-hidden focus:ring-2 focus:ring-brand-500/20 transition"
+                    />
+                    <User className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-ink-100">
+                  <button
+                    type="button"
+                    onClick={handleClose}
+                    disabled={isPending}
+                    className="rounded-lg px-3.5 py-2 text-xs font-semibold text-ink-600 hover:bg-ink-100 transition cursor-pointer disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={!identifier.trim() || isPending}
+                    className="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-xs font-semibold text-white shadow-xs hover:bg-brand-700 focus:outline-hidden focus:ring-2 focus:ring-brand-500/20 disabled:cursor-not-allowed disabled:opacity-50 transition cursor-pointer"
+                  >
+                    {isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                    <span>{isPending ? 'Verifying...' : 'Verify'}</span>
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* Step 2: new password + confirm */}
+            {step === 'password' && (
             <form onSubmit={handleSubmit} className="mt-5 space-y-4">
               {/* New Password */}
               <div>
@@ -312,6 +388,17 @@ export function ResetPasswordModal({
               <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-ink-100">
                 <button
                   type="button"
+                  onClick={() => {
+                    setErrorMessage(null);
+                    setStep('identify');
+                  }}
+                  disabled={isPending}
+                  className="mr-auto inline-flex items-center gap-1 rounded-lg px-2.5 py-2 text-xs font-semibold text-ink-500 hover:bg-ink-100 transition cursor-pointer disabled:opacity-50"
+                >
+                  <ArrowLeft className="h-3.5 w-3.5" /> Back
+                </button>
+                <button
+                  type="button"
                   onClick={handleClose}
                   disabled={isPending}
                   className="rounded-lg px-3.5 py-2 text-xs font-semibold text-ink-600 hover:bg-ink-100 transition cursor-pointer disabled:opacity-50"
@@ -328,6 +415,7 @@ export function ResetPasswordModal({
                 </button>
               </div>
             </form>
+            )}
           </div>
         </div>
       ) : null;

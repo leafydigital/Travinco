@@ -4,6 +4,7 @@ import { StaffLoginForm } from './staff-login-form';
 export const metadata: Metadata = {
   title: 'Team sign in — Travinco',
   robots: { index: false, follow: false },
+  icons: { icon: '/images/green_logo.png', apple: '/images/green_logo.png' },
 };
 
 // Reads the query string (redirectTo / reason) on every request
