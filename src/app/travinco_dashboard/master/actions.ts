@@ -219,6 +219,20 @@ export async function updateMasterRateAction(
       return { success: false, error: 'Invalid rate ID.' };
     }
 
+    const costs: [string, number | null | undefined][] = [
+      ['CP cost', data.cpCost],
+      ['MAP cost', data.mapCost],
+      ['Extra adult (CP)', data.extraAdultCP],
+      ['Extra adult (MAP)', data.extraAdultMAP],
+      ['Child with bed', data.childBedCost],
+      ['Child without bed', data.childNoBedCost],
+    ];
+    for (const [label, value] of costs) {
+      if (value == null) continue;
+      if (!Number.isFinite(value)) return { success: false, error: `${label} must be a number.` };
+      if (value < 0) return { success: false, error: `${label} cannot be negative.` };
+    }
+
     const { error } = await supabase
       .from('room_rates')
       .update({

@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, FileText, Loader2, Mail, MessageCircle, Pencil, Phone, Save, X } from 'lucide-react';
+import { ArrowLeft, FileText, Loader2, ReceiptText, Mail, MessageCircle, Pencil, Phone, Save, X } from 'lucide-react';
 import { toast } from '@/lib/admin-alert';
 import { cn } from '@/lib/utils/cn';
 import { formatCurrency, formatDate } from '@/lib/utils/format';
@@ -88,6 +88,7 @@ export function EnquiryDetailCard({
   canEdit,
   canAssign,
   initialEditing,
+  invoiceAccess,
   children,
 }: {
   enquiry: Tables<'enquiries'>;
@@ -96,6 +97,11 @@ export function EnquiryDetailCard({
   canEdit: boolean;
   canAssign: boolean;
   initialEditing: boolean;
+  /** Set when the viewer may create invoices; carries any quotation/invoice this enquiry already has. */
+  invoiceAccess?: {
+    quotation: { id: string; quote_number: string } | null;
+    invoice: { id: string; invoice_number: string } | null;
+  } | null;
   /** Rest of the page (notes, timeline) — inside this wrapper so the header stays sticky. */
   children?: React.ReactNode;
 }) {
@@ -266,6 +272,36 @@ export function EnquiryDetailCard({
             >
               <FileText className="h-4 w-4" /> Create quotation
             </button>
+            {invoiceAccess &&
+              (invoiceAccess.invoice ? (
+                <Link
+                  href={`/travinco_dashboard/invoices/${invoiceAccess.invoice.id}`}
+                  onClick={(e) => {
+                    if (!guardUnsaved()) e.preventDefault();
+                  }}
+                  className="btn-outline inline-flex items-center gap-1.5"
+                >
+                  <ReceiptText className="h-4 w-4" /> View invoice
+                </Link>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!guardUnsaved()) return;
+                    const q = invoiceAccess.quotation;
+                    // A quotation already exists: offer to invoice that one rather than raising a second, unrelated invoice.
+                    if (q && window.confirm(`This enquiry already has quotation ${q.quote_number}.\n\nOK = open it and convert it to an invoice.\nCancel = create a separate invoice.`)) {
+                      router.push(`/travinco_dashboard/quotations/${q.id}`);
+                      return;
+                    }
+                    router.push(`/travinco_dashboard/invoices/new?enquiry=${enquiry.id}`);
+                  }}
+                  onMouseEnter={() => router.prefetch(`/travinco_dashboard/invoices/new?enquiry=${enquiry.id}`)}
+                  className="btn-outline inline-flex items-center gap-1.5"
+                >
+                  <ReceiptText className="h-4 w-4" /> Create invoice
+                </button>
+              ))}
             <Link
               href="/travinco_dashboard/enquiries"
               onClick={(e) => {

@@ -4,8 +4,8 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from '@/lib/admin-alert';
 import { TextField, TextAreaField } from '@/components/ui/form-fields';
-import { slugify } from '@/lib/validations/package';
-import type { EventFormValues } from '@/lib/validations/content';
+import { slugify, fieldErrorsFromZod } from '@/lib/validations/package';
+import { eventSchema, type EventFormValues } from '@/lib/validations/content';
 import { createEvent, updateEvent } from '../content-actions';
 
 export function EventForm({
@@ -20,12 +20,24 @@ export function EventForm({
   const [slugTouched, setSlugTouched] = useState(Boolean(eventId));
   const [values, setValues] = useState<Partial<EventFormValues>>(initialValues ?? {});
 
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
   function set<K extends keyof EventFormValues>(key: K, value: EventFormValues[K]) {
     setValues((v) => ({ ...v, [key]: value }));
+    if (errors[key as string]) setErrors(({ [key as string]: _removed, ...rest }) => rest);
   }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    // Same rules the server checks
+    const check = eventSchema.safeParse(values);
+    if (!check.success) {
+      const fieldErrors = fieldErrorsFromZod(check.error);
+      setErrors(fieldErrors);
+      toast.error(Object.values(fieldErrors)[0] ?? 'Please fix the highlighted fields.');
+      return;
+    }
+    setErrors({});
     startTransition(async () => {
       const result = eventId ? await updateEvent(eventId, values) : await createEvent(values);
       if (result.error) {
@@ -47,6 +59,8 @@ export function EventForm({
         label="Title"
         required
         value={values.title ?? ''}
+        error={errors.title}
+        aria-invalid={Boolean(errors.title)}
         onChange={(e) => {
           set('title', e.target.value);
           if (!slugTouched) set('slug', slugify(e.target.value));
@@ -56,6 +70,8 @@ export function EventForm({
         label="Slug"
         required
         value={values.slug ?? ''}
+        error={errors.slug}
+        aria-invalid={Boolean(errors.slug)}
         onChange={(e) => {
           setSlugTouched(true);
           set('slug', e.target.value);
@@ -82,6 +98,8 @@ export function EventForm({
         <TextField
           label="Cover image URL"
           value={values.image_url ?? ''}
+          error={errors.image_url}
+          aria-invalid={Boolean(errors.image_url)}
           onChange={(e) => set('image_url', e.target.value)}
         />
         <TextField
@@ -89,6 +107,14 @@ export function EventForm({
           value={values.cta_label ?? ''}
           onChange={(e) => set('cta_label', e.target.value)}
           placeholder="e.g. Register interest"
+        />
+        <TextField
+          label="CTA link"
+          value={values.cta_url ?? ''}
+          onChange={(e) => set('cta_url', e.target.value)}
+          placeholder="e.g. /contact or https://…"
+          error={errors.cta_url}
+          aria-invalid={Boolean(errors.cta_url)}
         />
       </div>
       <div className="flex justify-end">

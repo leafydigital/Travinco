@@ -30,7 +30,7 @@ export default function InvoicesLoading() {
         <div className="relative min-w-[200px] sm:min-w-[220px] max-w-md flex-1 w-full">
           <div className="input w-full bg-ink-50/50 text-ink-400">Search invoice number, guest, phone…</div>
         </div>
-        <div className="btn-outline w-full sm:w-auto opacity-70">Search</div>
+        <div className="btn-outline w-full sm:w-auto opacity-70">Refresh</div>
       </div>
 
       {/* 4. Table Skeleton */}

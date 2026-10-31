@@ -55,10 +55,14 @@ export default async function PackagePreviewPage({ params }: { params: { id: str
   const { pkg, images, itinerary, inclusions, exclusions, videos, faqs } = result;
   const termsSettings = await getTermsSettings();
   const destination = pkg.destinations;
-  const videoEmbedUrls = [
-    getVideoEmbedUrl(pkg.video_url),
-    ...videos.map((v) => getVideoEmbedUrl(v.video_url)),
-  ].filter((url): url is string => Boolean(url));
+  // The same link can be stored on the package and in package_videos — show each video once
+  const videoEmbedUrls = Array.from(
+    new Set(
+      [getVideoEmbedUrl(pkg.video_url), ...videos.map((v) => getVideoEmbedUrl(v.video_url))].filter(
+        (url): url is string => Boolean(url)
+      )
+    )
+  );
 
   return (
     <div>

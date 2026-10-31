@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useTransition, useRef } from 'react';
+import { reportThemeErrors } from '@/lib/theme-form-errors';
+import { validatePageTitlesContent } from '@/lib/validations/theme';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import {
@@ -99,6 +101,7 @@ export function PageTitlesEditor({
 
   // Save all changes to database & json
   const handleSave = async () => {
+    if (reportThemeErrors(validatePageTitlesContent(content))) return;
     setIsSaving(true);
     try {
       const res = await savePageTitlesContentAction(content);
@@ -250,7 +253,7 @@ export function PageTitlesEditor({
                 Favicon Image URL
               </label>
               <div className="flex gap-2">
-                <input
+                <input data-field="favicon_url"
                   type="text"
                   value={content.favicon_url || ''}
                   onChange={(e) => setContent((prev) => ({ ...prev, favicon_url: e.target.value }))}
@@ -334,7 +337,7 @@ export function PageTitlesEditor({
                 {/* Input Field */}
                 <div>
                   <div className="relative">
-                    <input
+                    <input data-field={`titles.${page.key}`}
                       type="text"
                       value={currentTitle}
                       onChange={(e) => handleTitleChange(page.key, e.target.value)}

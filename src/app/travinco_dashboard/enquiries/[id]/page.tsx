@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import { formatDateTime } from '@/lib/utils/format';
 import { NotesPanel } from './notes-followups';
 import { EnquiryDetailCard } from './enquiry-detail-card';
+import { canAccess } from '@/lib/tour/access';
 import { maskBadWords } from '@/lib/validations/contact-rules';
 
 export default async function EnquiryDetailPage({
@@ -39,6 +40,37 @@ export default async function EnquiryDetailPage({
   // Employees only work on the enquiries assigned to them
   if (!isAdmin && enquiry.assigned_staff !== profile.id) notFound();
 
+  // Quotation/invoice already raised for this enquiry, so the invoice button can point at it
+  let invoiceAccess: {
+    quotation: { id: string; quote_number: string } | null;
+    invoice: { id: string; invoice_number: string } | null;
+  } | null = null;
+  if (canAccess(profile, 'invoices')) {
+    const [{ data: quote }, { data: direct }] = await Promise.all([
+      supabase
+        .from('quotations')
+        .select('id, quote_number, status')
+        .eq('enquiry_id', enquiry.id)
+        .neq('status', 'rejected')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      supabase.from('invoices').select('id, invoice_number').eq('enquiry_id', enquiry.id).neq('status', 'cancelled').limit(1).maybeSingle(),
+    ]);
+    let invoice = direct ?? null;
+    if (!invoice && quote?.status === 'invoiced') {
+      const { data: viaQuote } = await supabase
+        .from('invoices')
+        .select('id, invoice_number')
+        .eq('quotation_id', quote.id)
+        .neq('status', 'cancelled')
+        .limit(1)
+        .maybeSingle();
+      invoice = viaQuote ?? null;
+    }
+    invoiceAccess = { quotation: quote ? { id: quote.id, quote_number: quote.quote_number } : null, invoice };
+  }
+
   const pkgRaw = enquiry.travel_packages as
     | { title: string; slug: string; base_price: number | null; discount_price: number | null }
     | { title: string; slug: string; base_price: number | null; discount_price: number | null }[]
@@ -53,6 +85,7 @@ export default async function EnquiryDetailPage({
       canEdit={canEdit}
       canAssign={isAdmin}
       initialEditing={isEditing}
+      invoiceAccess={invoiceAccess}
     >
       <div className="grid gap-6 lg:grid-cols-2">
         <NotesPanel enquiryId={enquiry.id} notes={enquiry.notes} />

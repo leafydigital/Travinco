@@ -1,6 +1,8 @@
 'use client';
 
 import { useState } from 'react';
+import { reportThemeErrors } from '@/lib/theme-form-errors';
+import { validateAboutPageContent } from '@/lib/validations/theme';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import {
@@ -355,7 +357,9 @@ export function AboutPageEditor({
         <div className="flex items-center gap-2.5 self-stretch sm:self-auto shrink-0">
           <button
             type="button"
-            onClick={() => setShowConfirmModal(true)}
+            onClick={() => {
+              if (!reportThemeErrors(validateAboutPageContent(content))) setShowConfirmModal(true);
+            }}
             disabled={isSaving || !isAdmin}
             className="btn-primary inline-flex items-center gap-2 px-5 py-2.5 text-xs font-bold rounded-xl shadow-md cursor-pointer disabled:opacity-50"
           >
@@ -481,7 +485,7 @@ export function AboutPageEditor({
             <p className="text-xs text-ink-500">
               Enter any accessible public image URL (Unsplash, Supabase CDN, etc.).
             </p>
-            <input
+            <input data-field="hero.background_image_url"
               type="text"
               value={content.hero.background_image_url}
               onChange={(e) =>
@@ -502,7 +506,7 @@ export function AboutPageEditor({
             <label className="block text-xs font-bold text-ink-900 mb-1">
               Hero Top Badge
             </label>
-            <input
+            <input data-field="hero.badge"
               type="text"
               value={content.hero.badge}
               onChange={(e) =>
@@ -520,7 +524,7 @@ export function AboutPageEditor({
             <label className="block text-xs font-bold text-ink-900 mb-1">
               Hero Center Title (Primary Heading)
             </label>
-            <input
+            <input data-field="hero.title"
               type="text"
               value={content.hero.title}
               onChange={(e) =>
@@ -538,7 +542,7 @@ export function AboutPageEditor({
             <label className="block text-xs font-bold text-ink-900 mb-1">
               Hero Subtitle / Description
             </label>
-            <textarea
+            <textarea data-field="hero.subtitle"
               rows={2}
               value={content.hero.subtitle}
               onChange={(e) =>
@@ -561,7 +565,7 @@ export function AboutPageEditor({
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {content.hero.pillars.map((pillar, i) => (
               <div key={i} className="flex items-center gap-2 rounded-xl bg-ink-50/70 p-2.5 border border-ink-200">
-                <input
+                <input data-field={`hero.pillars.${i}.label`}
                   type="text"
                   value={pillar.label}
                   onChange={(e) => handlePillarChange(i, 'label', e.target.value)}
@@ -599,7 +603,7 @@ export function AboutPageEditor({
               <label className="block text-xs font-bold text-ink-900 mb-1">
                 Story Badge
               </label>
-              <input
+              <input data-field="story.badge"
                 type="text"
                 value={content.story.badge}
                 onChange={(e) =>
@@ -617,7 +621,7 @@ export function AboutPageEditor({
               <label className="block text-xs font-bold text-ink-900 mb-1">
                 Story Main Title
               </label>
-              <input
+              <input data-field="story.title"
                 type="text"
                 value={content.story.title}
                 onChange={(e) =>
@@ -700,7 +704,7 @@ export function AboutPageEditor({
                   className="hidden"
                 />
               </label>
-              <input
+              <input data-field="story.image_url"
                 type="text"
                 value={content.story.image_url}
                 onChange={(e) =>
@@ -727,14 +731,14 @@ export function AboutPageEditor({
                 <label className="block text-[10px] font-bold uppercase text-ink-400">
                   Stat {i + 1}
                 </label>
-                <input
+                <input data-field={`story.stats.${i}.value`}
                   type="text"
                   value={stat.value}
                   onChange={(e) => handleStatChange(i, 'value', e.target.value)}
                   placeholder="e.g. 12+"
                   className="input text-sm font-bold bg-white h-8"
                 />
-                <input
+                <input data-field={`story.stats.${i}.label`}
                   type="text"
                   value={stat.label}
                   onChange={(e) => handleStatChange(i, 'label', e.target.value)}
@@ -858,7 +862,7 @@ export function AboutPageEditor({
                   <label className="block text-xs font-bold text-ink-900 mb-1">
                     Card Heading
                   </label>
-                  <input
+                  <input data-field={`overview_cards.${i}.heading`}
                     type="text"
                     value={card.heading}
                     onChange={(e) => handleOverviewCardChange(i, 'heading', e.target.value)}
@@ -871,7 +875,7 @@ export function AboutPageEditor({
                   <label className="block text-xs font-bold text-ink-900 mb-1">
                     Card Text / Content
                   </label>
-                  <textarea
+                  <textarea data-field={`overview_cards.${i}.text`}
                     rows={3}
                     value={card.text}
                     onChange={(e) => handleOverviewCardChange(i, 'text', e.target.value)}
@@ -1019,7 +1023,7 @@ export function AboutPageEditor({
             <label className="block text-xs font-bold text-ink-900 mb-1">
               FAQ Section Badge
             </label>
-            <input
+            <input data-field="faqs.badge"
               type="text"
               value={content.faqs?.badge ?? ''}
               onChange={(e) => handleFaqHeaderChange('badge', e.target.value)}
@@ -1032,7 +1036,7 @@ export function AboutPageEditor({
             <label className="block text-xs font-bold text-ink-900 mb-1">
               FAQ Section Main Heading
             </label>
-            <input
+            <input data-field="faqs.title"
               type="text"
               value={content.faqs?.title ?? ''}
               onChange={(e) => handleFaqHeaderChange('title', e.target.value)}
@@ -1045,7 +1049,7 @@ export function AboutPageEditor({
             <label className="block text-xs font-bold text-ink-900 mb-1">
               FAQ Section Subtitle
             </label>
-            <input
+            <input data-field="faqs.subtitle"
               type="text"
               value={content.faqs?.subtitle ?? ''}
               onChange={(e) => handleFaqHeaderChange('subtitle', e.target.value)}
@@ -1099,6 +1103,7 @@ export function AboutPageEditor({
                   </label>
                   <input
                     type="text"
+                    data-field={`faqs.items.${idx}.question`}
                     value={faqItem.question}
                     onChange={(e) => handleFaqItemChange(idx, 'question', e.target.value)}
                     placeholder="Enter question..."
@@ -1112,6 +1117,7 @@ export function AboutPageEditor({
                   </label>
                   <textarea
                     rows={2}
+                    data-field={`faqs.items.${idx}.answer`}
                     value={faqItem.answer}
                     onChange={(e) => handleFaqItemChange(idx, 'answer', e.target.value)}
                     placeholder="Enter comprehensive answer..."
@@ -1147,7 +1153,7 @@ export function AboutPageEditor({
             <label className="block text-xs font-bold text-ink-900 mb-1">
               Banner Small Badge
             </label>
-            <input
+            <input data-field="bottom_cta.badge"
               type="text"
               value={content.bottom_cta.badge}
               onChange={(e) =>
@@ -1165,7 +1171,7 @@ export function AboutPageEditor({
             <label className="block text-xs font-bold text-ink-900 mb-1">
               Banner Main Heading
             </label>
-            <input
+            <input data-field="bottom_cta.title"
               type="text"
               value={content.bottom_cta.title}
               onChange={(e) =>
@@ -1183,7 +1189,7 @@ export function AboutPageEditor({
             <label className="block text-xs font-bold text-ink-900 mb-1">
               Banner Description
             </label>
-            <textarea
+            <textarea data-field="bottom_cta.description"
               rows={2}
               value={content.bottom_cta.description}
               onChange={(e) =>
@@ -1201,7 +1207,7 @@ export function AboutPageEditor({
             <label className="block text-xs font-bold text-ink-900 mb-1">
               CTA Button Text
             </label>
-            <input
+            <input data-field="bottom_cta.button_text"
               type="text"
               value={content.bottom_cta.button_text}
               onChange={(e) =>
@@ -1219,7 +1225,7 @@ export function AboutPageEditor({
             <label className="block text-xs font-bold text-ink-900 mb-1">
               CTA Button Link
             </label>
-            <input
+            <input data-field="bottom_cta.button_link"
               type="text"
               value={content.bottom_cta.button_link}
               onChange={(e) =>
@@ -1245,7 +1251,9 @@ export function AboutPageEditor({
         </div>
         <button
           type="button"
-          onClick={() => setShowConfirmModal(true)}
+          onClick={() => {
+              if (!reportThemeErrors(validateAboutPageContent(content))) setShowConfirmModal(true);
+            }}
           disabled={isSaving || !isAdmin}
           className="btn-primary inline-flex items-center gap-2 px-6 py-2.5 text-xs font-bold rounded-xl shadow-lg cursor-pointer disabled:opacity-50"
         >

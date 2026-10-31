@@ -11,8 +11,47 @@ export const MAX_FEATURED_PACKAGES = 4;
 export const HIGHLIGHT_MAX_LENGTH = 120;
 export const SHORT_DESCRIPTION_MAX_LENGTH = 500;
 export const MAX_DURATION_DAYS = 365;
+/**
+ * Tour duration rule: nights must equal the days or be one less
+ * (e.g. 5 days / 4 nights or 5 days / 5 nights). Returns the error, or null.
+ */
+export function nightsRuleError(days: unknown, nights: unknown): string | null {
+  if (typeof days !== 'number' || typeof nights !== 'number') return null;
+  if (nights > days) return 'Nights must be less than or equal to days';
+  if (nights < days - 1) return `Nights must be ${days - 1} or ${days} for a ${days}-day package`;
+  return null;
+}
 
-const requiredText = (message: string) => z.string().trim().min(1, message);
+/** New packages must start availability at least this many days from today. */
+export const AVAILABILITY_LEAD_DAYS = 2;
+
+/** Earliest date (YYYY-MM-DD, local time) a new package can be available from. */
+export function earliestAvailabilityDate(now = new Date()) {
+  const d = new Date(now);
+  d.setDate(d.getDate() + AVAILABILITY_LEAD_DAYS);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** Field errors for availability dates that fall inside the lead-time window. */
+export function availabilityLeadErrors(
+  data: { available_from?: string | null; available_to?: string | null },
+  earliest = earliestAvailabilityDate()
+): Record<string, string> {
+  const message = `Choose a date at least ${AVAILABILITY_LEAD_DAYS} days from today`;
+  const errors: Record<string, string> = {};
+  if (data.available_from && data.available_from < earliest) errors.available_from = message;
+  if (data.available_to && data.available_to < earliest) errors.available_to = message;
+  return errors;
+}
+
+/**
+ * 10+ digits in a row, allowing +, spaces, dashes, dots and brackets between them
+ * (e.g. 9876543210, +91 98765 43210, (0484) 123-4567). Short numbers like
+ * "5D/4N" or "2025-2026" don't match.
+ */
+const PHONE_NUMBER_PATTERN = /\+?(?:\d[\s\-().]*){10,}/;
+
+const requiredText =(message: string) => z.string().trim().min(1, message);
 
 /** Optional numeric amount: blank -> null, otherwise a non-negative number. */
 const optionalAmount = z.preprocess(
@@ -25,7 +64,12 @@ export const packageSchema = z
     destination_id: z
       .string({ required_error: 'Destination is required', invalid_type_error: 'Destination is required' })
       .uuid('Destination is required'),
-    title: z.string().trim().min(3, 'Title is too short').max(200),
+    title: z
+      .string()
+      .trim()
+      .min(3, 'Title is too short')
+      .max(200)
+      .refine((v) => !PHONE_NUMBER_PATTERN.test(v), 'Phone numbers are not allowed in the package title'),
     slug: z
       .string()
       .min(3)
@@ -77,13 +121,16 @@ export const packageSchema = z
     meta_title: z.string().max(160).optional().nullable(),
     meta_description: z.string().max(320).optional().nullable(),
   })
-  .refine((data) => data.duration_nights <= data.duration_days, {
-    message: 'Nights must be less than or equal to days',
-    path: ['duration_nights'],
-  })
   .refine(
-    (data) => !data.discount_price || data.discount_price <= data.base_price,
-    { message: 'Discount price must not exceed base price', path: ['discount_price'] }
+    (data) => !nightsRuleError(data.duration_days, data.duration_nights),
+    (data) => ({
+      message: nightsRuleError(data.duration_days, data.duration_nights) ?? '',
+      path: ['duration_nights'],
+    })
+  )
+  .refine(
+    (data) => !data.discount_price || data.discount_price < data.base_price,
+    { message: 'Discount price must be lower than the starting price', path: ['discount_price'] }
   )
   .refine(
     (data) =>

@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useTransition, useRef, useEffect } from 'react';
+import { reportThemeErrors } from '@/lib/theme-form-errors';
+import { validateNavbarFooterContent } from '@/lib/validations/theme';
 import { useRouter } from 'next/navigation';
 import {
   Save,
@@ -111,9 +113,14 @@ export function NavbarFooterEditor({
         setContent(nextContent);
         // Persist immediately to website_settings so live customer header is instantly updated
         const saveRes = await saveNavbarFooterContentAction(nextContent);
-        if (saveRes.success && saveRes.data) {
-          setContent(saveRes.data);
+        if (!saveRes.success) {
+          toast.error(saveRes.error || 'Failed to save the logo', {
+            description: 'The logo was uploaded. Fix the highlighted field and click Save.',
+          });
+          reportThemeErrors(validateNavbarFooterContent(nextContent));
+          return;
         }
+        if (saveRes.data) setContent(saveRes.data);
         toast.success(
           type === 'dark'
             ? 'Scrolled Green logo uploaded and saved live!'
@@ -230,6 +237,7 @@ export function NavbarFooterEditor({
 
   // Save all changes
   function handleSaveAll() {
+    if (reportThemeErrors(validateNavbarFooterContent(content))) return;
     startTransition(async () => {
       const res = await saveNavbarFooterContentAction(content);
       if (res.success) {
@@ -360,7 +368,7 @@ export function NavbarFooterEditor({
                   )}
                   <span>{isUploadingDark ? 'Uploading…' : 'Upload File'}</span>
                 </button>
-                <input
+                <input data-field="navbar.logo_image_url"
                   type="text"
                   className="input h-9 text-xs font-mono"
                   value={content.navbar.logo_image_url}
@@ -429,7 +437,7 @@ export function NavbarFooterEditor({
                   )}
                   <span>{isUploadingLight ? 'Uploading…' : 'Upload File'}</span>
                 </button>
-                <input
+                <input data-field="navbar.logo_light_image_url"
                   type="text"
                   className="input h-9 text-xs font-mono bg-white/10 text-white border-white/20 placeholder:text-white/40"
                   value={content.navbar.logo_light_image_url || ''}
@@ -488,7 +496,7 @@ export function NavbarFooterEditor({
                   <label className="text-[10px] font-bold text-ink-500 uppercase tracking-wide">
                     Display Label / Page Name
                   </label>
-                  <input
+                  <input data-field={`navbar.nav_links.${idx}.label`}
                     type="text"
                     className="input h-8 text-xs font-semibold text-ink-900"
                     value={link.label}
@@ -502,7 +510,7 @@ export function NavbarFooterEditor({
                   <label className="text-[10px] font-bold text-ink-500 uppercase tracking-wide">
                     Target Route / URL
                   </label>
-                  <input
+                  <input data-field={`navbar.nav_links.${idx}.href`}
                     type="text"
                     className="input h-8 text-xs font-mono text-ink-700"
                     value={link.href}
@@ -562,7 +570,7 @@ export function NavbarFooterEditor({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="label">Primary CTA Button Text</label>
-              <input
+              <input data-field="navbar.cta_button_text"
                 type="text"
                 className="input"
                 value={content.navbar.cta_button_text}
@@ -573,7 +581,7 @@ export function NavbarFooterEditor({
 
             <div>
               <label className="label">Primary CTA Destination URL</label>
-              <input
+              <input data-field="navbar.cta_button_url"
                 type="text"
                 className="input font-mono text-xs"
                 value={content.navbar.cta_button_url}
@@ -608,7 +616,7 @@ export function NavbarFooterEditor({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="label">Brand Name</label>
-              <input
+              <input data-field="footer.brand_name"
                 type="text"
                 className="input"
                 value={content.footer.brand_name}
@@ -619,7 +627,7 @@ export function NavbarFooterEditor({
 
             <div>
               <label className="label">Brand Tagline / Story</label>
-              <input
+              <input data-field="footer.brand_tagline"
                 type="text"
                 className="input"
                 value={content.footer.brand_tagline}
@@ -649,7 +657,7 @@ export function NavbarFooterEditor({
                 <label className="text-[11px] font-medium text-ink-500 flex items-center gap-1.5">
                   <Facebook className="h-3.5 w-3.5 text-blue-600" /> Facebook
                 </label>
-                <input
+                <input data-field="footer.social.facebook"
                   type="url"
                   className="input h-8 text-xs"
                   value={content.footer.social?.facebook || ''}
@@ -662,7 +670,7 @@ export function NavbarFooterEditor({
                 <label className="text-[11px] font-medium text-ink-500 flex items-center gap-1.5">
                   <Instagram className="h-3.5 w-3.5 text-pink-600" /> Instagram
                 </label>
-                <input
+                <input data-field="footer.social.instagram"
                   type="url"
                   className="input h-8 text-xs"
                   value={content.footer.social?.instagram || ''}
@@ -675,7 +683,7 @@ export function NavbarFooterEditor({
                 <label className="text-[11px] font-medium text-ink-500 flex items-center gap-1.5">
                   <Twitter className="h-3.5 w-3.5 text-sky-500" /> Twitter / X
                 </label>
-                <input
+                <input data-field="footer.social.twitter"
                   type="url"
                   className="input h-8 text-xs"
                   value={content.footer.social?.twitter || ''}
@@ -696,7 +704,7 @@ export function NavbarFooterEditor({
                 <label className="text-xs font-bold uppercase tracking-wider text-ink-700">
                   Column 2 Heading
                 </label>
-                <input
+                <input data-field="footer.explore_heading"
                   type="text"
                   className="input mt-1 h-8 text-xs font-semibold"
                   value={content.footer.explore_heading}
@@ -716,14 +724,14 @@ export function NavbarFooterEditor({
             <div className="space-y-2">
               {content.footer.explore_links.map((item, idx) => (
                 <div key={item.id || idx} className="flex items-center gap-2 bg-white p-2 rounded-lg border border-ink-150">
-                  <input
+                  <input data-field={`footer.explore_links.${idx}.label`}
                     type="text"
                     className="input h-7 text-xs flex-1"
                     value={item.label}
                     onChange={(e) => updateFooterLink('explore_links', idx, 'label', e.target.value)}
                     placeholder="Link text"
                   />
-                  <input
+                  <input data-field={`footer.explore_links.${idx}.href`}
                     type="text"
                     className="input h-7 text-xs flex-1 font-mono"
                     value={item.href}
@@ -749,7 +757,7 @@ export function NavbarFooterEditor({
                 <label className="text-xs font-bold uppercase tracking-wider text-ink-700">
                   Column 3 Heading
                 </label>
-                <input
+                <input data-field="footer.company_heading"
                   type="text"
                   className="input mt-1 h-8 text-xs font-semibold"
                   value={content.footer.company_heading}
@@ -769,14 +777,14 @@ export function NavbarFooterEditor({
             <div className="space-y-2">
               {content.footer.company_links.map((item, idx) => (
                 <div key={item.id || idx} className="flex items-center gap-2 bg-white p-2 rounded-lg border border-ink-150">
-                  <input
+                  <input data-field={`footer.company_links.${idx}.label`}
                     type="text"
                     className="input h-7 text-xs flex-1"
                     value={item.label}
                     onChange={(e) => updateFooterLink('company_links', idx, 'label', e.target.value)}
                     placeholder="Link text"
                   />
-                  <input
+                  <input data-field={`footer.company_links.${idx}.href`}
                     type="text"
                     className="input h-7 text-xs flex-1 font-mono"
                     value={item.href}
@@ -805,7 +813,7 @@ export function NavbarFooterEditor({
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
             <div>
               <label className="label">Contact Column Title</label>
-              <input
+              <input data-field="footer.contact_heading"
                 type="text"
                 className="input"
                 value={content.footer.contact_heading}
@@ -816,7 +824,7 @@ export function NavbarFooterEditor({
 
             <div>
               <label className="label">Phone Number</label>
-              <input
+              <input data-field="footer.phone"
                 type="text"
                 className="input"
                 value={content.footer.phone}
@@ -827,7 +835,7 @@ export function NavbarFooterEditor({
 
             <div>
               <label className="label">Email Address</label>
-              <input
+              <input data-field="footer.email"
                 type="email"
                 className="input"
                 value={content.footer.email}
@@ -838,7 +846,7 @@ export function NavbarFooterEditor({
 
             <div>
               <label className="label">Physical Address</label>
-              <input
+              <input data-field="footer.address"
                 type="text"
                 className="input"
                 value={content.footer.address}
@@ -850,7 +858,7 @@ export function NavbarFooterEditor({
 
           <div>
             <label className="label">Bottom Copyright Notice</label>
-            <input
+            <input data-field="footer.copyright_text"
               type="text"
               className="input text-xs"
               value={content.footer.copyright_text}

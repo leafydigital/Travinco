@@ -238,6 +238,7 @@ export function FollowupDateCell({
                   <button
                     type="button"
                     onClick={() => handleSave(selectedDate || null)}
+                    data-no-confirm-save="true"
                     disabled={isPending || !selectedDate}
                     className="btn-primary flex items-center gap-1.5 px-3 py-1.5 text-xs cursor-pointer"
                   >

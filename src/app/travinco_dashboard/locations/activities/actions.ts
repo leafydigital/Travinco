@@ -44,13 +44,18 @@ export async function bulkCreateActivities(
     return { error: 'Please provide at least one activity to save.' };
   }
 
-  // Filter items that have a valid name and location_id
+  // Cards with nothing filled in are ignored; a card with details but no name or
+  // location is an error (never silently dropped).
   const candidates = items.filter(
-    (a) => a && Number(a.location_id) > 0 && typeof a.name === 'string' && a.name.trim().length > 0
+    (a) => a && (Number(a.location_id) > 0 || [a.name, a.description].some((v) => String(v ?? '').trim()))
   );
 
   if (candidates.length === 0) {
     return { error: 'Please provide a valid location and activity name for at least one card.' };
+  }
+  for (const [i, a] of candidates.entries()) {
+    if (!String(a.name ?? '').trim()) return { error: `Activity card ${i + 1}: activity name is required.` };
+    if (!(Number(a.location_id) > 0)) return { error: `Activity card ${i + 1} ("${a.name.trim()}"): choose a location.` };
   }
 
   const supabase = await createClient();

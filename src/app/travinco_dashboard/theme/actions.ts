@@ -5,6 +5,16 @@ import { requireProfile, checkPageAccess } from '@/lib/supabase/auth-helpers';
 import { uploadImageToBucket } from '@/lib/storage-upload';
 import { revalidatePath } from '@/lib/public-cache';
 import type { Tables } from '@/types/database';
+import {
+  validateHomePageContent,
+  validateListingPageContent,
+  validateAboutPageContent,
+  validateNavbarFooterContent,
+  validatePageTitlesContent,
+  validateContactPageContent,
+  firstThemeError,
+  isValidLink,
+} from '@/lib/validations/theme';
 
 /**
  * Thoroughly revalidate customer layout and all customer-facing routes so
@@ -204,6 +214,9 @@ export async function uploadThemeImageAction(formData: FormData): Promise<{
     const badge = (formData.get('badge') as string)?.trim() || null;
     const button_text = (formData.get('button_text') as string)?.trim() || null;
     const link_url = (formData.get('link_url') as string)?.trim() || null;
+    if (link_url && !isValidLink(link_url)) {
+      return { success: false, error: 'Button link must be a page path like /packages or a full link starting with https://' };
+    }
 
     if (!file || typeof file === 'string' || file.size === 0) {
       return { success: false, error: 'Please choose an image file to upload.' };
@@ -248,6 +261,9 @@ export async function updateThemeImageAction(
     const profile = await requireProfile();
     const perm = await checkPageAccess(profile, 'theme', 'edit');
     if (!perm.allowed) return { success: false, error: perm.error || 'Access denied.' };
+    if (data.link_url && !isValidLink(data.link_url)) {
+      return { success: false, error: 'Button link must be a page path like /packages or a full link starting with https://' };
+    }
 
     const supabase = await createAdminClient();
     const updated_at = new Date().toISOString();
@@ -422,6 +438,9 @@ export async function saveHomePageContentAction(
     const perm = await checkPageAccess(profile, 'theme', 'edit');
     if (!perm.allowed) return { success: false, error: perm.error || 'Access denied.' };
 
+    const invalid = firstThemeError(validateHomePageContent(content));
+    if (invalid) return { success: false, error: invalid };
+
     const supabase = await createAdminClient();
     let { error: upsertError } = await supabase.from('website_settings').upsert(
       {
@@ -506,6 +525,9 @@ export async function savePackagesPageContentAction(
     const profile = await requireProfile();
     const perm = await checkPageAccess(profile, 'theme', 'edit');
     if (!perm.allowed) return { success: false, error: perm.error || 'Access denied.' };
+
+    const invalid = firstThemeError(validateListingPageContent(content));
+    if (invalid) return { success: false, error: invalid };
 
     // Terms live in their own setting (read by every package detail page).
     const { terms_and_conditions, ...pageContent } = content;
@@ -641,6 +663,9 @@ export async function saveDestinationsPageContentAction(
     const perm = await checkPageAccess(profile, 'theme', 'edit');
     if (!perm.allowed) return { success: false, error: perm.error || 'Access denied.' };
 
+    const invalid = firstThemeError(validateListingPageContent(content));
+    if (invalid) return { success: false, error: invalid };
+
     const supabase = await createAdminClient();
     let { error: upsertError } = await supabase.from('website_settings').upsert(
       {
@@ -760,6 +785,9 @@ export async function saveBlogPageContentAction(
     const perm = await checkPageAccess(profile, 'theme', 'edit');
     if (!perm.allowed) return { success: false, error: perm.error || 'Access denied.' };
 
+    const invalid = firstThemeError(validateListingPageContent(content));
+    if (invalid) return { success: false, error: invalid };
+
     const supabase = await createAdminClient();
     let { error: upsertError } = await supabase.from('website_settings').upsert(
       {
@@ -878,6 +906,9 @@ export async function saveAboutPageContentAction(
     const profile = await requireProfile();
     const perm = await checkPageAccess(profile, 'theme', 'edit');
     if (!perm.allowed) return { success: false, error: perm.error || 'Access denied.' };
+
+    const invalid = firstThemeError(validateAboutPageContent(content));
+    if (invalid) return { success: false, error: invalid };
 
     const supabase = await createAdminClient();
     let { error: upsertError } = await supabase.from('website_settings').upsert(
@@ -1031,6 +1062,9 @@ export async function saveNavbarFooterContentAction(
     const profile = await requireProfile();
     const perm = await checkPageAccess(profile, 'theme', 'edit');
     if (!perm.allowed) return { success: false, error: perm.error || 'Access denied.' };
+
+    const invalid = firstThemeError(validateNavbarFooterContent(content));
+    if (invalid) return { success: false, error: invalid };
 
     const supabase = await createAdminClient();
     let { error: upsertError } = await supabase.from('website_settings').upsert(
@@ -1189,6 +1223,9 @@ export async function savePageTitlesContentAction(
       return { success: false, error: perm.error || 'Access denied.' };
     }
 
+    const invalid = firstThemeError(validatePageTitlesContent(content));
+    if (invalid) return { success: false, error: invalid };
+
     // 1. Immediately persist to local JSON file for instant reliability
     try {
       const fs = await import('node:fs/promises');
@@ -1304,6 +1341,9 @@ export async function saveContactPageContentAction(
     const profile = await requireProfile();
     const perm = await checkPageAccess(profile, 'theme', 'edit');
     if (!perm.allowed) return { success: false, error: perm.error || 'Access denied.' };
+
+    const invalid = firstThemeError(validateContactPageContent(content));
+    if (invalid) return { success: false, error: invalid };
 
     const supabase = await createAdminClient();
     let { error: upsertError } = await supabase.from('website_settings').upsert(

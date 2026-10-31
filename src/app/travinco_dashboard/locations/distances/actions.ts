@@ -50,15 +50,19 @@ export async function bulkCreateDistances(
     notes: string | null;
   }> = [];
 
-  for (const item of items) {
+  for (const [i, item] of items.entries()) {
     if (!item) continue;
+    // Completely empty cards are ignored; anything partly filled must be valid
+    if (!item.from_location_id && !item.to_location_id && !item.distance_km) continue;
     const a = Number(item.from_location_id);
     const b = Number(item.to_location_id);
     const dist = Number(item.distance_km);
 
-    if (isNaN(a) || a <= 0 || isNaN(b) || b <= 0) continue;
-    if (a === b) continue; // cannot be between same location
-    if (isNaN(dist) || dist < 0) continue;
+    if (isNaN(a) || a <= 0 || isNaN(b) || b <= 0) {
+      return { error: `Route #${i + 1} requires both "From" and "To" locations.` };
+    }
+    if (a === b) return { error: `Route #${i + 1}: "From" and "To" cannot be the same location.` };
+    if (isNaN(dist) || dist <= 0) return { error: `Route #${i + 1} requires a valid distance in km (greater than 0).` };
 
     const fromLoc = Math.min(a, b);
     const toLoc = Math.max(a, b);

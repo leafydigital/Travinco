@@ -34,9 +34,12 @@ import {
   slugify,
   validatePackageExtras,
   fieldErrorsFromZod,
+  nightsRuleError,
   HIGHLIGHT_MAX_LENGTH,
   SHORT_DESCRIPTION_MAX_LENGTH,
   MAX_FEATURED_PACKAGES,
+  availabilityLeadErrors,
+  earliestAvailabilityDate,
 } from '@/lib/validations/package';
 import {
   AdminDateField,
@@ -49,6 +52,7 @@ import {
   parseNonNegative,
   type FeaturedItem,
 } from '@/components/admin/package-fields';
+import { StringListEditor } from '@/components/admin/string-list-editor';
 
 export type DestinationOption = { id: string; name: string };
 
@@ -75,9 +79,13 @@ const FIELD_TAB: Record<string, EditorTab> = {
   highlights: 'inclusions',
   meta_title: 'seo',
   meta_description: 'seo',
+  images: 'media',
   itinerary: 'itinerary',
   extras: 'inclusions',
 };
+
+/** Tabs in the order the "Next step" button walks through them. */
+const TAB_ORDER: EditorTab[] = ['basic', 'pricing', 'itinerary', 'inclusions', 'media', 'seo'];
 
 const PENDING_DESTINATION_ID = '00000000-0000-0000-0000-000000000000';
 
@@ -127,13 +135,9 @@ export type BulkPackageDraft = {
   cover_image: string | null;
   /** Gallery images. */
   images: string[];
-  imageUrlsText: string;
   videoUrlsText: string;
   meta_title: string;
   meta_description: string;
-
-  // Status
-  status: 'draft' | 'published';
 };
 
 function createEmptyPackageDraft(index: number): BulkPackageDraft {
@@ -143,7 +147,7 @@ function createEmptyPackageDraft(index: number): BulkPackageDraft {
     slug: '',
     destination_id: '',
     destination_name: '',
-    category: 'family',
+    category: 'other',
     duration_days: 3,
     duration_nights: 2,
     short_description: '',
@@ -168,11 +172,9 @@ function createEmptyPackageDraft(index: number): BulkPackageDraft {
     faqs: [],
     cover_image: null,
     images: [],
-    imageUrlsText: '',
     videoUrlsText: '',
     meta_title: '',
     meta_description: '',
-    status: 'draft',
   };
 }
 
@@ -192,11 +194,11 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
   const [activeTab, setActiveTab] = useState<EditorTab>('basic');
   const [formError, setFormError] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
-  const [singleImageUrlInput, setSingleImageUrlInput] = useState('');
-  const [coverUrlInput, setCoverUrlInput] = useState('');
   /** Inline errors per draft id (set when "Bulk Save" validation fails). */
   const [errorsById, setErrorsById] = useState<Record<string, Record<string, string>>>({});
   const [showRowErrors, setShowRowErrors] = useState(false);
+  /** Chosen in the toolbar; applied to every package when "Bulk Save" is clicked. */
+  const [saveMode, setSaveMode] = useState<'draft' | 'published'>('draft');
 
   // Featured (homepage) slots: existing featured packages are fetched lazily
   const [existingFeatured, setExistingFeatured] = useState<FeaturedItem[] | null>(null);
@@ -205,16 +207,21 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
   const [checkingFeatured, setCheckingFeatured] = useState(false);
 
   const range = availabilityRange();
+  // New packages can only be available from 2 days ahead (same rule as the single form)
+  const minDate = earliestAvailabilityDate();
 
   // Fallback if activeIdx goes out of bounds
   const currentPkg = packages[activeIdx] || packages[0];
   const currentErrors = (currentPkg && errorsById[currentPkg.id]) || {};
   const nightsError =
-    typeof currentPkg?.duration_days === 'number' &&
-    typeof currentPkg?.duration_nights === 'number' &&
-    currentPkg.duration_nights > currentPkg.duration_days
-      ? 'Nights must be less than or equal to days'
-      : currentErrors.duration_nights;
+    nightsRuleError(currentPkg?.duration_days, currentPkg?.duration_nights) ?? currentErrors.duration_nights;
+  const discountError =
+    typeof currentPkg?.discount_price === 'number' &&
+    currentPkg.discount_price > 0 &&
+    typeof currentPkg.base_price === 'number' &&
+    currentPkg.discount_price >= currentPkg.base_price
+      ? 'Discount price must be lower than the starting price'
+      : currentErrors.discount_price;
 
   /** Props for number inputs: clearable, never negative. */
   function numberInput(
@@ -233,6 +240,28 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
         if (parsed !== null) updateCurrent(field, parsed as never);
       },
     };
+  }
+
+  const tabIndex = TAB_ORDER.indexOf(activeTab);
+  const isLastTab = tabIndex === TAB_ORDER.length - 1;
+
+  /** Next tab of this package; after the last tab, the first tab of the next package. */
+  function goNext() {
+    if (!isLastTab) {
+      setActiveTab(TAB_ORDER[tabIndex + 1]!);
+    } else if (activeIdx < packages.length - 1) {
+      setActiveIdx(activeIdx + 1);
+      setActiveTab(TAB_ORDER[0]!);
+    }
+  }
+
+  function goPrevious() {
+    if (tabIndex > 0) {
+      setActiveTab(TAB_ORDER[tabIndex - 1]!);
+    } else if (activeIdx > 0) {
+      setActiveIdx(activeIdx - 1);
+      setActiveTab(TAB_ORDER[TAB_ORDER.length - 1]!);
+    }
   }
 
   function fieldClass(field: string) {
@@ -396,38 +425,6 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
     e.target.value = '';
   }
 
-  function handleAddCoverUrl() {
-    const url = coverUrlInput.trim();
-    if (!url) return;
-    if (!url.startsWith('http://') && !url.startsWith('https://')) {
-      toast.error('Please enter a valid image URL starting with http:// or https://');
-      return;
-    }
-    updateCurrent('cover_image', url);
-    setCoverUrlInput('');
-    toast.success('Cover image set');
-  }
-
-  function handleAddImageUrl() {
-    const url = singleImageUrlInput.trim();
-    if (!url) return;
-    if (!url.startsWith('http://') && !url.startsWith('https://')) {
-      toast.error('Please enter a valid image URL starting with http:// or https://');
-      return;
-    }
-    setPackages((prev) =>
-      prev.map((pkg, idx) => {
-        if (idx !== activeIdx) return pkg;
-        return {
-          ...pkg,
-          images: [...(pkg.images || []), url],
-        };
-      })
-    );
-    setSingleImageUrlInput('');
-    toast.success('Image added');
-  }
-
   function removeImage(imageIndex: number) {
     setPackages((prev) =>
       prev.map((pkg, idx) => {
@@ -483,31 +480,6 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
     }
   }
 
-  // Copy common details (e.g. inclusions, currency) from active package to all others
-  function copyCommonToAll(type: 'inclusions' | 'exclusions' | 'pricing_rules') {
-    if (!currentPkg) return;
-    setPackages((prev) =>
-      prev.map((pkg, idx) => {
-        if (idx === activeIdx) return pkg;
-        if (type === 'inclusions') {
-          return { ...pkg, inclusions: [...currentPkg.inclusions] };
-        }
-        if (type === 'exclusions') {
-          return { ...pkg, exclusions: [...currentPkg.exclusions] };
-        }
-        if (type === 'pricing_rules') {
-          return {
-            ...pkg,
-            currency: currentPkg.currency,
-            pickup_info: currentPkg.pickup_info,
-          };
-        }
-        return pkg;
-      })
-    );
-    toast.success(`Copied ${type.replace('_', ' ')} to all other packages!`);
-  }
-
   // Submit all packages in bulk
   function handleBulkSave() {
     setFormError(null);
@@ -520,13 +492,8 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
     }
 
     const payload: BulkPackageInput[] = validPackages.map((p) => {
-      const pastedImages = p.imageUrlsText
-        .split(/[\n,]/)
-        .map((u) => u.trim())
-        .filter(Boolean);
-
       const allImages = Array.from(
-        new Set([...(p.cover_image ? [p.cover_image] : []), ...(p.images || []), ...pastedImages])
+        new Set([...(p.cover_image ? [p.cover_image] : []), ...(p.images || [])])
       );
 
       const validVideos = p.videoUrlsText
@@ -563,7 +530,7 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
         cover_image_url: allImages[0] || null,
         meta_title: p.meta_title.trim() || null,
         meta_description: p.meta_description.trim() || null,
-        status: p.status,
+        status: saveMode,
       };
     });
 
@@ -576,18 +543,21 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
         ...item,
         destination_id: item.destination_id || (item.destination_name ? PENDING_DESTINATION_ID : null),
       });
-      const errs = check.success ? {} : fieldErrorsFromZod(check.error);
+      const errs: Record<string, string> = {
+        ...availabilityLeadErrors(item),
+        ...(check.success ? {} : fieldErrorsFromZod(check.error)),
+      };
       const extrasError = validatePackageExtras(item);
       if (extrasError) errs[extrasError.startsWith('Itinerary') ? 'itinerary' : 'extras'] = extrasError;
       if (item.status === 'published') {
         if (!item.base_price) errs.base_price ??= 'A starting price is required to publish';
-        if (!item.imageUrls?.length) errs.extras ??= 'At least one photo is required to publish';
+        if (!item.imageUrls?.length) errs.images = 'At least one photo is required to publish';
       }
       if (Object.keys(errs).length > 0) {
         nextErrors[draft.id] = errs;
         if (!firstProblem) {
           const [field, message] = Object.entries(errs)[0]!;
-          const tab = item.status === 'published' && field === 'extras' && !item.imageUrls?.length ? 'media' : FIELD_TAB[field] ?? 'basic';
+          const tab = FIELD_TAB[field] ?? 'basic';
           firstProblem = { draftId: draft.id, tab, message: `Package ${i + 1} ("${item.title}"): ${message}` };
         }
       }
@@ -611,7 +581,10 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
         setFormError(res.error);
         toast.error(res.error);
       } else {
-        toast.success(`Successfully bulk-saved ${res.count ?? validPackages.length} packages!`);
+        const count = res.count ?? validPackages.length;
+        toast.success(
+          saveMode === 'published' ? `Published ${count} packages` : `Saved ${count} packages as drafts`
+        );
         router.push('/travinco_dashboard/packages');
         router.refresh();
       }
@@ -647,6 +620,17 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
             <Plus className="h-3.5 w-3.5" />
             <span>Add package</span>
           </button>
+
+          <select
+            value={saveMode}
+            onChange={(e) => setSaveMode(e.target.value as 'draft' | 'published')}
+            disabled={isPending}
+            className="input h-8 w-auto text-xs font-semibold cursor-pointer"
+            title="What happens to all packages when you click Bulk Save"
+          >
+            <option value="draft">Save as Draft</option>
+            <option value="published">Publish Directly</option>
+          </select>
 
           <button
             type="button"
@@ -786,12 +770,12 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
                     )}
                     <span
                       className={`ml-auto rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${
-                        pkg.status === 'published'
+                        saveMode === 'published'
                           ? 'bg-emerald-100 text-emerald-800'
                           : 'bg-sand-100 text-sand-800'
                       }`}
                     >
-                      {pkg.status}
+                      {saveMode}
                     </span>
                   </div>
                 </div>
@@ -799,14 +783,6 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
             })}
           </div>
 
-          <button
-            type="button"
-            onClick={addPackage}
-            className="w-full border-2 border-dashed border-ink-200 rounded-xl p-3 text-xs font-semibold text-ink-600 hover:border-brand-500 hover:text-brand-700 hover:bg-brand-50/20 transition flex items-center justify-center gap-1.5 cursor-pointer"
-          >
-            <Plus className="h-4 w-4" />
-            <span>Add another package</span>
-          </button>
         </div>
 
         {/* Right Panel: Detailed Form with All Fields */}
@@ -821,40 +797,6 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
                 {currentPkg?.title || `Package #${activeIdx + 1} Details`}
               </h2>
             </div>
-
-            <div className="flex items-center gap-2">
-              {/* Status Picker */}
-              <select
-                value={currentPkg?.status}
-                onChange={(e) => updateCurrent('status', e.target.value as 'draft' | 'published')}
-                className="input h-8 text-xs font-semibold cursor-pointer"
-              >
-                <option value="draft">Save as Draft</option>
-                <option value="published">Publish Directly</option>
-              </select>
-
-              {/* Quick Copy dropdown */}
-              <div className="flex items-center gap-1 text-[11px] text-ink-500">
-                <span className="text-ink-300">|</span>
-                <button
-                  type="button"
-                  onClick={() => copyCommonToAll('inclusions')}
-                  className="hover:text-brand-700 hover:underline cursor-pointer px-1"
-                  title="Copy this package's inclusions to all other packages"
-                >
-                  Copy inclusions to all
-                </button>
-                <span className="text-ink-300">&bull;</span>
-                <button
-                  type="button"
-                  onClick={() => copyCommonToAll('exclusions')}
-                  className="hover:text-brand-700 hover:underline cursor-pointer px-1"
-                  title="Copy this package's exclusions to all other packages"
-                >
-                  Copy exclusions to all
-                </button>
-              </div>
-            </div>
           </div>
 
           {/* Navigation Tabs for this Package */}
@@ -866,7 +808,7 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
               { id: 'inclusions', label: '4. Inclusions & FAQs' },
               {
                 id: 'media',
-                label: `5. Photos & Video${currentPkg && photoCount(currentPkg) ? ` (${photoCount(currentPkg)})` : ''}`,
+                label: `5. Cover, Gallery & Video${currentPkg && photoCount(currentPkg) ? ` (${photoCount(currentPkg)})` : ''}`,
               },
               { id: 'seo', label: '6. SEO' },
             ].map((tab) => (
@@ -1003,55 +945,6 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
                   {fieldError('full_description')}
                 </div>
 
-                {/* Quick Cover Photo Banner */}
-                <div className="sm:col-span-2 lg:col-span-6 rounded-xl border border-ink-150 p-3.5 bg-ink-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className="relative h-14 w-20 shrink-0 rounded-lg overflow-hidden border border-ink-200 bg-ink-100 flex items-center justify-center">
-                      {currentPkg?.cover_image || currentPkg?.images?.length ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={currentPkg.cover_image ?? currentPkg.images[0]} alt="" className="h-full w-full object-cover" />
-                      ) : (
-                        <div className="text-center">
-                          <ImageIcon className="h-5 w-5 text-ink-300 mx-auto" />
-                          <span className="text-[9px] text-ink-400 block font-medium">No Cover</span>
-                        </div>
-                      )}
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-bold text-ink-800">
-                        Cover Image {currentPkg?.cover_image ? 'Set' : 'Not Set'}
-                        {currentPkg?.images?.length ? ` · ${currentPkg.images.length} gallery image${currentPkg.images.length === 1 ? '' : 's'}` : ''}
-                      </h4>
-                      <p className="text-[11px] text-ink-400 mt-0.5">
-                        {currentPkg?.cover_image
-                          ? 'Shown on public package cards and at the top of the package page.'
-                          : 'Add a cover image in the Photos & Video tab (an image is required to publish).'}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <label className="btn-outline h-7 text-xs inline-flex items-center gap-1.5 px-2.5 cursor-pointer">
-                      <UploadCloud className="h-3 w-3 text-brand-600" />
-                      <span>Upload Photo</span>
-                      <input
-                        type="file"
-                        accept="image/jpeg,image/png,image/webp"
-                        multiple
-                        onChange={handleFileSelect}
-                        disabled={isUploading}
-                        className="sr-only"
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab('media')}
-                      className="btn-outline h-7 text-xs px-2.5 cursor-pointer text-ink-700"
-                    >
-                      Manage Photos →
-                    </button>
-                  </div>
-                </div>
               </div>
             </div>
           )}
@@ -1066,7 +959,7 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
                   </label>
                   <input
                     {...numberInput('base_price')}
-                    placeholder="18500"
+                    placeholder="Enter starting price"
                     className={`input font-semibold ${fieldClass('base_price')}`}
                   />
                   {fieldError('base_price')}
@@ -1076,10 +969,10 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
                   <label className="label">Discount / Offer Price</label>
                   <input
                     {...numberInput('discount_price')}
-                    placeholder="15999"
-                    className={`input ${fieldClass('discount_price')}`}
+                    placeholder="Enter discount price (optional)"
+                    className={`input ${discountError ? 'border-red-400 focus:border-red-500 focus:ring-red-500' : ''}`}
                   />
-                  {fieldError('discount_price')}
+                  {discountError && <p className="field-error">{discountError}</p>}
                 </div>
 
                 <div>
@@ -1108,7 +1001,8 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
                   <label className="label">Available From</label>
                   <AdminDateField
                     value={currentPkg?.available_from ?? ''}
-                    min={range.min}
+                    min={minDate}
+                    invalid={Boolean(currentErrors.available_from)}
                     max={range.max}
                     onChange={(iso) => {
                       updateCurrent('available_from', iso);
@@ -1117,13 +1011,14 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
                       }
                     }}
                   />
+                  {fieldError('available_from')}
                 </div>
 
                 <div>
                   <label className="label">Available To</label>
                   <AdminDateField
                     value={currentPkg?.available_to ?? ''}
-                    min={currentPkg?.available_from || range.min}
+                    min={currentPkg?.available_from || minDate}
                     max={range.max}
                     invalid={Boolean(currentErrors.available_to)}
                     onChange={(iso) => updateCurrent('available_to', iso)}
@@ -1303,31 +1198,14 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
               )}
 
               {/* Highlights */}
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="label mb-0">Package Highlights (one per line)</label>
-                  <span className="text-[11px] text-ink-400">Max {HIGHLIGHT_MAX_LENGTH} characters per line</span>
-                </div>
-                <textarea
-                  rows={3}
-                  value={currentPkg?.highlights.join('\n')}
-                  onChange={(e) => updateCurrent('highlights', e.target.value.split('\n'))}
-                  placeholder={`Private houseboat cruise in Alleppey\nJeep safari in Wayanad\nComplimentary candle-light dinner`}
-                  className={`input text-xs leading-relaxed ${fieldClass('highlights')}`}
-                />
-                {(() => {
-                  const tooLong = (currentPkg?.highlights ?? [])
-                    .map((h, i) => ({ n: i + 1, len: h.trim().length }))
-                    .filter((h) => h.len > HIGHLIGHT_MAX_LENGTH);
-                  return tooLong.length > 0 ? (
-                    <p className="field-error">
-                      {tooLong.map((h) => `Line ${h.n} has ${h.len} characters`).join('; ')} — max {HIGHLIGHT_MAX_LENGTH}.
-                    </p>
-                  ) : (
-                    fieldError('highlights')
-                  );
-                })()}
-              </div>
+              <StringListEditor
+                label="Package Highlights"
+                items={currentPkg?.highlights ?? []}
+                onChange={(items) => updateCurrent('highlights', items)}
+                placeholder="e.g. Private houseboat cruise in Alleppey"
+                maxLength={HIGHLIGHT_MAX_LENGTH}
+                error={currentErrors.highlights}
+              />
 
               {/* Inclusions & Exclusions */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1436,6 +1314,12 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
           {/* TAB 5: Photos & Video */}
           {activeTab === 'media' && (
             <div className="space-y-6 animate-in fade-in duration-100">
+              {currentErrors.images && (
+                <p className="rounded-lg border border-coral-200 bg-coral-50 px-3 py-2 text-xs text-coral-800">
+                  {currentErrors.images}
+                </p>
+              )}
+
               {/* Cover Image Card */}
               <div className="rounded-xl border border-ink-150 p-5 bg-white space-y-4 shadow-2xs">
                 <div>
@@ -1483,31 +1367,6 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
                         className="sr-only"
                       />
                     </label>
-                    <div>
-                      <span className="text-[11px] font-semibold text-ink-600 block mb-1.5">Or use an image URL</span>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="url"
-                          value={coverUrlInput}
-                          onChange={(e) => setCoverUrlInput(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault();
-                              handleAddCoverUrl();
-                            }
-                          }}
-                          placeholder="https://images.unsplash.com/photo-..."
-                          className="input h-8 text-xs flex-1 font-mono"
-                        />
-                        <button
-                          type="button"
-                          onClick={handleAddCoverUrl}
-                          className="btn-outline h-8 text-xs px-3 font-semibold shrink-0 cursor-pointer"
-                        >
-                          Set Cover
-                        </button>
-                      </div>
-                    </div>
                   </div>
                 </div>
               </div>
@@ -1566,36 +1425,6 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
                   </div>
                 )}
 
-                {/* Add Image via URL */}
-                <div className="pt-2 border-t border-ink-100">
-                  <span className="text-[11px] font-semibold text-ink-600 block mb-1.5">
-                    Or Add Image via Web URL
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="url"
-                      value={singleImageUrlInput}
-                      onChange={(e) => setSingleImageUrlInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          handleAddImageUrl();
-                        }
-                      }}
-                      placeholder="https://images.unsplash.com/photo-..."
-                      className="input h-8 text-xs flex-1 font-mono"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleAddImageUrl}
-                      className="btn-outline h-8 text-xs px-3 font-semibold shrink-0 cursor-pointer"
-                    >
-                      <Plus className="h-3.5 w-3.5 mr-1" />
-                      Add URL
-                    </button>
-                  </div>
-                </div>
-
                 {/* Photo Gallery Grid */}
                 {currentPkg?.images && currentPkg.images.length > 0 ? (
                   <div className="pt-2">
@@ -1604,7 +1433,7 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
                         Gallery ({currentPkg.images.length})
                       </span>
                       <span className="text-[11px] text-ink-400">
-                        Hover an image to use it as the cover or reorder
+                        Use the buttons on each image to set it as cover, remove or reorder
                       </span>
                     </div>
 
@@ -1625,7 +1454,7 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
                           <button
                             type="button"
                             onClick={() => setCoverImage(i)}
-                            className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 transition rounded-md bg-white/95 hover:bg-white px-2 py-0.5 text-[10px] font-semibold text-ink-800 shadow-xs flex items-center gap-1 cursor-pointer"
+                            className="absolute top-2 left-2 transition rounded-md bg-white/95 hover:bg-white px-2 py-0.5 text-[10px] font-semibold text-ink-800 shadow-xs flex items-center gap-1 cursor-pointer"
                             title="Use as package cover image"
                           >
                             <Star className="h-2.5 w-2.5 text-amber-500 fill-amber-500" />
@@ -1636,14 +1465,14 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
                           <button
                             type="button"
                             onClick={() => removeImage(i)}
-                            className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition rounded-md bg-coral-600/90 hover:bg-coral-600 p-1 text-white shadow-xs cursor-pointer"
+                            className="absolute top-2 right-2 transition rounded-md bg-coral-600/90 hover:bg-coral-600 p-1 text-white shadow-xs cursor-pointer"
                             title="Remove photo"
                           >
                             <Trash2 className="h-3 w-3" />
                           </button>
 
                           {/* Reorder controls */}
-                          <div className="absolute bottom-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
+                          <div className="absolute bottom-2 right-2 flex items-center gap-1">
                             {i > 0 && (
                               <button
                                 type="button"
@@ -1673,24 +1502,9 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
                   <div className="text-center py-6 border border-dashed border-ink-200 rounded-xl bg-ink-50/30">
                     <ImageIcon className="h-8 w-8 text-ink-300 mx-auto mb-1.5" />
                     <p className="text-xs text-ink-500 font-medium">No gallery images added yet.</p>
-                    <p className="text-[11px] text-ink-400">Upload photos above or paste URLs below.</p>
+                    <p className="text-[11px] text-ink-400">Upload photos above.</p>
                   </div>
                 )}
-              </div>
-
-              {/* Batch Paste Image URLs (Collapsible or secondary) */}
-              <div className="rounded-xl border border-ink-150 p-4 bg-white space-y-2 shadow-2xs">
-                <label className="label mb-0">Paste Multiple Gallery Image URLs (Optional)</label>
-                <p className="text-[11px] text-ink-400">
-                  If you have external CDN or hosted URLs, paste them here (one per line). They are added to the gallery.
-                </p>
-                <textarea
-                  rows={3}
-                  value={currentPkg?.imageUrlsText}
-                  onChange={(e) => updateCurrent('imageUrlsText', e.target.value)}
-                  placeholder={`https://images.unsplash.com/photo-1593693397690-362cb9666fc2\nhttps://images.unsplash.com/photo-1602216056096-3b40cc0c9944`}
-                  className="input font-mono text-xs leading-relaxed"
-                />
               </div>
 
               {/* Videos */}
@@ -1749,24 +1563,24 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
           <div className="flex items-center justify-between border-t border-ink-100 pt-4 text-xs">
             <button
               type="button"
-              disabled={activeIdx === 0}
-              onClick={() => setActiveIdx((prev) => Math.max(0, prev - 1))}
+              disabled={activeIdx === 0 && tabIndex === 0}
+              onClick={goPrevious}
               className="btn-outline h-8 px-3 text-xs disabled:opacity-30 cursor-pointer"
             >
-              &larr; Previous Package
+              &larr; {tabIndex > 0 ? 'Previous step' : 'Previous package'}
             </button>
 
             <span className="text-ink-400 font-medium">
-              Editing Package {activeIdx + 1} of {packages.length}
+              Package {activeIdx + 1} of {packages.length} &bull; Step {tabIndex + 1} of {TAB_ORDER.length}
             </span>
 
             <button
               type="button"
-              disabled={activeIdx >= packages.length - 1}
-              onClick={() => setActiveIdx((prev) => Math.min(packages.length - 1, prev + 1))}
+              disabled={isLastTab && activeIdx >= packages.length - 1}
+              onClick={goNext}
               className="btn-outline h-8 px-3 text-xs disabled:opacity-30 cursor-pointer"
             >
-              Next Package &rarr;
+              {isLastTab ? 'Next package' : 'Next step'} &rarr;
             </button>
           </div>
         </div>

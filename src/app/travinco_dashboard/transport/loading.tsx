@@ -18,7 +18,7 @@ export default function TransportLoading() {
           <div className="input w-full bg-ink-50/50 text-ink-400">Search vehicle, company, contact, phone…</div>
         </div>
         <div className="input w-44 bg-ink-50/50 text-ink-400">All car types</div>
-        <div className="btn-outline opacity-70">Filter</div>
+        <div className="btn-outline opacity-70">Refresh</div>
       </div>
 
       {/* 3. Table Skeleton */}

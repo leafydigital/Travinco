@@ -2,12 +2,22 @@
 
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
+import { isValidPhoneNumber } from 'libphonenumber-js';
+import { isFakePhone } from '@/lib/validations/phone';
+import { GSTIN_RE } from '@/lib/validations/finance';
+import { isValidUrl } from '@/lib/validations/links';
 import { createClient } from '@/lib/supabase/server';
 import { requireProfile } from '@/lib/supabase/auth-helpers';
 import { canEditMasters, canAccess } from '@/lib/tour/access';
 
 const optStr = (max: number) =>
   z.preprocess((v) => (v == null || String(v).trim() === '' ? null : String(v).trim()), z.string().max(max).nullable());
+
+const validPhone = (v: string | null) => !v || (isValidPhoneNumber(v, 'IN') && !isFakePhone(v));
+const validUrl = (v: string | null) => !v || isValidUrl(v);
+/** 24-hour "14:00" or 12-hour "2:00 PM" */
+const TIME_RE = /^(?:[01]?\d|2[0-3]):[0-5]\d$|^(?:0?[1-9]|1[0-2])(?::[0-5]\d)?\s?[AaPp][Mm]$/;
+const validTime = (v: string | null) => !v || TIME_RE.test(v);
 
 const hotelSchema = z.object({
   name: z.preprocess((v) => String(v ?? '').trim(), z.string().min(1, 'Hotel name is required').max(150)),
@@ -16,17 +26,17 @@ const hotelSchema = z.object({
   area: optStr(80),
   gst_basis: optStr(40),
   contact_person: optStr(120),
-  phone: optStr(30),
-  alt_phone: optStr(30),
-  whatsapp: optStr(30),
+  phone: optStr(30).refine(validPhone, 'Enter a valid phone number'),
+  alt_phone: optStr(30).refine(validPhone, 'Enter a valid alternate phone number'),
+  whatsapp: optStr(30).refine(validPhone, 'Enter a valid WhatsApp number'),
   email: optStr(150).refine((v) => !v || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v), 'Enter a valid email'),
   reservation_email: optStr(150).refine((v) => !v || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v), 'Enter a valid reservation email'),
-  website: optStr(255),
+  website: optStr(255).refine(validUrl, 'Website must be a full link starting with https://'),
   address: optStr(2000),
-  google_maps_url: optStr(2000),
-  check_in_time: optStr(10),
-  check_out_time: optStr(10),
-  gstin: optStr(20),
+  google_maps_url: optStr(2000).refine(validUrl, 'Google Maps link must be a full link starting with https://'),
+  check_in_time: optStr(10).refine(validTime, 'Check-in time must look like 14:00 or 2:00 PM'),
+  check_out_time: optStr(10).refine(validTime, 'Check-out time must look like 11:00 or 11:00 AM'),
+  gstin: optStr(20).refine((v) => !v || GSTIN_RE.test(v.toUpperCase()), 'GSTIN must be 15 characters, like 32ABCDE1234F1Z5'),
   amenities: optStr(4000),
   payment_terms: optStr(4000),
   bank_details: optStr(4000),

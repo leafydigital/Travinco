@@ -8,6 +8,10 @@ import { canAccess, isAdminRole, isFinanceRole } from '@/lib/tour/access';
 import { getTourSettings } from '@/lib/tour/data';
 import { addDays } from '@/lib/tour/engine';
 import type { QuoteSnapshot } from '@/lib/tour/types';
+import { isValidPhoneNumber } from 'libphonenumber-js';
+import { isFakePhone } from '@/lib/validations/phone';
+import { validateEmailAddress } from '@/lib/validations/contact-rules';
+import { GSTIN_RE } from '@/lib/validations/finance';
 
 export type InvoiceItem = { description: string; sac: string; qty: number; rate: number; amount: number };
 
@@ -25,6 +29,24 @@ function taxes(taxable: number, gstPct: number, mode: 'cgst_sgst' | 'igst') {
   if (mode === 'igst') return { gst, cgst: 0, sgst: 0, igst: gst };
   const half = r2(gst / 2);
   return { gst: r2(half * 2), cgst: half, sgst: half, igst: 0 };
+}
+
+/** Finds the CRM customer by phone, or creates one, so the invoice shows under the customer. */
+async function resolveCustomerId(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  profileId: string,
+  c: { id?: string | null; name: string; phone?: string | null; email?: string | null }
+): Promise<string | null> {
+  if (c.id) return c.id;
+  if (!c.phone) return null;
+  const { data: found } = await supabase.from('customers').select('id').eq('phone', c.phone).limit(1).maybeSingle();
+  if (found) return found.id;
+  const { data: created } = await supabase
+    .from('customers')
+    .insert({ full_name: c.name, phone: c.phone, email: c.email ?? null, source: 'other', created_by: profileId })
+    .select('id')
+    .single();
+  return created?.id ?? null;
 }
 
 /**
@@ -51,19 +73,12 @@ export async function convertQuotationToInvoice(quotationId: string, option: 1 |
   const opt = snap?.options?.[option - 1];
 
   // Link (or create) the CRM customer so the invoice shows under the customer.
-  let customerId: string | null = q.customer_id;
-  if (!customerId && q.guest_phone) {
-    const { data: found } = await supabase.from('customers').select('id').eq('phone', q.guest_phone).limit(1).maybeSingle();
-    if (found) customerId = found.id;
-    else {
-      const { data: created } = await supabase
-        .from('customers')
-        .insert({ full_name: q.guest_name, phone: q.guest_phone, email: q.guest_email, source: 'other', created_by: profile.id })
-        .select('id')
-        .single();
-      customerId = created?.id ?? null;
-    }
-  }
+  const customerId = await resolveCustomerId(supabase, profile.id, {
+    id: q.customer_id,
+    name: q.guest_name,
+    phone: q.guest_phone,
+    email: q.guest_email,
+  });
 
   const mode: 'cgst_sgst' | 'igst' = 'cgst_sgst';
   const taxable = r2(total / (1 + gstPct / 100));
@@ -167,59 +182,86 @@ const num = z.preprocess((v) => Number(String(v ?? '').replace(/[^\d.\-]/g, '') 
 const optStr = (max: number) =>
   z.preprocess((v) => (v == null || String(v).trim() === '' ? null : String(v).trim()), z.string().max(max).nullable());
 
-const invoiceSchema = z.object({
+const optDate = z.preprocess((v) => (v ? v : null), z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable());
+
+const invoiceFields = z.object({
   bill_to_name: z.preprocess((v) => String(v ?? '').trim(), z.string().min(1, 'Bill-to name is required').max(150)),
-  bill_to_phone: optStr(30),
-  bill_to_email: optStr(150),
+  bill_to_phone: z
+    .preprocess((v) => String(v ?? '').trim(), z.string().min(1, 'Bill-to phone number is required').max(30))
+    .refine((v) => !v || (isValidPhoneNumber(v, 'IN') && !isFakePhone(v)), 'Enter a valid bill-to phone number'),
+  bill_to_email: optStr(150).refine((v) => !v || !validateEmailAddress(v), 'Enter a valid bill-to email address'),
   bill_to_address: optStr(2000),
-  bill_to_gstin: optStr(20),
+  bill_to_gstin: optStr(20).refine((v) => !v || GSTIN_RE.test(v.toUpperCase()), 'GSTIN must be 15 characters, like 32ABCDE1234F1Z5'),
   place_of_supply: optStr(60),
   invoice_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Invoice date is required'),
-  due_date: z.preprocess((v) => (v ? v : null), z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable()),
+  due_date: optDate,
+  travel_start: optDate,
+  travel_end: optDate,
   discount: num.pipe(z.number().min(0)),
   gst_pct: num.pipe(z.number().min(0).max(28)),
   tax_mode: z.enum(['cgst_sgst', 'igst']),
   notes: optStr(4000),
   terms: optStr(4000),
-  markup_pct: num.optional(),
-  markup_amount: num.optional(),
+  markup_pct: num.pipe(z.number().min(0, 'Markup must be 0 to 100').max(100, 'Markup must be 0 to 100')).optional(),
+  markup_amount: num.pipe(z.number().min(0)).optional(),
   items: z
     .array(
       z.object({
         description: z.preprocess((v) => String(v ?? '').trim(), z.string().min(1, 'Item description is required').max(1000)),
         sac: z.preprocess((v) => String(v ?? '').trim(), z.string().max(10)),
-        qty: num.pipe(z.number().min(0)),
-        rate: num,
+        qty: num.pipe(z.number().positive('Quantity must be more than zero')),
+        rate: num.pipe(z.number().min(0, 'Rate cannot be negative')),
       })
     )
     .min(1, 'Add at least one line item'),
 });
 
-/** Updates an invoice and recomputes its GST, totals, and markup on the server. */
-export async function updateInvoice(id: string, raw: unknown): Promise<{ error?: string }> {
-  const s = await staff();
-  if (!s) return { error: 'You do not have access to invoices.' };
-  const p = invoiceSchema.safeParse(raw);
-  if (!p.success) return { error: p.error.issues[0]?.message ?? 'Please check the invoice.' };
-  const d = p.data;
-  const { data: cur } = await s.supabase.from('invoices').select('status, amount_paid').eq('id', id).maybeSingle();
-  if (!cur) return { error: 'Invoice not found.' };
-  if (cur.status === 'cancelled') return { error: 'Cancelled invoices cannot be edited.' };
+type InvoiceFieldsInput = z.infer<typeof invoiceFields>;
 
+/** Cross-field date rules shared by create and update. */
+function dateRuleIssue(d: InvoiceFieldsInput): string | null {
+  if (d.due_date && d.due_date < d.invoice_date) return 'Due date cannot be before the invoice date';
+  if (d.travel_start && d.travel_end && d.travel_end < d.travel_start) return 'Travel end cannot be before travel start';
+  return null;
+}
+
+const newInvoiceSchema = invoiceFields.extend({
+  customer_id: z.string().uuid().nullish(),
+  enquiry_id: z.string().uuid().nullish(),
+});
+
+/** Prices the lines and splits GST; shared by create and update so they always agree. */
+function computeInvoiceTotals(d: InvoiceFieldsInput) {
   const items: InvoiceItem[] = d.items.map((i) => ({ ...i, rate: r2(i.rate), amount: r2(i.qty * i.rate) }));
   const subtotal = r2(items.reduce((a, i) => a + i.amount, 0));
   const taxable = r2(Math.max(0, subtotal - d.discount));
   const t = taxes(taxable, d.gst_pct, d.tax_mode);
   const exact = taxable + t.gst;
   const total = Math.round(exact);
-  const amountPaid = Number(cur.amount_paid);
-  const status = amountPaid <= 0 ? 'issued' : amountPaid >= total ? 'paid' : 'partially_paid';
-
   const markupPct = d.markup_pct != null && !isNaN(d.markup_pct) ? Number(d.markup_pct) : 15;
   const markupAmount =
     d.markup_amount != null && Number(d.markup_amount) > 0
       ? r2(Number(d.markup_amount))
       : r2((taxable * markupPct) / (100 + markupPct));
+  return { items, subtotal, taxable, t, total, roundOff: r2(total - exact), markupPct, markupAmount };
+}
+
+/** Updates an invoice and recomputes its GST, totals, and markup on the server. */
+export async function updateInvoice(id: string, raw: unknown): Promise<{ error?: string }> {
+  const s = await staff();
+  if (!s) return { error: 'You do not have access to invoices.' };
+  const p = invoiceFields.safeParse(raw);
+  if (!p.success) return { error: p.error.issues[0]?.message ?? 'Please check the invoice.' };
+  const d = p.data;
+  const dateIssue = dateRuleIssue(d);
+  if (dateIssue) return { error: dateIssue };
+  const { data: cur } = await s.supabase.from('invoices').select('status, amount_paid').eq('id', id).maybeSingle();
+  if (!cur) return { error: 'Invoice not found.' };
+  if (cur.status === 'cancelled') return { error: 'Cancelled invoices cannot be edited.' };
+
+  const { items, subtotal, taxable, t, total, roundOff, markupPct, markupAmount } = computeInvoiceTotals(d);
+  const amountPaid = Number(cur.amount_paid);
+  const status = amountPaid <= 0 ? 'issued' : amountPaid >= total ? 'paid' : 'partially_paid';
 
   const updateData: Record<string, any> = {
     ...d,
@@ -230,7 +272,7 @@ export async function updateInvoice(id: string, raw: unknown): Promise<{ error?:
     sgst_amount: t.sgst,
     igst_amount: t.igst,
     gst_amount: t.gst,
-    round_off: r2(total - exact),
+    round_off: roundOff,
     total_amount: total,
     status: cur.status === 'draft' ? 'draft' : status,
     markup_pct: markupPct,
@@ -268,6 +310,107 @@ export async function updateInvoice(id: string, raw: unknown): Promise<{ error?:
   revalidatePath('/travinco_dashboard/invoices');
   revalidatePath('/travinco_dashboard');
   return {};
+}
+
+/** Creates an invoice directly (no quotation), optionally for an enquiry or an existing customer. */
+export async function createInvoice(raw: unknown): Promise<{ error?: string; id?: string }> {
+  const s = await staff();
+  if (!s) return { error: 'You do not have access to invoices.' };
+  const { supabase, profile } = s;
+  const p = newInvoiceSchema.safeParse(raw);
+  if (!p.success) return { error: p.error.issues[0]?.message ?? 'Please check the invoice.' };
+  const d = p.data;
+  const dateIssue = dateRuleIssue(d);
+  if (dateIssue) return { error: dateIssue };
+  const { items, subtotal, taxable, t, total, roundOff, markupPct, markupAmount } = computeInvoiceTotals(d);
+  if (!(total > 0)) return { error: 'The invoice total is zero – enter a rate for at least one line.' };
+
+  let customerId: string | null = d.customer_id ?? null;
+  if (d.enquiry_id) {
+    const { data: enq } = await supabase
+      .from('enquiries')
+      .select('id, customer_id, assigned_staff, is_deleted')
+      .eq('id', d.enquiry_id)
+      .maybeSingle();
+    if (!enq || enq.is_deleted) return { error: 'Enquiry not found.' };
+    if (!isAdminRole(profile) && enq.assigned_staff !== profile.id) return { error: 'This enquiry is not assigned to you.' };
+    customerId = customerId ?? enq.customer_id ?? null;
+  }
+  customerId = await resolveCustomerId(supabase, profile.id, {
+    id: customerId,
+    name: d.bill_to_name,
+    phone: d.bill_to_phone,
+    email: d.bill_to_email,
+  });
+
+  const payload: Record<string, any> = {
+    quotation_id: null,
+    enquiry_id: d.enquiry_id ?? null,
+    customer_id: customerId,
+    bill_to_name: d.bill_to_name,
+    bill_to_phone: d.bill_to_phone,
+    bill_to_email: d.bill_to_email,
+    bill_to_address: d.bill_to_address,
+    bill_to_gstin: d.bill_to_gstin ? d.bill_to_gstin.toUpperCase() : null,
+    place_of_supply: d.place_of_supply,
+    invoice_date: d.invoice_date,
+    due_date: d.due_date,
+    travel_start: d.travel_start,
+    travel_end: d.travel_end,
+    items,
+    subtotal,
+    discount: d.discount,
+    taxable_amount: taxable,
+    gst_pct: d.gst_pct,
+    tax_mode: d.tax_mode,
+    cgst_amount: t.cgst,
+    sgst_amount: t.sgst,
+    igst_amount: t.igst,
+    gst_amount: t.gst,
+    round_off: roundOff,
+    total_amount: total,
+    status: 'issued',
+    notes: d.notes,
+    terms: d.terms,
+    created_by: profile.id,
+    markup_pct: markupPct,
+    markup_amount: markupAmount,
+  };
+
+  let { data: inv, error } = await supabase.from('invoices').insert(payload).select('id, invoice_number').single();
+  if (error && (error.message?.includes('markup') || error.code === '42703')) {
+    // Databases without the markup columns still get it through the website_settings marker below.
+    delete payload.markup_pct;
+    delete payload.markup_amount;
+    ({ data: inv, error } = await supabase.from('invoices').insert(payload).select('id, invoice_number').single());
+  }
+  if (error || !inv) {
+    console.error('createInvoice', error?.message);
+    const needsMigration = error?.message?.includes('enquiry_id') || error?.message?.includes('quotation_id');
+    return { error: needsMigration ? 'Run supabase/invoices_standalone_migration.sql first.' : 'Could not create the invoice.' };
+  }
+
+  await supabase.from('website_settings').upsert(
+    { key: `invoice_markup_${inv.id}`, value: { markup_pct: markupPct, markup_amount: markupAmount } },
+    { onConflict: 'key' }
+  );
+
+  if (d.enquiry_id) {
+    await supabase.from('enquiries').update({ status: 'converted' }).eq('id', d.enquiry_id);
+    await supabase.from('enquiry_activities').insert({
+      enquiry_id: d.enquiry_id,
+      activity_type: 'invoice_created',
+      description: `Invoice ${inv.invoice_number} created`,
+      metadata: { invoice_id: inv.id },
+      performed_by: profile.id,
+    });
+    revalidatePath(`/travinco_dashboard/enquiries/${d.enquiry_id}`);
+    revalidatePath('/travinco_dashboard/enquiries');
+  }
+
+  revalidatePath('/travinco_dashboard/invoices');
+  revalidatePath('/travinco_dashboard');
+  return { id: inv.id };
 }
 
 const paymentSchema = z.object({

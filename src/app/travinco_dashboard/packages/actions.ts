@@ -9,6 +9,7 @@ import {
   slugify,
   fieldErrorsFromZod,
   validatePackageExtras,
+  availabilityLeadErrors,
   MAX_FEATURED_PACKAGES,
   type PackageFormValues,
 } from '@/lib/validations/package';
@@ -200,6 +201,10 @@ export async function createPackage(
   if (!preParsed.success) {
     return { error: 'Please fix the highlighted fields.', fieldErrors: fieldErrorsFromZod(preParsed.error) };
   }
+  const leadErrors = availabilityLeadErrors(preParsed.data);
+  if (Object.keys(leadErrors).length > 0) {
+    return { error: 'Please fix the highlighted fields.', fieldErrors: leadErrors };
+  }
 
   const supabase = await createClient();
 
@@ -334,6 +339,8 @@ export async function createPackage(
   });
 
   revalidatePath('/travinco_dashboard/packages');
+  revalidatePath('/packages');
+  revalidatePath(`/packages/${parsed.data.slug}`);
   if (parsed.data.is_featured) revalidatePath('/');
   return { id: data.id };
 }
@@ -783,6 +790,8 @@ export async function bulkCreatePackages(
       const message = Object.values(fieldErrorsFromZod(parsed.error))[0] ?? 'Invalid details';
       return { error: `${label}: ${message}` };
     }
+    const leadError = Object.values(availabilityLeadErrors(parsed.data))[0];
+    if (leadError) return { error: `${label}: ${leadError}` };
 
     const images = Array.isArray(item.imageUrls) ? item.imageUrls.map((u) => u.trim()).filter(Boolean) : [];
     if (item.status === 'published') {

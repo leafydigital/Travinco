@@ -143,10 +143,19 @@ export function BulkCreateLocationsModal({
   function handleBulkSave() {
     setFormError(null);
 
-    const activeCards = cards.filter((c) => c.name.trim().length > 0);
+    // Cards with any details are saved; completely empty cards are ignored.
+    const activeCards = cards.filter((c) => [c.name, c.display_name, c.description].some((v) => v.trim()));
 
     if (activeCards.length === 0) {
       setFormError('Please enter at least one location name to save.');
+      return;
+    }
+    const unnamed = activeCards.find((c) => !c.name.trim());
+    if (unnamed) {
+      const message = `Location card ${activeCards.indexOf(unnamed) + 1}: name is required.`;
+      setFormError(message);
+      toast.error(message);
+      setCards((prev) => prev.map((card) => (card.id === unnamed.id ? { ...card, isCollapsed: false } : card)));
       return;
     }
 

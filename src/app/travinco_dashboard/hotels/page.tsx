@@ -1,3 +1,4 @@
+import { FilterBar } from '@/components/admin/filter-bar';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Plus, Search, Phone, Mail } from 'lucide-react';
@@ -168,7 +169,7 @@ async function HotelsFilters({ searchParams, canEdit }: { searchParams: SearchPa
           <Plus className="h-4 w-4" /> New hotel
         </Link>
       )}
-      <form method="get" className="flex flex-wrap items-center gap-3 col-span-full">
+      <FilterBar className="col-span-full">
         <div className="relative min-w-[220px] max-w-md flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" />
           <input name="q" defaultValue={searchParams.q} placeholder="Search hotel, contact, phone, area…" className="input pl-9" />
@@ -189,8 +190,7 @@ async function HotelsFilters({ searchParams, canEdit }: { searchParams: SearchPa
           <option value="">Any contact status</option>
           <option value="missing">Phone missing</option>
         </select>
-        <button type="submit" className="btn-outline">Filter</button>
-      </form>
+      </FilterBar>
     </>
   );
 }

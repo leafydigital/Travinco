@@ -1,8 +1,9 @@
 import { z } from 'zod';
 import { imageUrlSchema } from './image-url';
+import { isValidLink } from './links';
 
 export const eventSchema = z.object({
-  title: z.string().min(3, 'Title is required').max(200),
+  title: z.string().trim().min(3, 'Title is required (at least 3 characters)').max(200),
   slug: z
     .string()
     .min(3)
@@ -13,13 +14,21 @@ export const eventSchema = z.object({
   event_date: z.string().optional().nullable(),
   image_url: imageUrlSchema.optional().nullable().or(z.literal('')),
   cta_label: z.string().max(60).optional().nullable(),
-  cta_url: z.string().optional().nullable(),
+  cta_url: z
+    .string()
+    .trim()
+    .refine((v) => !v || isValidLink(v), 'Button link must be a page path like /packages or a full link starting with https://')
+    .optional()
+    .nullable(),
+}).refine((d) => !d.cta_label?.trim() || d.cta_url?.trim(), {
+  message: 'Add a button link for the button label',
+  path: ['cta_url'],
 });
 
 export type EventFormValues = z.infer<typeof eventSchema>;
 
 export const blogPostSchema = z.object({
-  title: z.string().min(3, 'Title is required').max(200),
+  title: z.string().trim().min(3, 'Title is required (at least 3 characters)').max(200),
   slug: z
     .string()
     .min(3)
@@ -34,7 +43,7 @@ export type BlogPostFormValues = z.infer<typeof blogPostSchema>;
 
 export const offerSchema = z
   .object({
-    title: z.string().min(3, 'Title is required').max(200),
+    title: z.string().trim().min(3, 'Title is required (at least 3 characters)').max(200),
     slug: z
       .string()
       .min(3)
@@ -58,9 +67,22 @@ export const offerSchema = z
     message: 'End date must be after start date',
     path: ['valid_to'],
   })
-  .refine((d) => d.discount_percent != null || d.discount_flat != null, {
-    message: 'Enter either a percentage or flat discount',
+  .refine((d) => (d.discount_percent ?? 0) > 0 || (d.discount_flat ?? 0) > 0, {
+    message: 'Enter a percentage or flat discount greater than 0',
     path: ['discount_percent'],
+  })
+  .refine((d) => !((d.discount_percent ?? 0) > 0 && (d.discount_flat ?? 0) > 0), {
+    message: 'Use either a percentage or a flat discount, not both',
+    path: ['discount_flat'],
   });
 
 export type OfferFormValues = z.infer<typeof offerSchema>;
+
+/** What a blog post needs before it can go live. Returns the error, or null. */
+export function blogPublishError(post: { content?: string | null; cover_image_url?: string | null }): string | null {
+  const text = (post.content ?? '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').trim();
+  const missing: string[] = [];
+  if (!text) missing.push('content');
+  if (!post.cover_image_url?.trim()) missing.push('a cover image');
+  return missing.length ? `Can't publish yet — this post needs ${missing.join(' and ')}.` : null;
+}

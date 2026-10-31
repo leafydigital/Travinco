@@ -1,6 +1,8 @@
 'use client';
 
 import { useState } from 'react';
+import { reportThemeErrors } from '@/lib/theme-form-errors';
+import { validateListingPageContent } from '@/lib/validations/theme';
 import { useRouter } from 'next/navigation';
 import {
   Pencil,
@@ -146,7 +148,9 @@ export function BlogPageEditor({
         <div className="flex items-center gap-2.5 self-stretch sm:self-auto shrink-0">
           <button
             type="button"
-            onClick={() => setShowConfirmModal(true)}
+            onClick={() => {
+              if (!reportThemeErrors(validateListingPageContent(content))) setShowConfirmModal(true);
+            }}
             disabled={isSaving || !isAdmin}
             className="btn-primary inline-flex items-center gap-2 px-5 py-2.5 text-xs font-bold rounded-xl shadow-md cursor-pointer disabled:opacity-50"
           >
@@ -272,7 +276,7 @@ export function BlogPageEditor({
             <p className="text-xs text-ink-500">
               Enter any accessible public image URL (Unsplash, Supabase CDN, etc.).
             </p>
-            <input
+            <input data-field="hero.background_image_url"
               type="text"
               value={content.hero.background_image_url}
               onChange={(e) =>
@@ -293,7 +297,7 @@ export function BlogPageEditor({
             <label className="block text-xs font-bold text-ink-900 mb-1">
               Hero Top Badge
             </label>
-            <input
+            <input data-field="hero.badge"
               type="text"
               value={content.hero.badge}
               onChange={(e) =>
@@ -311,7 +315,7 @@ export function BlogPageEditor({
             <label className="block text-xs font-bold text-ink-900 mb-1">
               Hero Center Title (Primary Heading)
             </label>
-            <input
+            <input data-field="hero.title"
               type="text"
               value={content.hero.title}
               onChange={(e) =>
@@ -329,7 +333,7 @@ export function BlogPageEditor({
             <label className="block text-xs font-bold text-ink-900 mb-1">
               Hero Subtitle / Description
             </label>
-            <textarea
+            <textarea data-field="hero.subtitle"
               rows={2}
               value={content.hero.subtitle}
               onChange={(e) =>
@@ -352,7 +356,7 @@ export function BlogPageEditor({
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {content.hero.pillars.map((pillar, i) => (
               <div key={i} className="flex items-center gap-2 rounded-xl bg-ink-50/70 p-2.5 border border-ink-200">
-                <input
+                <input data-field={`hero.pillars.${i}.label`}
                   type="text"
                   value={pillar.label}
                   onChange={(e) => handlePillarChange(i, 'label', e.target.value)}
@@ -388,7 +392,7 @@ export function BlogPageEditor({
             <label className="block text-xs font-bold text-ink-900 mb-1">
               Search Input Placeholder Hint
             </label>
-            <input
+            <input data-field="search.placeholder"
               type="text"
               value={content.search.placeholder}
               onChange={(e) =>
@@ -407,7 +411,7 @@ export function BlogPageEditor({
               <label className="block text-xs font-bold text-ink-900 mb-1">
                 Zero State Heading
               </label>
-              <input
+              <input data-field="empty_state.title"
                 type="text"
                 value={content.empty_state.title}
                 onChange={(e) =>
@@ -425,7 +429,7 @@ export function BlogPageEditor({
               <label className="block text-xs font-bold text-ink-900 mb-1">
                 Zero State Description
               </label>
-              <input
+              <input data-field="empty_state.description"
                 type="text"
                 value={content.empty_state.description}
                 onChange={(e) =>
@@ -442,7 +446,7 @@ export function BlogPageEditor({
               <label className="block text-xs font-bold text-ink-900 mb-1">
                 Zero State Reset Button Text
               </label>
-              <input
+              <input data-field="empty_state.button_text"
                 type="text"
                 value={content.empty_state.button_text || ''}
                 onChange={(e) =>
@@ -540,7 +544,7 @@ export function BlogPageEditor({
             <label className="block text-xs font-bold text-ink-900 mb-1">
               Banner Small Badge
             </label>
-            <input
+            <input data-field="bottom_cta.badge"
               type="text"
               value={content.bottom_cta.badge}
               onChange={(e) =>
@@ -558,7 +562,7 @@ export function BlogPageEditor({
             <label className="block text-xs font-bold text-ink-900 mb-1">
               Banner Main Heading
             </label>
-            <input
+            <input data-field="bottom_cta.title"
               type="text"
               value={content.bottom_cta.title}
               onChange={(e) =>
@@ -576,7 +580,7 @@ export function BlogPageEditor({
             <label className="block text-xs font-bold text-ink-900 mb-1">
               Banner Description
             </label>
-            <textarea
+            <textarea data-field="bottom_cta.description"
               rows={2}
               value={content.bottom_cta.description}
               onChange={(e) =>
@@ -594,7 +598,7 @@ export function BlogPageEditor({
             <label className="block text-xs font-bold text-ink-900 mb-1">
               CTA Button Text
             </label>
-            <input
+            <input data-field="bottom_cta.button_text"
               type="text"
               value={content.bottom_cta.button_text}
               onChange={(e) =>
@@ -612,7 +616,7 @@ export function BlogPageEditor({
             <label className="block text-xs font-bold text-ink-900 mb-1">
               CTA Button Link
             </label>
-            <input
+            <input data-field="bottom_cta.button_link"
               type="text"
               value={content.bottom_cta.button_link}
               onChange={(e) =>
@@ -638,7 +642,9 @@ export function BlogPageEditor({
         </div>
         <button
           type="button"
-          onClick={() => setShowConfirmModal(true)}
+          onClick={() => {
+              if (!reportThemeErrors(validateListingPageContent(content))) setShowConfirmModal(true);
+            }}
           disabled={isSaving || !isAdmin}
           className="btn-primary inline-flex items-center gap-2 px-6 py-2.5 text-xs font-bold rounded-xl shadow-lg cursor-pointer disabled:opacity-50"
         >

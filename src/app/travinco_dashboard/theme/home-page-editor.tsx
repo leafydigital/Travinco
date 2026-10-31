@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
+import { reportThemeErrors } from '@/lib/theme-form-errors';
+import { validateHomePageContent } from '@/lib/validations/theme';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -431,6 +433,7 @@ export function HomePageEditor({
 
   // Save changes to database
   const handleSave = async (sectionName?: string) => {
+    if (reportThemeErrors(validateHomePageContent(content))) return;
     setIsSaving(true);
     try {
       const res = await saveHomePageContentAction(content);
@@ -577,7 +580,7 @@ export function HomePageEditor({
                 <label className="block text-xs font-semibold text-ink-700 mb-1">
                   Hero Eyebrow / Top Tagline
                 </label>
-                <input
+                <input data-field="hero.eyebrow"
                   type="text"
                   value={content.hero.eyebrow}
                   onChange={(e) => updateHero('eyebrow', e.target.value)}
@@ -590,7 +593,7 @@ export function HomePageEditor({
                 <label className="block text-xs font-semibold text-ink-700 mb-1">
                   Hero Main Heading
                 </label>
-                <input
+                <input data-field="hero.title"
                   type="text"
                   value={content.hero.title}
                   onChange={(e) => updateHero('title', e.target.value)}
@@ -603,7 +606,7 @@ export function HomePageEditor({
                 <label className="block text-xs font-semibold text-ink-700 mb-1">
                   Action Button Label
                 </label>
-                <input
+                <input data-field="hero.button_text"
                   type="text"
                   value={content.hero.button_text}
                   onChange={(e) => updateHero('button_text', e.target.value)}
@@ -616,7 +619,7 @@ export function HomePageEditor({
                 <label className="block text-xs font-semibold text-ink-700 mb-1">
                   Action Button Link
                 </label>
-                <input
+                <input data-field="hero.button_link"
                   type="text"
                   value={content.hero.button_link}
                   onChange={(e) => updateHero('button_link', e.target.value)}
@@ -829,7 +832,7 @@ export function HomePageEditor({
                 <label className="block text-xs font-semibold text-ink-700 mb-1">
                   Section Eyebrow
                 </label>
-                <input
+                <input data-field="destinations.eyebrow"
                   type="text"
                   value={content.destinations.eyebrow}
                   onChange={(e) => updateDestinations('eyebrow', e.target.value)}
@@ -842,7 +845,7 @@ export function HomePageEditor({
                 <label className="block text-xs font-semibold text-ink-700 mb-1">
                   Section Title / Main Heading
                 </label>
-                <input
+                <input data-field="destinations.title"
                   type="text"
                   value={content.destinations.title}
                   onChange={(e) => updateDestinations('title', e.target.value)}
@@ -855,7 +858,7 @@ export function HomePageEditor({
                 <label className="block text-xs font-semibold text-ink-700 mb-1">
                   Description Text (Displayed below heading)
                 </label>
-                <textarea
+                <textarea data-field="destinations.description"
                   rows={2}
                   value={content.destinations.description}
                   onChange={(e) => updateDestinations('description', e.target.value)}
@@ -868,7 +871,7 @@ export function HomePageEditor({
                 <label className="block text-xs font-semibold text-ink-700 mb-1">
                   CTA Link Text
                 </label>
-                <input
+                <input data-field="destinations.cta_text"
                   type="text"
                   value={content.destinations.cta_text}
                   onChange={(e) => updateDestinations('cta_text', e.target.value)}
@@ -1016,7 +1019,7 @@ export function HomePageEditor({
                   <label className="block text-[11px] font-semibold text-ink-700 mb-1">
                     Eyebrow / Small Header
                   </label>
-                  <input
+                  <input data-field="experience.eyebrow"
                     type="text"
                     value={content.experience.eyebrow}
                     onChange={(e) => updateExperienceHeader('eyebrow', e.target.value)}
@@ -1028,7 +1031,7 @@ export function HomePageEditor({
                   <label className="block text-[11px] font-semibold text-ink-700 mb-1">
                     Main Title
                   </label>
-                  <input
+                  <input data-field="experience.title"
                     type="text"
                     value={content.experience.title}
                     onChange={(e) => updateExperienceHeader('title', e.target.value)}
@@ -1040,7 +1043,7 @@ export function HomePageEditor({
                   <label className="block text-[11px] font-semibold text-ink-700 mb-1">
                     Description Text
                   </label>
-                  <textarea
+                  <textarea data-field="experience.description"
                     rows={2}
                     value={content.experience.description}
                     onChange={(e) => updateExperienceHeader('description', e.target.value)}
@@ -1058,7 +1061,7 @@ export function HomePageEditor({
                   <div key={card.id || idx} className="rounded-2xl bg-white p-4 space-y-2.5 shadow-sm">
                     <div className="flex items-center justify-between border-b border-ink-100 pb-2">
                       <span className="text-xs font-bold text-ink-900">Card #{idx + 1}</span>
-                      <select
+                      <select data-field={`experience.cards.${idx}.icon_key`}
                         value={card.icon_key}
                         onChange={(e) =>
                           updateExperienceCard(idx, 'icon_key', e.target.value as any)
@@ -1077,7 +1080,7 @@ export function HomePageEditor({
                         <label className="block text-[10px] font-semibold text-ink-600 mb-0.5">
                           Badge Label
                         </label>
-                        <input
+                        <input data-field={`experience.cards.${idx}.badge`}
                           type="text"
                           value={card.badge}
                           onChange={(e) => updateExperienceCard(idx, 'badge', e.target.value)}
@@ -1089,7 +1092,7 @@ export function HomePageEditor({
                         <label className="block text-[10px] font-semibold text-ink-600 mb-0.5">
                           Card Title
                         </label>
-                        <input
+                        <input data-field={`experience.cards.${idx}.title`}
                           type="text"
                           value={card.title}
                           onChange={(e) => updateExperienceCard(idx, 'title', e.target.value)}
@@ -1103,7 +1106,7 @@ export function HomePageEditor({
                       <label className="block text-[10px] font-semibold text-ink-600 mb-0.5">
                         Card Description / Body
                       </label>
-                      <textarea
+                      <textarea data-field={`experience.cards.${idx}.body`}
                         rows={2}
                         value={card.body}
                         onChange={(e) => updateExperienceCard(idx, 'body', e.target.value)}
@@ -1163,6 +1166,7 @@ export function HomePageEditor({
                         </label>
                         <input
                           type="text"
+                          data-field={`experience.stats.${idx}.value`}
                           value={stat.value}
                           onChange={(e) => updateExperienceStat(idx, 'value', e.target.value)}
                           placeholder="e.g. 5,000+ or 4.9 ★"
@@ -1176,6 +1180,7 @@ export function HomePageEditor({
                         </label>
                         <input
                           type="text"
+                          data-field={`experience.stats.${idx}.label`}
                           value={stat.label}
                           onChange={(e) => updateExperienceStat(idx, 'label', e.target.value)}
                           placeholder="e.g. Delighted Travelers"
@@ -1313,7 +1318,7 @@ export function HomePageEditor({
                 <label className="block text-xs font-semibold text-ink-700 mb-1">
                   Section Eyebrow
                 </label>
-                <input
+                <input data-field="captured_road.eyebrow"
                   type="text"
                   value={content.captured_road.eyebrow}
                   onChange={(e) => updateCapturedRoad('eyebrow', e.target.value)}
@@ -1326,7 +1331,7 @@ export function HomePageEditor({
                 <label className="block text-xs font-semibold text-ink-700 mb-1">
                   Section Title
                 </label>
-                <input
+                <input data-field="captured_road.title"
                   type="text"
                   value={content.captured_road.title}
                   onChange={(e) => updateCapturedRoad('title', e.target.value)}
@@ -1339,7 +1344,7 @@ export function HomePageEditor({
                 <label className="block text-xs font-semibold text-ink-700 mb-1">
                   Section Description
                 </label>
-                <textarea
+                <textarea data-field="captured_road.description"
                   rows={2}
                   value={content.captured_road.description}
                   onChange={(e) => updateCapturedRoad('description', e.target.value)}
@@ -1480,7 +1485,7 @@ export function HomePageEditor({
                   <label className="block text-[11px] font-semibold text-ink-700 mb-1">
                     Eyebrow / Small Header
                   </label>
-                  <input
+                  <input data-field="how_it_works.eyebrow"
                     type="text"
                     value={content.how_it_works.eyebrow}
                     onChange={(e) => updateHowItWorksHeader('eyebrow', e.target.value)}
@@ -1492,7 +1497,7 @@ export function HomePageEditor({
                   <label className="block text-[11px] font-semibold text-ink-700 mb-1">
                     Main Title
                   </label>
-                  <input
+                  <input data-field="how_it_works.title"
                     type="text"
                     value={content.how_it_works.title}
                     onChange={(e) => updateHowItWorksHeader('title', e.target.value)}
@@ -1504,7 +1509,7 @@ export function HomePageEditor({
                   <label className="block text-[11px] font-semibold text-ink-700 mb-1">
                     Description Text
                   </label>
-                  <textarea
+                  <textarea data-field="how_it_works.description"
                     rows={2}
                     value={content.how_it_works.description}
                     onChange={(e) => updateHowItWorksHeader('description', e.target.value)}
@@ -1522,7 +1527,7 @@ export function HomePageEditor({
                   <div key={idx} className="rounded-2xl bg-white p-4 space-y-2 border border-ink-100 shadow-xs">
                     <div className="flex items-center justify-between border-b border-ink-100 pb-2">
                       <span className="text-xs font-bold text-brand-700">Step #{idx + 1}</span>
-                      <input
+                      <input data-field={`how_it_works.steps.${idx}.step`}
                         type="text"
                         value={step.step}
                         onChange={(e) => updateHowItWorksStep(idx, 'step', e.target.value)}
@@ -1534,7 +1539,7 @@ export function HomePageEditor({
                       <label className="block text-[10px] font-semibold text-ink-600 mb-0.5">
                         Step Title
                       </label>
-                      <input
+                      <input data-field={`how_it_works.steps.${idx}.title`}
                         type="text"
                         value={step.title}
                         onChange={(e) => updateHowItWorksStep(idx, 'title', e.target.value)}
@@ -1545,7 +1550,7 @@ export function HomePageEditor({
                       <label className="block text-[10px] font-semibold text-ink-600 mb-0.5">
                         Step Description
                       </label>
-                      <textarea
+                      <textarea data-field={`how_it_works.steps.${idx}.body`}
                         rows={3}
                         value={step.body}
                         onChange={(e) => updateHowItWorksStep(idx, 'body', e.target.value)}
@@ -1664,7 +1669,7 @@ export function HomePageEditor({
                 <label className="block text-xs font-semibold text-ink-700 mb-1">
                   Section Eyebrow / Tagline
                 </label>
-                <input
+                <input data-field="ayurveda.eyebrow"
                   type="text"
                   value={content.ayurveda?.eyebrow || ''}
                   onChange={(e) => updateAyurveda('eyebrow', e.target.value)}
@@ -1677,7 +1682,7 @@ export function HomePageEditor({
                 <label className="block text-xs font-semibold text-ink-700 mb-1">
                   Section Main Heading
                 </label>
-                <input
+                <input data-field="ayurveda.title"
                   type="text"
                   value={content.ayurveda?.title || ''}
                   onChange={(e) => updateAyurveda('title', e.target.value)}
@@ -1690,7 +1695,7 @@ export function HomePageEditor({
                 <label className="block text-xs font-semibold text-ink-700 mb-1">
                   Description Text (Paragraph on card)
                 </label>
-                <textarea
+                <textarea data-field="ayurveda.description"
                   rows={3}
                   value={content.ayurveda?.description || ''}
                   onChange={(e) => updateAyurveda('description', e.target.value)}
@@ -1703,7 +1708,7 @@ export function HomePageEditor({
                 <label className="block text-xs font-semibold text-ink-700 mb-1">
                   Green Button Label
                 </label>
-                <input
+                <input data-field="ayurveda.button_text"
                   type="text"
                   value={content.ayurveda?.button_text || ''}
                   onChange={(e) => updateAyurveda('button_text', e.target.value)}
@@ -1716,7 +1721,7 @@ export function HomePageEditor({
                 <label className="block text-xs font-semibold text-ink-700 mb-1">
                   Button Redirect Link
                 </label>
-                <input
+                <input data-field="ayurveda.button_link"
                   type="text"
                   value={content.ayurveda?.button_link || ''}
                   onChange={(e) => updateAyurveda('button_link', e.target.value)}
@@ -1738,7 +1743,7 @@ export function HomePageEditor({
                     Reset to Default Asset
                   </button>
                 </div>
-                <input
+                <input data-field="ayurveda.image_url"
                   type="text"
                   value={content.ayurveda?.image_url || ''}
                   onChange={(e) => updateAyurveda('image_url', e.target.value)}
@@ -2023,7 +2028,7 @@ export function HomePageEditor({
                   <label className="block text-[11px] font-semibold text-ink-700 mb-1">
                     Eyebrow / Small Header
                   </label>
-                  <input
+                  <input data-field="testimonials.eyebrow"
                     type="text"
                     value={content.testimonials.eyebrow}
                     onChange={(e) => updateTestimonialsHeader('eyebrow', e.target.value)}
@@ -2035,7 +2040,7 @@ export function HomePageEditor({
                   <label className="block text-[11px] font-semibold text-ink-700 mb-1">
                     Main Title
                   </label>
-                  <input
+                  <input data-field="testimonials.title"
                     type="text"
                     value={content.testimonials.title}
                     onChange={(e) => updateTestimonialsHeader('title', e.target.value)}
@@ -2047,7 +2052,7 @@ export function HomePageEditor({
                   <label className="block text-[11px] font-semibold text-ink-700 mb-1">
                     Description Text
                   </label>
-                  <textarea
+                  <textarea data-field="testimonials.description"
                     rows={2}
                     value={content.testimonials.description}
                     onChange={(e) => updateTestimonialsHeader('description', e.target.value)}
@@ -2079,7 +2084,7 @@ export function HomePageEditor({
                     <div className="flex items-center justify-between border-b border-ink-100 pb-2">
                       <span className="text-xs font-bold text-brand-700">Reviewer #{idx + 1}</span>
                       <div className="flex items-center gap-1.5">
-                        <select
+                        <select data-field={`testimonials.items.${idx}.rating`}
                           value={item.rating}
                           onChange={(e) => updateTestimonialItem(idx, 'rating', Number(e.target.value))}
                           className="rounded-lg border border-ink-200 bg-ink-50 px-2 py-0.5 text-xs font-semibold cursor-pointer"
@@ -2105,7 +2110,7 @@ export function HomePageEditor({
                       <label className="block text-[10px] font-semibold text-ink-600 mb-0.5">
                         Traveler Name
                       </label>
-                      <input
+                      <input data-field={`testimonials.items.${idx}.name`}
                         type="text"
                         value={item.name}
                         onChange={(e) => updateTestimonialItem(idx, 'name', e.target.value)}
@@ -2118,7 +2123,7 @@ export function HomePageEditor({
                       <label className="block text-[10px] font-semibold text-ink-600 mb-0.5">
                         Trip Name / Route
                       </label>
-                      <input
+                      <input data-field={`testimonials.items.${idx}.trip`}
                         type="text"
                         value={item.trip}
                         onChange={(e) => updateTestimonialItem(idx, 'trip', e.target.value)}
@@ -2131,7 +2136,7 @@ export function HomePageEditor({
                       <label className="block text-[10px] font-semibold text-ink-600 mb-0.5">
                         Quote Content
                       </label>
-                      <textarea
+                      <textarea data-field={`testimonials.items.${idx}.quote`}
                         rows={3}
                         value={item.quote}
                         onChange={(e) => updateTestimonialItem(idx, 'quote', e.target.value)}
@@ -2266,7 +2271,7 @@ export function HomePageEditor({
                 <label className="block text-xs font-semibold text-ink-700 mb-1">
                   Section Eyebrow
                 </label>
-                <input
+                <input data-field="blog.eyebrow"
                   type="text"
                   value={content.blog.eyebrow}
                   onChange={(e) => updateBlog('eyebrow', e.target.value)}
@@ -2279,7 +2284,7 @@ export function HomePageEditor({
                 <label className="block text-xs font-semibold text-ink-700 mb-1">
                   Section Title / Main Heading
                 </label>
-                <input
+                <input data-field="blog.title"
                   type="text"
                   value={content.blog.title}
                   onChange={(e) => updateBlog('title', e.target.value)}
@@ -2292,7 +2297,7 @@ export function HomePageEditor({
                 <label className="block text-xs font-semibold text-ink-700 mb-1">
                   Description Text
                 </label>
-                <textarea
+                <textarea data-field="blog.description"
                   rows={2}
                   value={content.blog.description}
                   onChange={(e) => updateBlog('description', e.target.value)}
@@ -2305,7 +2310,7 @@ export function HomePageEditor({
                 <label className="block text-xs font-semibold text-ink-700 mb-1">
                   CTA Link Text
                 </label>
-                <input
+                <input data-field="blog.cta_text"
                   type="text"
                   value={content.blog.cta_text}
                   onChange={(e) => updateBlog('cta_text', e.target.value)}
@@ -2459,7 +2464,7 @@ export function HomePageEditor({
                   <label className="block text-[11px] font-semibold text-ink-700 mb-1">
                     Badge / Tagline
                   </label>
-                  <input
+                  <input data-field="final_cta.badge"
                     type="text"
                     value={content.final_cta.badge}
                     onChange={(e) => updateFinalCta('badge', e.target.value)}
@@ -2472,7 +2477,7 @@ export function HomePageEditor({
                   <label className="block text-[11px] font-semibold text-ink-700 mb-1">
                     Main Headline
                   </label>
-                  <input
+                  <input data-field="final_cta.title"
                     type="text"
                     value={content.final_cta.title}
                     onChange={(e) => updateFinalCta('title', e.target.value)}
@@ -2485,7 +2490,7 @@ export function HomePageEditor({
                   <label className="block text-[11px] font-semibold text-ink-700 mb-1">
                     Description Text
                   </label>
-                  <textarea
+                  <textarea data-field="final_cta.description"
                     rows={2}
                     value={content.final_cta.description}
                     onChange={(e) => updateFinalCta('description', e.target.value)}
@@ -2498,7 +2503,7 @@ export function HomePageEditor({
                   <label className="block text-[11px] font-semibold text-ink-700 mb-1">
                     Button Text
                   </label>
-                  <input
+                  <input data-field="final_cta.button_text"
                     type="text"
                     value={content.final_cta.button_text}
                     onChange={(e) => updateFinalCta('button_text', e.target.value)}
@@ -2511,7 +2516,7 @@ export function HomePageEditor({
                   <label className="block text-[11px] font-semibold text-ink-700 mb-1">
                     Button Link
                   </label>
-                  <input
+                  <input data-field="final_cta.button_link"
                     type="text"
                     value={content.final_cta.button_link}
                     onChange={(e) => updateFinalCta('button_link', e.target.value)}

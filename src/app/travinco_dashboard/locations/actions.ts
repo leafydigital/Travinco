@@ -46,13 +46,18 @@ export async function bulkCreateLocations(
     return { error: 'Please provide at least one location to save.' };
   }
 
-  // Filter items with valid name
+  // Cards with nothing filled in are ignored; a card with details but no name is an
+  // error (never silently dropped).
   const candidates = items.filter(
-    (l) => l && typeof l.name === 'string' && l.name.trim().length > 0
+    (l) => l && [l.name, l.display_name, l.description].some((v) => String(v ?? '').trim())
   );
 
   if (candidates.length === 0) {
     return { error: 'Please provide a valid name for at least one location card.' };
+  }
+  const unnamed = candidates.findIndex((l) => !String(l.name ?? '').trim());
+  if (unnamed !== -1) {
+    return { error: `Location card ${unnamed + 1}: name is required.` };
   }
 
   const supabase = await createClient();

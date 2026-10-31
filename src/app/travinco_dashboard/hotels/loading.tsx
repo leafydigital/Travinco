@@ -20,7 +20,7 @@ export default function HotelsLoading() {
         <div className="input w-36 bg-ink-50/50 text-ink-400">All locations</div>
         <div className="input w-36 bg-ink-50/50 text-ink-400">All categories</div>
         <div className="input w-40 bg-ink-50/50 text-ink-400">Any contact status</div>
-        <div className="btn-outline opacity-70">Filter</div>
+        <div className="btn-outline opacity-70">Refresh</div>
       </div>
 
       {/* 3. Table Skeleton */}

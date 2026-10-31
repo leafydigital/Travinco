@@ -163,7 +163,7 @@ export async function initiateCustomerLoginFlow(
     if (profileRes.data && !accountRes.data) {
       // Staff accounts have their own sign-in page
       await customerSupabase.auth.signOut();
-      return { error: 'This is a staff account. Please sign in at /app.' };
+      return { error: 'This account is registered for Staff access. Please sign in through the Staff portal.' };
     }
 
     // Ensure customer_accounts record exists

@@ -1,7 +1,8 @@
+import { FilterBar } from '@/components/admin/filter-bar';
 import type { Metadata } from 'next';
 import { Suspense } from 'react';
 import Link from 'next/link';
-import { Search } from 'lucide-react';
+import { Plus, Search } from 'lucide-react';
 import { requireProfile, assertPageAccess } from '@/lib/supabase/auth-helpers';
 import { assertTourAccess, isAdminRole } from '@/lib/tour/access';
 import { formatDate } from '@/lib/utils/format';
@@ -193,8 +194,11 @@ export default async function InvoicesPage({
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-ink-900">Invoices</h1>
-          <p className="text-sm text-ink-500">Created from quotations with “Convert to Invoice”.</p>
+          <p className="text-sm text-ink-500">Create one directly, or from a quotation with “Convert to Invoice”.</p>
         </div>
+        <Link href="/travinco_dashboard/invoices/new" prefetch={true} className="btn-primary">
+          <Plus className="h-4 w-4" /> New invoice
+        </Link>
       </div>
 
       {/* 2. Filter Pills Structure (Renders Instantly) */}
@@ -211,7 +215,7 @@ export default async function InvoicesPage({
       </div>
 
       {/* 3. Search Bar (Renders Instantly) */}
-      <form method="get" className="flex flex-wrap sm:flex-nowrap items-center gap-3">
+      <FilterBar>
         {searchParams.status && <input type="hidden" name="status" value={searchParams.status} />}
         <div className="relative min-w-[200px] sm:min-w-[220px] max-w-md flex-1 w-full">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" />
@@ -222,10 +226,7 @@ export default async function InvoicesPage({
             className="input pl-9 w-full"
           />
         </div>
-        <button type="submit" className="btn-outline w-full sm:w-auto">
-          Search
-        </button>
-      </form>
+      </FilterBar>
 
       {/* 4. Table Card (Header loads immediately, rows show skeleton only while fetching) */}
       <div className="card overflow-hidden">

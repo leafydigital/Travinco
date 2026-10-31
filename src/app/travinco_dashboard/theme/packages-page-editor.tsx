@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useTransition } from 'react';
+import { reportThemeErrors } from '@/lib/theme-form-errors';
+import { validateListingPageContent } from '@/lib/validations/theme';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import {
@@ -109,6 +111,7 @@ export function PackagesPageEditor({
 
   // Save changes
   const handleSave = async () => {
+    if (reportThemeErrors(validateListingPageContent(content))) return;
     try {
       setIsSaving(true);
       const res = await savePackagesPageContentAction(content);
@@ -271,7 +274,7 @@ export function PackagesPageEditor({
             <label className="block text-xs font-bold text-ink-900">
               Hero Background Image URL
             </label>
-            <input
+            <input data-field="hero.background_image_url"
               type="url"
               value={content.hero.background_image_url}
               onChange={(e) =>
@@ -295,7 +298,7 @@ export function PackagesPageEditor({
             <label className="block text-xs font-bold text-ink-900 mb-1">
               Top Badge Text
             </label>
-            <input
+            <input data-field="hero.badge"
               type="text"
               value={content.hero.badge}
               onChange={(e) =>
@@ -313,7 +316,7 @@ export function PackagesPageEditor({
             <label className="block text-xs font-bold text-ink-900 mb-1">
               Hero Main Heading (Centered)
             </label>
-            <input
+            <input data-field="hero.title"
               type="text"
               value={content.hero.title}
               onChange={(e) =>
@@ -331,7 +334,7 @@ export function PackagesPageEditor({
             <label className="block text-xs font-bold text-ink-900 mb-1">
               Hero Subtitle / Description
             </label>
-            <textarea
+            <textarea data-field="hero.subtitle"
               rows={2}
               value={content.hero.subtitle}
               onChange={(e) =>
@@ -355,7 +358,7 @@ export function PackagesPageEditor({
             {content.hero.pillars.map((pillar, i) => (
               <div key={i} className="rounded-xl border border-ink-200 p-3 bg-sand-50/40 space-y-1">
                 <span className="text-[11px] font-semibold text-ink-400">Pillar #{i + 1}</span>
-                <input
+                <input data-field={`hero.pillars.${i}.label`}
                   type="text"
                   value={pillar.label}
                   onChange={(e) => handlePillarChange(i, 'label', e.target.value)}
@@ -389,7 +392,7 @@ export function PackagesPageEditor({
             <label className="block text-xs font-bold text-ink-900 mb-1">
               Search Input Placeholder
             </label>
-            <input
+            <input data-field="search.placeholder"
               type="text"
               value={content.search.placeholder}
               onChange={(e) =>
@@ -407,7 +410,7 @@ export function PackagesPageEditor({
             <label className="block text-xs font-bold text-ink-900 mb-1">
               No Results Found Heading
             </label>
-            <input
+            <input data-field="empty_state.title"
               type="text"
               value={content.empty_state.title}
               onChange={(e) =>
@@ -425,7 +428,7 @@ export function PackagesPageEditor({
             <label className="block text-xs font-bold text-ink-900 mb-1">
               Reset Button Label
             </label>
-            <input
+            <input data-field="empty_state.button_text"
               type="text"
               value={content.empty_state.button_text}
               onChange={(e) =>
@@ -443,7 +446,7 @@ export function PackagesPageEditor({
             <label className="block text-xs font-bold text-ink-900 mb-1">
               No Results Found Message
             </label>
-            <textarea
+            <textarea data-field="empty_state.description"
               rows={2}
               value={content.empty_state.description}
               onChange={(e) =>
@@ -480,7 +483,7 @@ export function PackagesPageEditor({
             <label className="block text-xs font-bold text-ink-900 mb-1">
               Banner Badge / Eyebrow
             </label>
-            <input
+            <input data-field="bottom_cta.badge"
               type="text"
               value={content.bottom_cta.badge}
               onChange={(e) =>
@@ -498,7 +501,7 @@ export function PackagesPageEditor({
             <label className="block text-xs font-bold text-ink-900 mb-1">
               Banner Title
             </label>
-            <input
+            <input data-field="bottom_cta.title"
               type="text"
               value={content.bottom_cta.title}
               onChange={(e) =>
@@ -516,7 +519,7 @@ export function PackagesPageEditor({
             <label className="block text-xs font-bold text-ink-900 mb-1">
               Banner Description
             </label>
-            <textarea
+            <textarea data-field="bottom_cta.description"
               rows={2}
               value={content.bottom_cta.description}
               onChange={(e) =>
@@ -534,7 +537,7 @@ export function PackagesPageEditor({
             <label className="block text-xs font-bold text-ink-900 mb-1">
               CTA Button Text
             </label>
-            <input
+            <input data-field="bottom_cta.button_text"
               type="text"
               value={content.bottom_cta.button_text}
               onChange={(e) =>
@@ -552,7 +555,7 @@ export function PackagesPageEditor({
             <label className="block text-xs font-bold text-ink-900 mb-1">
               CTA Button Link
             </label>
-            <input
+            <input data-field="bottom_cta.button_link"
               type="text"
               value={content.bottom_cta.button_link}
               onChange={(e) =>
@@ -584,7 +587,7 @@ export function PackagesPageEditor({
           </div>
         </div>
 
-        <textarea
+        <textarea data-field="terms_and_conditions"
           rows={10}
           value={content.terms_and_conditions ?? ''}
           onChange={(e) =>

@@ -1,3 +1,4 @@
+import { FilterBar } from '@/components/admin/filter-bar';
 import { Suspense } from 'react';
 import { requireProfile, assertModulePermission } from '@/lib/supabase/auth-helpers';
 import Link from 'next/link';
@@ -194,7 +195,7 @@ export default async function AdminCustomersPage({
       </div>
 
       {/* 2. Filter Form Structure (Renders Instantly) */}
-      <form className="flex flex-wrap sm:flex-nowrap items-center gap-3" method="get">
+      <FilterBar>
         <div className="relative flex-1 min-w-[200px] sm:min-w-[220px] max-w-md w-full">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" />
           <input
@@ -206,10 +207,7 @@ export default async function AdminCustomersPage({
           />
         </div>
         <StatusFilterSelect defaultValue={searchParams.status} />
-        <button type="submit" className="btn-outline w-full sm:w-auto">
-          Search
-        </button>
-      </form>
+      </FilterBar>
 
       {/* 3. Table Card (Header loads immediately, rows stream via Suspense) */}
       <div className="card overflow-hidden">

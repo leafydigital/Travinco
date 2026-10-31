@@ -2,7 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server';
 import { requireProfile, checkModulePermission } from '@/lib/supabase/auth-helpers';
-import { blogPostSchema } from '@/lib/validations/content';
+import { blogPostSchema, blogPublishError } from '@/lib/validations/content';
 import { slugify } from '@/lib/validations/package';
 import { revalidatePath } from '@/lib/public-cache'; // also purges cached public website content
 import type { ContentStatus } from '@/types/database';
@@ -46,6 +46,11 @@ export async function updateBlogPost(id: string, raw: unknown) {
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Please check the form.' };
 
   const supabase = await createClient();
+  const { data: current } = await supabase.from('blog_posts').select('status').eq('id', id).maybeSingle();
+  if (current?.status === 'published') {
+    const publishError = blogPublishError(parsed.data);
+    if (publishError) return { error: publishError.replace("Can't publish yet — this post", 'A published post') };
+  }
   const { error } = await supabase
     .from('blog_posts')
     .update({ ...parsed.data, cover_image_url: parsed.data.cover_image_url || null })
@@ -64,6 +69,12 @@ export async function setBlogPostStatus(id: string, status: ContentStatus) {
   if (!perm.allowed) return { error: perm.error || 'You do not have permission to manage blog posts.' };
 
   const supabase = await createClient();
+  if (status === 'published') {
+    const { data: post } = await supabase.from('blog_posts').select('content, cover_image_url').eq('id', id).maybeSingle();
+    if (!post) return { error: 'Post not found.' };
+    const publishError = blogPublishError(post);
+    if (publishError) return { error: publishError };
+  }
   const { error } = await supabase.from('blog_posts').update({ status }).eq('id', id);
   if (error) return { error: 'Could not update status.' };
   revalidatePath('/travinco_dashboard/blog');
@@ -142,10 +153,28 @@ export async function bulkCreateBlogPosts(
     return { error: 'Please provide at least one blog post to save.' };
   }
 
-  // Filter items with a valid title (minimum 3 characters)
-  const candidates = items.filter((b) => b && typeof b.title === 'string' && b.title.trim().length >= 3);
+  // Same rules as the single post form. Cards with nothing filled in are ignored;
+  // a card with details but a missing/short title is an error, never silently dropped.
+  const candidates = items.filter(
+    (b) => b && [b.title, b.excerpt, b.content, b.cover_image_url].some((v) => String(v ?? '').trim())
+  );
   if (candidates.length === 0) {
-    return { error: 'Each blog post must have a valid title (at least 3 characters).' };
+    return { error: 'Please provide at least one blog post to save.' };
+  }
+  for (const [i, b] of candidates.entries()) {
+    const label = b.title?.trim() ? `Post ${i + 1} ("${b.title.trim()}")` : `Post ${i + 1}`;
+    const parsed = blogPostSchema.safeParse({
+      title: b.title ?? '',
+      slug: slugify(b.slug || b.title || '') || 'blog-post',
+      excerpt: b.excerpt ?? null,
+      content: b.content ?? null,
+      cover_image_url: b.cover_image_url || null,
+    });
+    if (!parsed.success) return { error: `${label}: ${parsed.error.issues[0]?.message ?? 'Invalid details'}` };
+    if (b.status === 'published') {
+      const publishError = blogPublishError(b);
+      if (publishError) return { error: `${label}: ${publishError}` };
+    }
   }
 
   const supabase = await createClient();

@@ -317,18 +317,21 @@ export function AdminDateField({
   min,
   max,
   invalid,
+  className = 'border',
 }: {
   value: string;
   onChange: (iso: string) => void;
   min: string;
   max: string;
   invalid?: boolean;
+  /** Classes for the trigger button; the default adds the border a bare button lacks. */
+  className?: string;
 }) {
   // Keep an existing (older) saved date visible/selectable when editing.
   const effectiveMin = value && value < min ? value : min;
   return (
     <div className="relative">
-      <DatePickerDMY value={value} onChange={onChange} min={effectiveMin} max={max} invalid={invalid} />
+      <DatePickerDMY value={value} onChange={onChange} min={effectiveMin} max={max} invalid={invalid} className={className} />
       {value && (
         <button
           type="button"

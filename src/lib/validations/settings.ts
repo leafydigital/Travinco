@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { imageUrlSchema } from './image-url';
 
 export const destinationSchema = z.object({
-  name: z.string().min(2, 'Name is required').max(120),
+  name: z.string().trim().min(2, 'Name is required (at least 2 characters)').max(120),
   slug: z
     .string()
     .min(2)

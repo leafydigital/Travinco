@@ -12,6 +12,7 @@ import {
   type RefObject,
 } from 'react';
 import { toast } from '@/lib/admin-alert';
+import { validateInvoiceBankDetails } from '@/lib/validations/finance';
 import {
   Building2,
   QrCode,
@@ -44,6 +45,8 @@ interface InvoiceSettingsContextType {
   uploadingQr: boolean;
   signFileRef: RefObject<HTMLInputElement>;
   qrFileRef: RefObject<HTMLInputElement>;
+  /** Field errors from the last failed save, keyed by setting name. */
+  fieldErrors: Record<string, string>;
 }
 
 const InvoiceSettingsContext = createContext<InvoiceSettingsContextType | null>(null);
@@ -71,6 +74,7 @@ export function InvoiceSettingsProvider({
   );
   const [sampleQrDataUrl, setSampleQrDataUrl] = useState<string>('');
   const [uploadingSign, setUploadingSign] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [uploadingQr, setUploadingQr] = useState(false);
   const signFileRef = useRef<HTMLInputElement>(null);
   const qrFileRef = useRef<HTMLInputElement>(null);
@@ -123,11 +127,22 @@ export function InvoiceSettingsProvider({
 
   const update = (patch: Partial<InvoiceSettings>) => {
     setSettings((prev) => ({ ...prev, ...patch }));
+    if (Object.keys(patch).some((k) => fieldErrors[k])) {
+      setFieldErrors((prev) => {
+        const next = { ...prev };
+        for (const k of Object.keys(patch)) delete next[k];
+        return next;
+      });
+    }
   };
 
   // Saved by the page's single "Save settings" button
   const handleSave = async () => {
     if (uploadingSign || uploadingQr) return { error: 'Please wait for the image upload to finish.' };
+    const errors = validateInvoiceBankDetails(settings);
+    setFieldErrors(errors);
+    const first = Object.values(errors)[0];
+    if (first) return { error: `Invoice settings: ${first}` };
     const res = await saveInvoiceSettings(settings);
     return res?.error ? { error: res.error } : undefined;
   };
@@ -187,6 +202,7 @@ export function InvoiceSettingsProvider({
         uploadingQr,
         signFileRef,
         qrFileRef,
+        fieldErrors,
       }}
     >
       {children}
@@ -207,6 +223,7 @@ function InvoiceSettingsEditorForm() {
     uploadingQr,
     signFileRef,
     qrFileRef,
+    fieldErrors,
   } = useInvoiceSettings();
 
   return (
@@ -248,12 +265,14 @@ function InvoiceSettingsEditorForm() {
               </label>
               <input
                 id="inv-bname"
+                aria-invalid={Boolean(fieldErrors.bank_name)}
                 type="text"
                 className="input h-9 text-xs bg-white"
                 value={settings.bank_name}
                 onChange={(e) => update({ bank_name: e.target.value })}
                 placeholder="e.g. Federal bank"
               />
+              {fieldErrors.bank_name && <p className="field-error">{fieldErrors.bank_name}</p>}
             </div>
             <div>
               <label className="label text-xs" htmlFor="inv-branch">
@@ -274,12 +293,14 @@ function InvoiceSettingsEditorForm() {
               </label>
               <input
                 id="inv-accname"
+                aria-invalid={Boolean(fieldErrors.bank_account_name)}
                 type="text"
                 className="input h-9 text-xs bg-white"
                 value={settings.bank_account_name}
                 onChange={(e) => update({ bank_account_name: e.target.value })}
                 placeholder="e.g. Travinco Travel Solutions"
               />
+              {fieldErrors.bank_account_name && <p className="field-error">{fieldErrors.bank_account_name}</p>}
             </div>
             <div>
               <label className="label text-xs" htmlFor="inv-accnum">
@@ -287,12 +308,14 @@ function InvoiceSettingsEditorForm() {
               </label>
               <input
                 id="inv-accnum"
+                aria-invalid={Boolean(fieldErrors.bank_account_number)}
                 type="text"
                 className="input h-9 text-xs font-mono bg-white"
                 value={settings.bank_account_number}
                 onChange={(e) => update({ bank_account_number: e.target.value })}
                 placeholder="e.g. 22040200004059"
               />
+              {fieldErrors.bank_account_number && <p className="field-error">{fieldErrors.bank_account_number}</p>}
             </div>
             <div>
               <label className="label text-xs" htmlFor="inv-ifsc">
@@ -300,12 +323,14 @@ function InvoiceSettingsEditorForm() {
               </label>
               <input
                 id="inv-ifsc"
+                aria-invalid={Boolean(fieldErrors.bank_ifsc)}
                 type="text"
                 className="input h-9 text-xs font-mono uppercase bg-white"
                 value={settings.bank_ifsc}
                 onChange={(e) => update({ bank_ifsc: e.target.value.toUpperCase() })}
                 placeholder="e.g. FDRL0002204"
               />
+              {fieldErrors.bank_ifsc && <p className="field-error">{fieldErrors.bank_ifsc}</p>}
             </div>
             <div>
               <label className="label text-xs" htmlFor="inv-upi">
@@ -313,12 +338,14 @@ function InvoiceSettingsEditorForm() {
               </label>
               <input
                 id="inv-upi"
+                aria-invalid={Boolean(fieldErrors.bank_upi_id)}
                 type="text"
                 className="input h-9 text-xs font-mono bg-white"
                 value={settings.bank_upi_id}
                 onChange={(e) => update({ bank_upi_id: e.target.value })}
                 placeholder="e.g. travinco1@fdl"
               />
+              {fieldErrors.bank_upi_id && <p className="field-error">{fieldErrors.bank_upi_id}</p>}
             </div>
           </div>
         </div>

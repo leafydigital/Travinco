@@ -1,6 +1,8 @@
 'use client';
 
 import { useState } from 'react';
+import { reportThemeErrors } from '@/lib/theme-form-errors';
+import { validateContactPageContent } from '@/lib/validations/theme';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import {
@@ -141,6 +143,7 @@ export function ContactPageEditor({
 
   // Save changes handler
   const handleSave = async () => {
+    if (reportThemeErrors(validateContactPageContent(content))) return;
     try {
       setIsSaving(true);
       const res = await saveContactPageContentAction(content);
@@ -282,7 +285,7 @@ export function ContactPageEditor({
               Hero Background Image URL
             </label>
             <div className="flex flex-col sm:flex-row items-stretch gap-2.5">
-              <input
+              <input data-field="hero.background_image_url"
                 type="url"
                 value={content.hero?.background_image_url || ''}
                 onChange={(e) =>
@@ -374,7 +377,7 @@ export function ContactPageEditor({
             <label className="block text-xs font-bold uppercase tracking-wider text-ink-700 mb-1.5">
               Hero Badge (Pill)
             </label>
-            <input
+            <input data-field="hero.badge"
               type="text"
               value={content.hero?.badge || ''}
               onChange={(e) =>
@@ -392,7 +395,7 @@ export function ContactPageEditor({
             <label className="block text-xs font-bold uppercase tracking-wider text-ink-700 mb-1.5">
               Hero Display Title (H1)
             </label>
-            <input
+            <input data-field="hero.title"
               type="text"
               value={content.hero?.title || ''}
               onChange={(e) =>
@@ -410,7 +413,7 @@ export function ContactPageEditor({
             <label className="block text-xs font-bold uppercase tracking-wider text-ink-700 mb-1.5">
               Hero Subtitle / Description
             </label>
-            <textarea
+            <textarea data-field="hero.subtitle"
               rows={2}
               value={content.hero?.subtitle || ''}
               onChange={(e) =>
@@ -480,7 +483,7 @@ export function ContactPageEditor({
                   <label className="block text-[11px] font-semibold text-ink-600 mb-1">
                     Label
                   </label>
-                  <input
+                  <input data-field={`hero.pillars.${idx}.label`}
                     type="text"
                     value={pillar.label || ''}
                     onChange={(e) => handlePillarChange(idx, 'label', e.target.value)}
@@ -515,7 +518,7 @@ export function ContactPageEditor({
             <label className="block text-xs font-bold uppercase tracking-wider text-ink-700 mb-1.5">
               Phone Number
             </label>
-            <input
+            <input data-field="phone"
               type="text"
               value={content.phone || ''}
               onChange={(e) =>
@@ -530,7 +533,7 @@ export function ContactPageEditor({
             <label className="block text-xs font-bold uppercase tracking-wider text-ink-700 mb-1.5">
               Email Address
             </label>
-            <input
+            <input data-field="email"
               type="email"
               value={content.email || ''}
               onChange={(e) =>
@@ -545,7 +548,7 @@ export function ContactPageEditor({
             <label className="block text-xs font-bold uppercase tracking-wider text-ink-700 mb-1.5">
               WhatsApp Number
             </label>
-            <input
+            <input data-field="whatsapp"
               type="text"
               value={content.whatsapp || ''}
               onChange={(e) =>
@@ -563,7 +566,7 @@ export function ContactPageEditor({
             <label className="block text-xs font-bold uppercase tracking-wider text-ink-700 mb-1.5">
               Working Hours
             </label>
-            <input
+            <input data-field="working_hours"
               type="text"
               value={content.working_hours || ''}
               onChange={(e) =>
@@ -578,7 +581,7 @@ export function ContactPageEditor({
             <label className="block text-xs font-bold uppercase tracking-wider text-ink-700 mb-1.5">
               Office Address
             </label>
-            <textarea
+            <textarea data-field="address"
               rows={2}
               value={content.address || ''}
               onChange={(e) =>
@@ -593,7 +596,7 @@ export function ContactPageEditor({
             <label className="block text-xs font-bold uppercase tracking-wider text-ink-700 mb-1.5">
               Google Maps Embed URL
             </label>
-            <input
+            <input data-field="map_embed_url"
               type="url"
               value={content.map_embed_url || ''}
               onChange={(e) =>
@@ -639,7 +642,7 @@ export function ContactPageEditor({
               <label className="block text-[11px] font-semibold text-ink-600 mb-1">
                 Badge
               </label>
-              <input
+              <input data-field="info_badge"
                 type="text"
                 value={content.info_badge || ''}
                 onChange={(e) =>
@@ -654,7 +657,7 @@ export function ContactPageEditor({
               <label className="block text-[11px] font-semibold text-ink-600 mb-1">
                 Title
               </label>
-              <input
+              <input data-field="info_title"
                 type="text"
                 value={content.info_title || ''}
                 onChange={(e) =>
@@ -669,7 +672,7 @@ export function ContactPageEditor({
               <label className="block text-[11px] font-semibold text-ink-600 mb-1">
                 Subtitle
               </label>
-              <textarea
+              <textarea data-field="info_subtitle"
                 rows={2}
                 value={content.info_subtitle || ''}
                 onChange={(e) =>
@@ -694,7 +697,7 @@ export function ContactPageEditor({
               <label className="block text-[11px] font-semibold text-ink-600 mb-1">
                 Badge
               </label>
-              <input
+              <input data-field="form_badge"
                 type="text"
                 value={content.form_badge || ''}
                 onChange={(e) =>
@@ -709,7 +712,7 @@ export function ContactPageEditor({
               <label className="block text-[11px] font-semibold text-ink-600 mb-1">
                 Title
               </label>
-              <input
+              <input data-field="form_title"
                 type="text"
                 value={content.form_title || ''}
                 onChange={(e) =>
@@ -724,7 +727,7 @@ export function ContactPageEditor({
               <label className="block text-[11px] font-semibold text-ink-600 mb-1">
                 Subtitle
               </label>
-              <textarea
+              <textarea data-field="form_subtitle"
                 rows={2}
                 value={content.form_subtitle || ''}
                 onChange={(e) =>

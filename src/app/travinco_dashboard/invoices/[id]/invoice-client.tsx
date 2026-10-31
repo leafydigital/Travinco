@@ -3,12 +3,13 @@
 import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from '@/lib/admin-alert';
-import { Ban, FileDown, Pencil, Plus, Printer, Trash2, X } from 'lucide-react';
+import { Ban, FileDown, Pencil, Printer, Trash2 } from 'lucide-react';
 import { addInvoicePayment, cancelInvoice, deleteInvoice, deleteInvoicePayment, updateInvoice } from '../actions';
 import { downloadPdf, downloadWord, printAsPdf } from '@/components/tour/doc-tools';
 import { Dialog } from '@/components/admin/entity-manager';
 import { ConfirmDeleteDialog } from '@/components/admin/confirm-delete-dialog';
 import type { InvoiceDoc } from '@/components/tour/invoice-document';
+import { InvoiceForm, type InvoiceFormFields, type InvoiceFormPayload } from '@/components/tour/invoice-form';
 
 const METHODS = [
   ['upi', 'UPI'], ['bank_transfer', 'Bank transfer'], ['cash', 'Cash'], ['credit_card', 'Credit card'],
@@ -96,7 +97,7 @@ export function InvoiceToolbar({ id, inv, fileName, canCancel, companyState, isA
 function InvoiceEditor({ id, inv, companyState, onClose }: { id: string; inv: InvoiceDoc; companyState: string; onClose: () => void }) {
   const router = useRouter();
   const [pending, start] = useTransition();
-  const [f, setF] = useState({
+  const initialFields: InvoiceFormFields = {
     bill_to_name: inv.bill_to_name,
     bill_to_phone: inv.bill_to_phone ?? '',
     bill_to_email: inv.bill_to_email ?? '',
@@ -105,6 +106,8 @@ function InvoiceEditor({ id, inv, companyState, onClose }: { id: string; inv: In
     place_of_supply: inv.place_of_supply ?? companyState,
     invoice_date: inv.invoice_date,
     due_date: inv.due_date ?? '',
+    travel_start: inv.travel_start ?? '',
+    travel_end: inv.travel_end ?? '',
     discount: String(inv.discount ?? 0),
     gst_pct: String(inv.gst_pct),
     tax_mode: inv.tax_mode,
@@ -112,159 +115,36 @@ function InvoiceEditor({ id, inv, companyState, onClose }: { id: string; inv: In
     terms: inv.terms ?? '',
     markup_pct: String(inv.markup_pct ?? 15),
     markup_amount: String(inv.markup_amount ?? ''),
+  };
+  const initialItems = inv.items.map((i) => {
+    const isSingle = inv.items.length === 1;
+    const rateVal = isSingle && Math.abs(Number(i.rate) * (Number(i.qty) || 1) - Number(inv.total_amount)) > 1
+      ? Number(inv.total_amount) / (Number(i.qty) || 1)
+      : Number(i.rate);
+    return { description: i.description, sac: i.sac, qty: String(i.qty), rate: String(rateVal) };
   });
-  const [items, setItems] = useState(
-    inv.items.map((i) => {
-      const isSingle = inv.items.length === 1;
-      const rateVal = isSingle && Math.abs(Number(i.rate) * (Number(i.qty) || 1) - Number(inv.total_amount)) > 1
-        ? Number(inv.total_amount) / (Number(i.qty) || 1)
-        : Number(i.rate);
-      return { description: i.description, sac: i.sac, qty: String(i.qty), rate: String(rateVal) };
-    })
-  );
-  const set = (k: keyof typeof f, v: string) => setF((s) => ({ ...s, [k]: v }));
-  const subtotal = items.reduce((a, i) => a + (Number(i.qty) || 0) * (Number(i.rate) || 0), 0);
-  const taxable = Math.max(0, subtotal - (Number(f.discount) || 0));
-  const total = Math.round(taxable * (1 + (Number(f.gst_pct) || 0) / 100));
 
-  const markupPctVal = Number(f.markup_pct) || 0;
-  const computedMarkup = markupPctVal > 0 ? Math.round((taxable * markupPctVal) / (100 + markupPctVal)) : 0;
-  const currentMarkupAmount = Number(f.markup_amount) || computedMarkup;
-
-  const save = () =>
+  const save = (payload: InvoiceFormPayload) =>
     start(async () => {
-      const finalMarkupAmt = Number(f.markup_amount) || computedMarkup;
-      const r = await updateInvoice(id, {
-        ...f,
-        markup_pct: markupPctVal,
-        markup_amount: finalMarkupAmt,
-        items,
-      });
+      const r = await updateInvoice(id, payload);
       if (r.error) return void toast.error(r.error);
       toast.success('Invoice saved');
       onClose();
       router.refresh();
     });
 
-  const input = (k: keyof typeof f, label: string, type = 'text', span = false) => (
-    <div className={span ? 'sm:col-span-2' : ''}>
-      <label className="label">{label}</label>
-      <input className="input" type={type} value={f[k]} onChange={(e) => set(k, e.target.value)} />
-    </div>
-  );
-
   return (
     <Dialog title={`Edit ${inv.invoice_number}`} onClose={onClose} wide>
-      <div className="grid gap-4 sm:grid-cols-2">
-        {input('bill_to_name', 'Bill to *', 'text', true)}
-        {input('bill_to_phone', 'Phone', 'tel')}
-        {input('bill_to_email', 'Email', 'email')}
-        <div className="sm:col-span-2">
-          <label className="label">Address</label>
-          <textarea className="input" rows={2} value={f.bill_to_address} onChange={(e) => set('bill_to_address', e.target.value)} />
-        </div>
-        {input('bill_to_gstin', 'Customer GSTIN (B2B)')}
-        <div>
-          <label className="label">Place of supply</label>
-          <input
-            className="input"
-            value={f.place_of_supply}
-            onChange={(e) => {
-              const v = e.target.value;
-              setF((s) => ({ ...s, place_of_supply: v, tax_mode: v.trim().toLowerCase() === companyState.toLowerCase() ? 'cgst_sgst' : 'igst' }));
-            }}
-          />
-          <p className="mt-1 text-xs text-ink-400">{companyState} → CGST + SGST, other states → IGST</p>
-        </div>
-        {input('invoice_date', 'Invoice date', 'date')}
-        {input('due_date', 'Due date', 'date')}
-        <div>
-          <label className="label">GST %</label>
-          <input className="input" type="number" step="any" value={f.gst_pct} onChange={(e) => set('gst_pct', e.target.value)} />
-        </div>
-        <div>
-          <label className="label">Tax type</label>
-          <select className="input" value={f.tax_mode} onChange={(e) => set('tax_mode', e.target.value)}>
-            <option value="cgst_sgst">CGST + SGST (intra-state)</option>
-            <option value="igst">IGST (inter-state)</option>
-          </select>
-        </div>
-      </div>
-
-      <div className="mt-5">
-        <p className="label">Line items (amounts before GST)</p>
-        <div className="space-y-2">
-          {items.map((it, i) => (
-            <div key={i} className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_90px_70px_120px_auto]">
-              <textarea className="input" rows={2} value={it.description} onChange={(e) => setItems(items.map((x, j) => (j === i ? { ...x, description: e.target.value } : x)))} placeholder="Description" />
-              <input className="input" value={it.sac} onChange={(e) => setItems(items.map((x, j) => (j === i ? { ...x, sac: e.target.value } : x)))} placeholder="SAC" />
-              <input className="input" type="number" step="any" value={it.qty} onChange={(e) => setItems(items.map((x, j) => (j === i ? { ...x, qty: e.target.value } : x)))} placeholder="Qty" />
-              <input className="input" type="number" step="any" value={it.rate} onChange={(e) => setItems(items.map((x, j) => (j === i ? { ...x, rate: e.target.value } : x)))} placeholder="Rate" />
-              <button type="button" className="rounded-lg p-2 text-ink-400 hover:bg-red-50 hover:text-red-600" disabled={items.length === 1} onClick={() => setItems(items.filter((_, j) => j !== i))} aria-label="Remove line">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          ))}
-          <button type="button" className="btn-ghost px-3 py-1.5" onClick={() => setItems([...items, { description: '', sac: items[0]?.sac ?? '998555', qty: '1', rate: '0' }])}>
-            <Plus className="h-4 w-4" /> Add line
-          </button>
-        </div>
-        <div className="mt-3 grid gap-4 sm:grid-cols-2">
-          {input('discount', 'Discount (₹, before GST)', 'number')}
-          <div>
-            <label className="label">Markup % (Profit margin)</label>
-            <div className="relative">
-              <input
-                className="input pr-8"
-                type="number"
-                step="any"
-                value={f.markup_pct}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  const pct = Number(val) || 0;
-                  const amt = pct > 0 ? Math.round((taxable * pct) / (100 + pct)) : 0;
-                  setF((s) => ({ ...s, markup_pct: val, markup_amount: String(amt) }));
-                }}
-                placeholder="15"
-              />
-              <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs font-semibold text-ink-400">
-                %
-              </span>
-            </div>
-            <p className="mt-1 text-xs text-ink-500">
-              Markup Price: <span className="font-semibold text-emerald-700">₹{currentMarkupAmount.toLocaleString('en-IN')}</span>
-            </p>
-          </div>
-
-          <div className="sm:col-span-2 rounded-lg bg-emerald-50/60 border border-emerald-100 p-3 text-sm flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <span className="text-ink-600">Taxable: </span>
-              <span className="font-semibold text-ink-900">₹{taxable.toLocaleString('en-IN')}</span>
-              <span className="mx-2 text-ink-300">·</span>
-              <span className="text-emerald-700 font-medium">Markup Price: </span>
-              <span className="font-bold text-emerald-800">₹{currentMarkupAmount.toLocaleString('en-IN')}</span>
-              <span className="text-xs text-emerald-600 font-medium ml-1">({markupPctVal}%)</span>
-            </div>
-            <div>
-              <span className="text-ink-600">Total Invoice Amount ≈ </span>
-              <span className="font-bold text-ink-950 text-base">₹{total.toLocaleString('en-IN')}</span>
-            </div>
-          </div>
-
-          <div className="sm:col-span-2">
-            <label className="label">Notes</label>
-            <textarea className="input" rows={2} value={f.notes} onChange={(e) => set('notes', e.target.value)} />
-          </div>
-          <div className="sm:col-span-2">
-            <label className="label">Terms</label>
-            <textarea className="input" rows={2} value={f.terms} onChange={(e) => set('terms', e.target.value)} />
-          </div>
-        </div>
-      </div>
-      <div className="mt-5 flex justify-end gap-2 border-t border-ink-100 pt-4">
-        <button className="btn-outline" onClick={onClose}>Cancel</button>
-        <button className="btn-primary" disabled={pending} onClick={save}>{pending ? 'Saving…' : 'Save invoice'}</button>
-      </div>
+      <InvoiceForm
+        initialFields={initialFields}
+        initialItems={initialItems}
+        companyState={companyState}
+        submitLabel="Save invoice"
+        pendingLabel="Saving…"
+        pending={pending}
+        onSubmit={save}
+        onCancel={onClose}
+      />
     </Dialog>
   );
 }

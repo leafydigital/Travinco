@@ -1,3 +1,4 @@
+import { FilterBar } from '@/components/admin/filter-bar';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Suspense } from 'react';
@@ -282,7 +283,7 @@ export default async function QuotationsPage({
       </div>
 
       {/* 3. Search Bar (Renders Instantly) */}
-      <form method="get" className="flex flex-wrap sm:flex-nowrap items-center gap-3">
+      <FilterBar>
         {searchParams.status && (
           <input type="hidden" name="status" value={searchParams.status} />
         )}
@@ -295,10 +296,7 @@ export default async function QuotationsPage({
             className="input pl-9 w-full"
           />
         </div>
-        <button type="submit" className="btn-outline w-full sm:w-auto">
-          Search
-        </button>
-      </form>
+      </FilterBar>
 
       {/* 4. Table Container (Header loads immediately, rows show skeleton only while fetching) */}
       <div className="card overflow-hidden">

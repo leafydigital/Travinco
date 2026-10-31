@@ -7,7 +7,39 @@ import { canAccess, canOverrideMarkup, isAdminRole } from '@/lib/tour/access';
 import { loadRatesForStays, loadTourMasters } from '@/lib/tour/data';
 import { addDays, buildCtx, buildSnapshot, normalizeInputs, quote, totalNights } from '@/lib/tour/engine';
 import type { QuoteInputs, RateRow } from '@/lib/tour/types';
-import { ALL_ZERO_PHONE_MESSAGE, isAllZeroPhone } from '@/lib/validations/phone';
+import { ALL_ZERO_PHONE_MESSAGE, isAllZeroPhone, isFakePhone } from '@/lib/validations/phone';
+import { isValidPhoneNumber } from 'libphonenumber-js';
+import { validateEmailAddress } from '@/lib/validations/contact-rules';
+import { earliestAvailabilityDate } from '@/lib/validations/package';
+
+/** Same rules as the quotation builder form (kept here so they can't be bypassed). */
+const GUEST_NAME_RE = /^[\p{L}][\p{L}\p{M} .'-]*$/u;
+
+function guestDetailsError(i: QuoteInputs): string | null {
+  const name = i.guest_name.trim();
+  if (!name) return 'Enter the guest name.';
+  if (!GUEST_NAME_RE.test(name)) return 'Guest name can only contain letters, spaces, dots, apostrophes and hyphens.';
+  const phone = i.guest_phone.trim();
+  if (phone) {
+    if (isAllZeroPhone(phone)) return ALL_ZERO_PHONE_MESSAGE;
+    if (!isValidPhoneNumber(phone, 'IN') || isFakePhone(phone)) return 'Please enter a valid phone number.';
+  }
+  if (i.guest_email.trim()) {
+    const emailError = validateEmailAddress(i.guest_email);
+    if (emailError) return emailError;
+  }
+  return null;
+}
+
+/** New or changed start dates: at least 2 days ahead and within a year. */
+function startDateError(date: string, previous: string | null): string | null {
+  if (previous && date === previous) return null;
+  if (date < earliestAvailabilityDate()) return 'Start date must be at least 2 days from today.';
+  const max = new Date();
+  max.setFullYear(max.getFullYear() + 1);
+  if (date > max.toISOString().slice(0, 10)) return 'Start date must be within 1 year from today.';
+  return null;
+}
 
 const STATUSES = ['draft', 'sent', 'accepted', 'rejected', 'expired'] as const;
 type Status = (typeof STATUSES)[number];
@@ -55,18 +87,22 @@ export async function saveQuotation(
 
   const m = await loadTourMasters();
   const inputs = normalizeInputs(raw, m);
-  if (!inputs.guest_name.trim()) return { error: 'Enter the guest name.' };
-  if (isAllZeroPhone(inputs.guest_phone)) return { error: ALL_ZERO_PHONE_MESSAGE };
+  const guestError = guestDetailsError(inputs);
+  if (guestError) return { error: guestError };
   if (!inputs.stays.length) return { error: 'Add at least one stay (location and nights).' };
   if (totalNights(inputs) > 60) return { error: 'A quotation can cover at most 60 nights.' };
   const override = canOverrideMarkup(profile);
   if (!override) inputs.markup_pct = null;
 
+  let previousStartDate: string | null = null;
   if (id) {
-    const { data: existing } = await supabase.from('quotations').select('status').eq('id', id).maybeSingle();
+    const { data: existing } = await supabase.from('quotations').select('status, start_date').eq('id', id).maybeSingle();
     if (!existing) return { error: 'Quotation not found.' };
     if (existing.status === 'invoiced') return { error: 'This quotation has been invoiced. Cancel the invoice before editing it, or duplicate the quotation.' };
+    previousStartDate = existing.start_date ?? null;
   }
+  const dateError = startDateError(inputs.start_date, previousStartDate);
+  if (dateError) return { error: dateError };
 
   const rates = await loadRatesForStays(m, inputs.stays.map((x) => x.location_id));
   const ctx = buildCtx(m, rates, override);

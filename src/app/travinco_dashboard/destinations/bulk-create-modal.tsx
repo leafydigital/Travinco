@@ -25,6 +25,7 @@ import {
 } from './featured-limit-dialog';
 import { uploadDestinationImage } from './upload-actions';
 import { slugify } from '@/lib/validations/package';
+import { destinationSchema } from '@/lib/validations/settings';
 import type { ContentStatus } from '@/types/database';
 import { ModalPortal } from '@/components/ui/modal-portal';
 
@@ -184,16 +185,35 @@ export function BulkCreateDestinationsModal({
   function handleBulkSave() {
     setFormError(null);
 
-    const validCards = cards.filter((c) => c.name.trim().length > 0);
+    // Cards with any details filled in are saved; completely empty cards are ignored.
+    const validCards = cards.filter((c) =>
+      [c.name, c.country, c.description, c.cover_image_url].some((v) => v.trim())
+    );
     if (validCards.length === 0) {
       setFormError('Please enter at least one destination name.');
       return;
     }
 
-    const invalidName = validCards.find((c) => c.name.trim().length < 2);
-    if (invalidName) {
-      setFormError(`"${invalidName.name}" is too short. Names must be at least 2 characters.`);
-      return;
+    // Same rules as the single destination form
+    for (const [i, c] of validCards.entries()) {
+      const check = destinationSchema.safeParse({
+        name: c.name,
+        slug: c.slug.trim() || slugify(c.name.trim()) || 'destination',
+        country: c.country,
+        description: c.description.trim() || null,
+        cover_image_url: c.cover_image_url.trim() || null,
+        is_featured: c.is_featured,
+        meta_title: c.meta_title.trim() || null,
+        meta_description: c.meta_description.trim() || null,
+      });
+      if (!check.success) {
+        const label = c.name.trim() ? `Destination ${i + 1} ("${c.name.trim()}")` : `Destination ${i + 1}`;
+        const message = `${label}: ${check.error.issues[0]?.message ?? 'Invalid details'}`;
+        setFormError(message);
+        toast.error(message);
+        setCards((prev) => prev.map((card) => (card.id === c.id ? { ...card, isCollapsed: false } : card)));
+        return;
+      }
     }
 
     const payload: BulkDestinationInput[] = validCards.map((c) => ({
@@ -367,7 +387,7 @@ export function BulkCreateDestinationsModal({
                           />
                         </HField>
   
-                        <HField label="Country" htmlFor={`bulk-country-${card.id}`} fieldClassName="sm:max-w-xs">
+                        <HField label="Country" required htmlFor={`bulk-country-${card.id}`} fieldClassName="sm:max-w-xs">
                           <CountryInput
                             id={`bulk-country-${card.id}`}
                             value={card.country}

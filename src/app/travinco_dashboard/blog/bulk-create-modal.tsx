@@ -20,6 +20,7 @@ import { TextField, TextAreaField } from '@/components/ui/form-fields';
 import { bulkCreateBlogPosts, type BulkBlogPostInput } from './actions';
 import { uploadBlogImage } from './upload-actions';
 import { slugify } from '@/lib/validations/package';
+import { blogPostSchema, blogPublishError } from '@/lib/validations/content';
 import type { ContentStatus } from '@/types/database';
 import { ModalPortal } from '@/components/ui/modal-portal';
 
@@ -151,16 +152,37 @@ export function BulkCreateBlogsModal({
   function handleBulkSave() {
     setFormError(null);
 
-    const validCards = cards.filter((c) => c.title.trim().length > 0);
+    // Cards with any details filled in are saved; completely empty cards are ignored.
+    const validCards = cards.filter((c) =>
+      [c.title, c.excerpt, c.content, c.cover_image_url].some((v) => v.trim())
+    );
     if (validCards.length === 0) {
       setFormError('Please enter at least one blog post with a title.');
       return;
     }
 
-    const invalidTitle = validCards.find((c) => c.title.trim().length < 3);
-    if (invalidTitle) {
-      setFormError(`"${invalidTitle.title}" is too short. Titles must be at least 3 characters.`);
-      return;
+    // Same rules as the single post form, plus content + cover image to publish
+    for (const [i, c] of validCards.entries()) {
+      const label = c.title.trim() ? `Post ${i + 1} ("${c.title.trim()}")` : `Post ${i + 1}`;
+      const check = blogPostSchema.safeParse({
+        title: c.title,
+        slug: c.slug.trim() || slugify(c.title.trim()) || 'blog-post',
+        excerpt: c.excerpt.trim() || null,
+        content: c.content.trim() || null,
+        cover_image_url: c.cover_image_url.trim() || null,
+      });
+      const problem = !check.success
+        ? check.error.issues[0]?.message ?? 'Invalid details'
+        : c.status === 'published'
+          ? blogPublishError({ content: c.content, cover_image_url: c.cover_image_url })
+          : null;
+      if (problem) {
+        const message = `${label}: ${problem}`;
+        setFormError(message);
+        toast.error(message);
+        setCards((prev) => prev.map((card) => (card.id === c.id ? { ...card, isCollapsed: false } : card)));
+        return;
+      }
     }
 
     const payload: BulkBlogPostInput[] = validCards.map((c) => ({

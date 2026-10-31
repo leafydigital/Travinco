@@ -1,3 +1,4 @@
+import { FilterBar } from '@/components/admin/filter-bar';
 import { Suspense, cache } from 'react';
 import { requireProfile, assertModulePermission, checkModulePermission } from '@/lib/supabase/auth-helpers';
 import { createClient } from '@/lib/supabase/server';
@@ -296,7 +297,7 @@ export default async function AdminEnquiriesPage({
       </Suspense>
 
       {/* 3. Instant Search & Filter Bar */}
-      <form className="flex flex-wrap items-center gap-3" method="get">
+      <FilterBar>
         {searchParams.view && <input type="hidden" name="view" value={searchParams.view} />}
         {searchParams.limit && <input type="hidden" name="limit" value={searchParams.limit} />}
         <div className="relative flex-1 min-w-[200px] sm:min-w-[220px] w-full sm:w-auto">
@@ -346,9 +347,6 @@ export default async function AdminEnquiriesPage({
           </Suspense>
         )}
 
-        <button type="submit" className="btn-primary w-full sm:w-auto">
-          Filter
-        </button>
 
         {hasFilters && (
           <Link
@@ -359,7 +357,7 @@ export default async function AdminEnquiriesPage({
             <RotateCcw className="h-3.5 w-3.5" /> Clear
           </Link>
         )}
-      </form>
+      </FilterBar>
 
       {/* 4. Fast Streaming Table with Skeleton */}
       <div className="card overflow-hidden">

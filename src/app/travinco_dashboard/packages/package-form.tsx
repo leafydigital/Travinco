@@ -15,6 +15,9 @@ import {
   HIGHLIGHT_MAX_LENGTH,
   SHORT_DESCRIPTION_MAX_LENGTH,
   MAX_DURATION_DAYS,
+  nightsRuleError,
+  availabilityLeadErrors,
+  earliestAvailabilityDate,
   type PackageFormValues,
 } from '@/lib/validations/package';
 import { ConfirmDeleteDialog } from '@/components/admin/confirm-delete-dialog';
@@ -122,6 +125,8 @@ export function PackageForm({
   });
 
   const range = availabilityRange();
+  // New packages can only be available from 2 days ahead; edits keep the normal window
+  const minDate = packageId ? range.min : earliestAvailabilityDate();
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setValues((v) => ({ ...v, [key]: value }));
@@ -156,10 +161,14 @@ export function PackageForm({
   // Live check so the team sees the nights/days rule while typing
   const days = values.duration_days;
   const nights = values.duration_nights;
-  const nightsError =
-    typeof days === 'number' && typeof nights === 'number' && nights > days
-      ? 'Nights must be less than or equal to days'
-      : errors.duration_nights;
+  const nightsError = nightsRuleError(days, nights) ?? errors.duration_nights;
+  const discountError =
+    typeof values.discount_price === 'number' &&
+    values.discount_price > 0 &&
+    typeof values.base_price === 'number' &&
+    values.discount_price >= values.base_price
+      ? 'Discount price must be lower than the starting price'
+      : errors.discount_price;
 
   async function handleFeaturedToggle(checked: boolean) {
     if (!checked) {
@@ -286,7 +295,10 @@ export function PackageForm({
       ...payload,
       destination_id: payload.destination_id || (destinationName ? PENDING_DESTINATION_ID : null),
     });
-    const fieldErrors = check.success ? {} : fieldErrorsFromZod(check.error);
+    const fieldErrors = {
+      ...(packageId ? {} : availabilityLeadErrors(payload)),
+      ...(check.success ? {} : fieldErrorsFromZod(check.error)),
+    };
     const extrasError = packageId
       ? null
       : validatePackageExtras({
@@ -516,8 +528,8 @@ export function PackageForm({
           <div className="w-36">
             <TextField
               label="Discount price"
-              error={errors.discount_price}
-              aria-invalid={Boolean(errors.discount_price)}
+              error={discountError}
+              aria-invalid={Boolean(discountError)}
               {...numberInput('discount_price')}
             />
           </div>
@@ -542,7 +554,8 @@ export function PackageForm({
             <FieldWrapper label="Available from" error={errors.available_from}>
               <AdminDateField
                 value={values.available_from ?? ''}
-                min={range.min}
+                min={minDate}
+                invalid={Boolean(errors.available_from)}
                 max={range.max}
                 onChange={(iso) => {
                   set('available_from', iso || null);
@@ -555,7 +568,7 @@ export function PackageForm({
             <FieldWrapper label="Available to" error={errors.available_to}>
               <AdminDateField
                 value={values.available_to ?? ''}
-                min={values.available_from || range.min}
+                min={values.available_from || minDate}
                 max={range.max}
                 invalid={Boolean(errors.available_to)}
                 onChange={(iso) => set('available_to', iso || null)}
@@ -854,13 +867,13 @@ export function PackageForm({
         {showSeoFields && (
           <div className="grid gap-x-3 gap-y-2.5 sm:grid-cols-2">
             <TextField
-              label="Meta title (optional — auto-generated from the package title if left blank)"
+              label="Meta title"
               value={values.meta_title ?? ''}
               error={errors.meta_title}
               onChange={(e) => set('meta_title', e.target.value)}
             />
             <TextField
-              label="Meta description (optional — auto-generated from the short description if left blank)"
+              label="Meta description"
               value={values.meta_description ?? ''}
               error={errors.meta_description}
               onChange={(e) => set('meta_description', e.target.value)}

@@ -241,11 +241,31 @@ export async function bulkCreateDestinations(
     return { error: 'Please provide at least one destination to save.' };
   }
 
-  // Filter items with a valid name (minimum 2 chars)
-  const candidates = items.filter((d) => d && typeof d.name === 'string' && d.name.trim().length >= 2);
-  if (candidates.length === 0) {
-    return { error: 'Each destination must have a valid name (at least 2 characters).' };
+  // Same rules as the single destination form. Cards with no details at all are
+  // ignored; a card with details but no name is an error, never silently dropped.
+  const filled = items.filter(
+    (d) => d && [d.name, d.country, d.description, d.cover_image_url].some((v) => String(v ?? '').trim())
+  );
+  if (filled.length === 0) {
+    return { error: 'Please provide at least one destination to save.' };
   }
+  for (const [i, d] of filled.entries()) {
+    const parsed = destinationSchema.safeParse({
+      name: d.name ?? '',
+      slug: slugify(d.slug || d.name || '') || 'destination',
+      country: d.country ?? '',
+      description: d.description ?? null,
+      cover_image_url: d.cover_image_url || null,
+      is_featured: Boolean(d.is_featured),
+      meta_title: d.meta_title ?? null,
+      meta_description: d.meta_description ?? null,
+    });
+    if (!parsed.success) {
+      const label = d.name?.trim() ? `Destination ${i + 1} ("${d.name.trim()}")` : `Destination ${i + 1}`;
+      return { error: `${label}: ${parsed.error.issues[0]?.message ?? 'Invalid details'}` };
+    }
+  }
+  const candidates = filled;
 
   const supabase = await createClient();
 

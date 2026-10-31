@@ -1,6 +1,7 @@
 'use server';
 
 import { revalidatePath } from '@/lib/public-cache'; // also purges cached public website content
+import { validateInvoiceBankDetails } from '@/lib/validations/finance';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
 import { requireProfile } from '@/lib/supabase/auth-helpers';
@@ -854,6 +855,8 @@ export async function uploadQuotationLogo(formData: FormData): Promise<{ url?: s
 export async function saveInvoiceSettings(invoiceSettings: InvoiceSettings): Promise<{ error?: string }> {
   const c = await adminClient();
   if ('error' in c) return { error: c.error };
+  const invalid = Object.values(validateInvoiceBankDetails(invoiceSettings))[0];
+  if (invalid) return { error: invalid };
 
   const { error } = await c.supabase.from('website_settings').upsert(
     {
