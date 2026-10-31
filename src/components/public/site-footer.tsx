@@ -1,6 +1,8 @@
 import Link from 'next/link';
 import { Phone, Mail, MapPin, Facebook, Instagram, Twitter, Linkedin, Youtube } from 'lucide-react';
 import type { FooterContent } from '@/lib/navbar-footer-content-types';
+import { mapsHref, telHref } from '@/lib/contact-links';
+import { EmailLink } from './email-link';
 import { DEFAULT_NAVBAR_FOOTER_CONTENT } from '@/lib/navbar-footer-content-types';
 
 type FooterSettings = {
@@ -165,18 +167,33 @@ export function SiteFooter({
           <p className="text-sm font-semibold text-white">{contactTitle}</p>
           <ul className="mt-3 space-y-2 text-sm text-white/60">
             {phone && (
-              <li className="flex items-center gap-2">
-                <Phone className="h-4 w-4 shrink-0 text-emerald-400" /> {phone}
+              <li>
+                <a href={telHref(phone)} className="group flex items-center gap-2 transition-colors hover:text-white" aria-label={`Call ${phone}`}>
+                  <Phone className="h-4 w-4 shrink-0 text-emerald-400" />
+                  <span className="underline-offset-4 group-hover:underline">{phone}</span>
+                </a>
               </li>
             )}
             {email && (
-              <li className="flex items-center gap-2">
-                <Mail className="h-4 w-4 shrink-0 text-emerald-400" /> {email}
+              <li>
+                <EmailLink email={email} className="group flex items-center gap-2 transition-colors hover:text-white" aria-label={`Email ${email}`}>
+                  <Mail className="h-4 w-4 shrink-0 text-emerald-400" />
+                  <span className="break-all underline-offset-4 group-hover:underline">{email}</span>
+                </EmailLink>
               </li>
             )}
             {address && (
-              <li className="flex items-start gap-2">
-                <MapPin className="h-4 w-4 shrink-0 mt-0.5 text-emerald-400" /> {address}
+              <li>
+                <a
+                  href={mapsHref(address)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="group flex items-start gap-2 transition-colors hover:text-white"
+                  aria-label={`Open ${address} in Google Maps`}
+                >
+                  <MapPin className="h-4 w-4 shrink-0 mt-0.5 text-emerald-400" />
+                  <span className="underline-offset-4 group-hover:underline">{address}</span>
+                </a>
               </li>
             )}
           </ul>

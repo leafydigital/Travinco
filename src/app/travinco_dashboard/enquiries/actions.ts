@@ -451,7 +451,7 @@ export async function updateEnquiryFollowupDate(
   return {};
 }
 
-const noteSchema = z.object({ note: z.string().min(1).max(2000) });
+const noteSchema = z.object({ note: z.string().trim().min(1, 'Note cannot be empty').max(2000, 'Note is too long (max 2000 characters)') });
 
 export async function addEnquiryNote(enquiryId: string, raw: unknown) {
   const permCheck = await checkEnquiryEditPermission(enquiryId);
@@ -1279,4 +1279,83 @@ export async function clearAndArchiveEnquiries(range: {
   revalidatePath(ENQUIRIES_PATH);
   revalidatePath('/travinco_dashboard');
   return { count: deleted };
+}
+
+// ─── Download Report: enquiries in a date range (optionally one status) as Excel rows ─
+const REPORT_HEADERS = [
+  'Enquiry #', 'Enquiry Date', 'Enquiry Received From', 'Customer Name', 'Phone', 'WhatsApp', 'Email',
+  'Destination', 'Travel Date', 'Return Date', 'Days', 'Adults', 'Children', 'Infants', 'Budget', 'Message',
+  'Source', 'Status', 'Priority', 'Assigned Staff', 'Last Contacted', 'Next Follow-up', 'Notes', 'Created At',
+];
+
+/**
+ * Enquiries whose Enquiry Date falls between `from` and `to` (inclusive), for the
+ * "Download Report" popup. Staff only get the enquiries assigned to them.
+ */
+export async function getEnquiryReportRows(params: {
+  from?: string;
+  to?: string;
+  status?: string;
+}): Promise<{ error?: string; headers?: string[]; rows?: (string | number | null)[][] }> {
+  const profile = await requireProfile();
+  const perm = await checkModulePermission(profile, 'enquiries', 'view');
+  if (!perm.allowed) return { error: perm.error || 'You do not have permission to view enquiries.' };
+
+  const valid = validateRange(params);
+  if (typeof valid === 'string') return { error: valid };
+
+  const status = params.status ? normalizeEnquiryStatus(params.status) : null;
+  const supabase = await createClient();
+  const PAGE = 1000;
+  const enquiries: Record<string, any>[] = [];
+  let legacy = false;
+
+  for (let offset = 0; ; offset += PAGE) {
+    let query = scopeToProfile(
+      supabase
+        .from('enquiries')
+        .select('*')
+        .or('is_deleted.is.null,is_deleted.eq.false')
+        .order(legacy ? 'created_at' : 'enquiry_date', { ascending: true })
+        .order('id')
+        .range(offset, offset + PAGE - 1),
+      profile
+    );
+    query = legacy
+      ? query.gte('created_at', `${valid.from}T00:00:00+05:30`).lte('created_at', `${valid.to}T23:59:59.999+05:30`)
+      : query.gte('enquiry_date', valid.from).lte('enquiry_date', valid.to);
+    if (status) query = query.in('status', [status, ...(LEGACY_STATUSES_FOR[status] ?? [])]);
+
+    const { data, error } = await query;
+    if (error && !legacy && offset === 0 && isMissingColumnError(error)) {
+      legacy = true;
+      offset = -PAGE;
+      continue;
+    }
+    if (error) {
+      console.error('getEnquiryReportRows failed:', error);
+      return { error: 'Could not load the enquiries. Please try again.' };
+    }
+    enquiries.push(...(data ?? []));
+    if (!data || data.length < PAGE) break;
+  }
+
+  const staffIds = Array.from(new Set(enquiries.map((e) => e.assigned_staff).filter(Boolean)));
+  const staffNames = new Map<string, string>();
+  if (staffIds.length > 0) {
+    const { data: staff } = await supabase.from('profiles').select('id, full_name').in('id', staffIds);
+    (staff ?? []).forEach((s: any) => staffNames.set(s.id, s.full_name));
+  }
+
+  const rows = enquiries.map((e) => [
+    e.enquiry_number ?? null, e.enquiry_date ?? String(e.created_at).slice(0, 10), e.enquiry_received_from ?? null,
+    e.customer_name ?? null, e.phone ?? null, e.whatsapp_number ?? null, e.email ?? null, e.destination ?? null,
+    e.travel_date ?? null, e.return_date ?? null, e.number_of_days ?? null, e.number_of_adults ?? null,
+    e.number_of_children ?? null, e.number_of_infants ?? null, e.budget ?? null, maskBadWords(e.message) ?? null,
+    e.source ?? null, enquiryStatusLabel(e.status), e.priority ?? null,
+    e.assigned_staff ? staffNames.get(e.assigned_staff) ?? 'Staff' : 'Unassigned',
+    e.last_contacted_at ?? null, e.next_followup_date ?? null, e.notes ?? null, e.created_at ?? null,
+  ]);
+
+  return { headers: REPORT_HEADERS, rows };
 }

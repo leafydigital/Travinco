@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from '@/lib/admin-alert';
+import { DatePickerDMY } from '@/components/public/date-picker-dmy';
 import { Plus } from 'lucide-react';
 import { createExpense } from '../finance-actions';
 import { blockNonNumericKeys, parseNonNegative } from '@/components/admin/package-fields';
@@ -60,11 +61,10 @@ export function ExpenseQuickAdd(_props: { categories: { id: string; name: string
   return (
     <div className="card space-y-3 p-5">
       <div className="grid gap-3 sm:grid-cols-3">
-        <input
-          type="date"
+        <DatePickerDMY
           value={form.expense_date}
-          onChange={(e) => setForm((f) => ({ ...f, expense_date: e.target.value }))}
-          className="input"
+          onChange={(iso) => setForm((f) => ({ ...f, expense_date: iso }))}
+          label="Expense date"
         />
         <input
           type="text"

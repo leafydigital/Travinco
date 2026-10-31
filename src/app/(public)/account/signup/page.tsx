@@ -30,6 +30,7 @@ import {
 import { PhoneInput } from '@/components/public/phone-input';
 import { validateEmailFormat, validateUsernameFormat } from '@/lib/auth/signup-rules';
 import { validateFullName } from '@/lib/validations/contact-rules';
+import { useStepHistory } from '@/lib/hooks/use-step-history';
 
 function PasswordRule({ met, label }: { met: boolean; label: string }) {
   return (
@@ -140,6 +141,8 @@ function SignupOtpInputBoxes({
 
 export default function SignupPage() {
   const [step, setStep] = useState<'credentials' | 'otp'>('credentials');
+  // Browser Back on the OTP screen returns to the details form
+  useStepHistory('signup', step, setStep, 'credentials');
   const [isLoading, setIsLoading] = useState(false);
   const [fullName, setFullName] = useState('');
   const [fullNameError, setFullNameError] = useState<string | null>(null);
@@ -262,7 +265,8 @@ export default function SignupPage() {
 
   // OTP step states
   const [signupTicket, setSignupTicket] = useState('');
-  const [maskedEmail, setMaskedEmail] = useState('');
+  // The visitor typed this address themselves, so it is shown in full to let them spot a typo
+  const [sentToEmail, setSentToEmail] = useState('');
   const [otpDigits, setOtpDigits] = useState<string[]>(['', '', '', '', '', '']);
   const [otpError, setOtpError] = useState<string | null>(null);
   const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
@@ -347,12 +351,12 @@ export default function SignupPage() {
 
       if (result.signupTicket) {
         setSignupTicket(result.signupTicket);
-        setMaskedEmail(result.maskedEmail || email);
+        setSentToEmail(email.trim());
         setOtpDigits(['', '', '', '', '', '']);
         setOtpError(null);
         setCooldown(60);
         setStep('otp');
-        toast.success(`Verification code sent to ${result.maskedEmail || email}`);
+        toast.success(`Verification code sent to ${email.trim()}`);
       }
     } catch (err: any) {
       const message = err?.message || 'Could not initiate registration. Please try again.';
@@ -812,8 +816,21 @@ export default function SignupPage() {
                 </h1>
                 <p className="mt-1.5 text-sm text-ink-500 leading-relaxed">
                   We sent a 6-digit code to{' '}
-                  <strong className="font-semibold text-ink-900">{maskedEmail}</strong>.
+                  <strong className="font-semibold text-ink-900 break-all">{sentToEmail}</strong>.
                   Enter it below to complete your registration.
+                </p>
+                <p className="mt-1 text-sm text-ink-500">
+                  Wrong email?{' '}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStep('credentials');
+                      setOtpError(null);
+                    }}
+                    className="font-semibold text-brand-600 hover:text-brand-700 hover:underline cursor-pointer"
+                  >
+                    Change it
+                  </button>
                 </p>
 
                 <div className="mt-8">

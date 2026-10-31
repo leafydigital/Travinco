@@ -21,7 +21,7 @@ import {
 import { toast } from '@/lib/admin-alert';
 import { bulkCreatePackages, type BulkPackageInput } from './actions';
 import { uploadPackageImage } from './upload-actions';
-import { packageCategories } from '@/lib/validations/package';
+import { packageCategories, isNumbersOnlyTitle, TITLE_ONLY_NUMBERS_MESSAGE } from '@/lib/validations/package';
 import { ModalPortal } from '@/components/ui/modal-portal';
 
 export type DestinationOption = { id: string; name: string };
@@ -236,6 +236,12 @@ export function BulkCreateModal({
       return;
     }
 
+    const numericTitle = validRows.find((r) => isNumbersOnlyTitle(r.title));
+    if (numericTitle) {
+      setFormError(`"${numericTitle.title}": ${TITLE_ONLY_NUMBERS_MESSAGE}.`);
+      return;
+    }
+
     const payload: BulkPackageInput[] = validRows.map((r) => ({
       title: r.title.trim(),
       destination_id: r.destination_id || null,
@@ -422,9 +428,16 @@ export function BulkCreateModal({
                                 value={row.title}
                                 onChange={(e) => updateRow(index, 'title', e.target.value)}
                                 placeholder="e.g. 5D/4N Munnar & Alleppey"
-                                className="input h-8 text-xs w-full font-medium"
+                                className={`input h-8 text-xs w-full font-medium ${
+                                  isNumbersOnlyTitle(row.title) ? 'border-red-400 focus:border-red-500 focus:ring-red-500' : ''
+                                }`}
+                                aria-invalid={isNumbersOnlyTitle(row.title)}
+                                title={isNumbersOnlyTitle(row.title) ? TITLE_ONLY_NUMBERS_MESSAGE : undefined}
                                 disabled={isPending}
                               />
+                              {isNumbersOnlyTitle(row.title) && (
+                                <p className="mt-0.5 text-[10px] text-red-600">{TITLE_ONLY_NUMBERS_MESSAGE}</p>
+                              )}
                             </td>
   
                             {/* Destination Select */}

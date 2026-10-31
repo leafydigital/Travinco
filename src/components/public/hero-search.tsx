@@ -2,7 +2,9 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Search, MapPin, CalendarDays, Users, Minus, Plus } from 'lucide-react';
+import { Search, MapPin, Users, Minus, Plus } from 'lucide-react';
+import { DatePickerDMY } from '@/components/public/date-picker-dmy';
+import { todayIso } from '@/lib/utils/iso-date';
 
 export function HeroSearch({ destinations }: { destinations: { slug: string; name: string }[] }) {
   const router = useRouter();
@@ -10,6 +12,7 @@ export function HeroSearch({ destinations }: { destinations: { slug: string; nam
   const [adults, setAdults] = useState(2);
   const [children, setChildren] = useState(0);
   const [infants, setInfants] = useState(0);
+  const [travelDate, setTravelDate] = useState('');
 
   function adjust(setter: (fn: (n: number) => number) => void, min: number, delta: number) {
     setter((n) => Math.max(min, n + delta));
@@ -57,12 +60,16 @@ export function HeroSearch({ destinations }: { destinations: { slug: string; nam
         </select>
       </div>
 
-      <div className="flex items-center gap-2 rounded-lg px-3 py-2.5 sm:border-r sm:border-ink-100">
-        <CalendarDays className="h-4 w-4 shrink-0 text-brand-600" />
-        <input
-          type="date"
+      <div className="flex items-center sm:border-r sm:border-ink-100">
+        <DatePickerDMY
           name="travel_date"
-          className="w-full border-none bg-transparent p-0 text-sm text-ink-700 focus:ring-0"
+          value={travelDate}
+          onChange={setTravelDate}
+          min={todayIso()}
+          label="Travel date"
+          placeholder="When?"
+          clearable
+          className="h-auto border-0 bg-transparent px-3 py-2.5 shadow-none hover:bg-ink-50/60"
         />
       </div>
 

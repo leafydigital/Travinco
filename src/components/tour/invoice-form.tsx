@@ -6,6 +6,7 @@ import { isValidPhoneNumber } from 'libphonenumber-js';
 import { ALL_ZERO_PHONE_MESSAGE, isAllZeroPhone, isFakePhone } from '@/lib/validations/phone';
 import { validateEmailAddress } from '@/lib/validations/contact-rules';
 import { GSTIN_RE } from '@/lib/validations/finance';
+import { DatePickerDMY } from '@/components/public/date-picker-dmy';
 
 export type InvoiceFormFields = {
   bill_to_name: string;
@@ -182,6 +183,23 @@ export function InvoiceForm({
       o.span
     );
 
+  const date = (k: 'due_date' | 'travel_start' | 'travel_end', label: string) =>
+    field(
+      k,
+      label,
+      <DatePickerDMY
+        value={f[k]}
+        label={label}
+        clearable
+        invalid={Boolean(err(k))}
+        onClose={() => touch(k)}
+        onChange={(v) => {
+          touch(k);
+          set(k, v);
+        }}
+      />
+    );
+
   const itemInput = (i: number, key: keyof InvoiceFormItem, props: React.InputHTMLAttributes<HTMLInputElement>) => (
     <input
       className="input py-1.5"
@@ -231,21 +249,20 @@ export function InvoiceForm({
         {field(
           'invoice_date',
           'Invoice date *',
-          <input
-            className="input py-1.5"
-            type="date"
+          <DatePickerDMY
             value={f.invoice_date}
-            onBlur={() => touch('invoice_date')}
-            aria-invalid={err('invoice_date') ? true : undefined}
-            onChange={(e) => {
-              const v = e.target.value;
+            label="Invoice date"
+            onClose={() => touch('invoice_date')}
+            invalid={Boolean(err('invoice_date'))}
+            onChange={(v) => {
+              touch('invoice_date');
               setF((s) => ({ ...s, invoice_date: v, due_date: !s.due_date && v && dueDays ? addDaysIso(v, dueDays) : s.due_date }));
             }}
           />
         )}
-        {text('due_date', 'Due date', { type: 'date' })}
-        {text('travel_start', 'Travel start', { type: 'date' })}
-        {text('travel_end', 'Travel end', { type: 'date' })}
+        {date('due_date', 'Due date')}
+        {date('travel_start', 'Travel start')}
+        {date('travel_end', 'Travel end')}
 
         {text('gst_pct', 'GST %', { type: 'number' })}
         {field(

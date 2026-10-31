@@ -1,6 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { isNumbersOnlyText, lettersRequiredMessage } from '@/lib/validations/text';
 import { z } from 'zod';
 import { isValidPhoneNumber } from 'libphonenumber-js';
 import { isFakePhone } from '@/lib/validations/phone';
@@ -20,7 +21,9 @@ const TIME_RE = /^(?:[01]?\d|2[0-3]):[0-5]\d$|^(?:0?[1-9]|1[0-2])(?::[0-5]\d)?\s
 const validTime = (v: string | null) => !v || TIME_RE.test(v);
 
 const hotelSchema = z.object({
-  name: z.preprocess((v) => String(v ?? '').trim(), z.string().min(1, 'Hotel name is required').max(150)),
+  name: z
+    .preprocess((v) => String(v ?? '').trim(), z.string().min(1, 'Hotel name is required').max(150))
+    .refine((v) => !isNumbersOnlyText(v), lettersRequiredMessage('Hotel name')),
   location_id: z.preprocess((v) => Number(v), z.number().int().positive({ message: 'Choose a location' })),
   category_name: optStr(60),
   area: optStr(80),

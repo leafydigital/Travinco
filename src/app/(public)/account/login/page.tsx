@@ -33,6 +33,7 @@ import {
   verifyCustomerResetOtpAction,
   saveCustomerResetPasswordAction,
 } from '../actions';
+import { useStepHistory } from '@/lib/hooks/use-step-history';
 
 const REASON_MESSAGES: Record<string, string> = {
   not_customer: 'This page is for travellers. Please sign in with your traveller account.',
@@ -173,6 +174,8 @@ export default function LoginPage() {
   const [step, setStep] = useState<
     'credentials' | 'otp' | 'forgot_email' | 'forgot_password' | 'forgot_otp'
   >('credentials');
+  // Browser Back moves to the previous step (e.g. OTP -> sign-in form)
+  useStepHistory('login', step, setStep, 'credentials');
 
   const [isLoading, setIsLoading] = useState(false);
   const [email, setEmail] = useState('');

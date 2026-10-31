@@ -10,6 +10,7 @@ import type { PlanItem, QuotationLogosConfig, InvoiceSettings } from './types';
 
 import { invalidateTourMastersCache } from './data';
 import { ALL_ZERO_PHONE_MESSAGE, isAllZeroPhone } from '@/lib/validations/phone';
+import { isNumbersOnlyText, lettersRequiredMessage } from '@/lib/validations/text';
 
 type Result = { error?: string; id?: number | string };
 
@@ -17,6 +18,11 @@ type Result = { error?: string; id?: number | string };
 
 const str = (max: number) =>
   z.preprocess((v) => (v == null ? '' : String(v).trim()), z.string().max(max));
+/** Required name: trimmed, not blank, and not just numbers/symbols. */
+const nameStr = (max: number, label: string) =>
+  str(max)
+    .pipe(z.string().min(1, `${label} is required`))
+    .refine((v) => !isNumbersOnlyText(v), lettersRequiredMessage(label));
 const optStr = (max: number) =>
   z.preprocess((v) => (v == null || String(v).trim() === '' ? null : String(v).trim()), z.string().max(max).nullable());
 const optNum = z.preprocess(
@@ -137,7 +143,7 @@ async function softDelete(
 
 const vehicleSchema = z.object({
   vehicle_type: str(80).pipe(z.string().min(1, 'Car type is required')),
-  company_name: str(150).pipe(z.string().min(1, 'Company name is required')),
+  company_name: nameStr(150, 'Company name'),
   contact_person: optStr(120),
   contact_number: str(30)
     .pipe(z.string().min(5, 'Contact number is required'))
@@ -178,7 +184,7 @@ export async function deleteTransportVehicle(id: number | string) {
 
 const pointSchema = z.object({
   code: optStr(20).transform((v) => (v ? v.toUpperCase() : v)),
-  name: str(150).pipe(z.string().min(1, 'Name is required')),
+  name: nameStr(150, 'Name'),
   point_type: z.enum(['airport', 'railway', 'bus', 'hotel', 'port', 'other']),
   location_id: optId,
   km_from_location: reqNum,
@@ -213,7 +219,7 @@ export async function deletePickupPoint(id: number | string) {
 // ---------- Locations -------------------------------------------------------
 
 const locationSchema = z.object({
-  name: str(80).pipe(z.string().min(1, 'Name is required')),
+  name: nameStr(80, 'Name'),
   display_name: optStr(80),
   state: optStr(60),
   description: optStr(4000),
@@ -252,7 +258,7 @@ export async function deleteLocation(id: number | string) {
 
 const activitySchema = z.object({
   location_id: reqId,
-  name: str(150).pipe(z.string().min(1, 'Name is required')),
+  name: nameStr(150, 'Name'),
   category: optStr(100),
   kind: z.string().optional().default('sightseeing'),
   preferred_types: optStr(200),

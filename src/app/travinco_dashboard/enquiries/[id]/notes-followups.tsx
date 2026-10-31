@@ -3,6 +3,8 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from '@/lib/admin-alert';
+import { DatePickerDMY } from '@/components/public/date-picker-dmy';
+import { todayIso } from '@/lib/utils/iso-date';
 import { addEnquiryNote, scheduleFollowup, completeFollowup } from '../actions';
 import { formatDate } from '@/lib/utils/format';
 import { Check } from 'lucide-react';
@@ -129,11 +131,12 @@ export function FollowupsPanel({
       </div>
 
       <div className="grid gap-2 border-t border-ink-100 pt-3 sm:grid-cols-2">
-        <input
-          type="date"
+        <DatePickerDMY
           value={form.followup_date}
-          onChange={(e) => setForm((f) => ({ ...f, followup_date: e.target.value }))}
-          className="input"
+          onChange={(iso) => setForm((f) => ({ ...f, followup_date: iso }))}
+          min={todayIso()}
+          label="Follow-up date"
+          placeholder="Follow-up date"
         />
         <input
           type="time"

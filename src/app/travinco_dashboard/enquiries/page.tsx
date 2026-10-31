@@ -11,6 +11,7 @@ import { DateRangeFilter } from './date-range-filter';
 import { ENQUIRY_STATUS_OPTIONS } from '@/lib/enquiry-status';
 import { EnquiriesTable } from './enquiries-table';
 import { UploadExcelButton } from './upload-excel-button';
+import { DownloadReportButton } from './download-report-button';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -279,6 +280,12 @@ export default async function AdminEnquiriesPage({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2.5">
+            <DownloadReportButton
+              key={`report-${searchParams.from ?? ''}-${searchParams.to ?? ''}-${searchParams.status ?? ''}`}
+              initialFrom={searchParams.from ?? ''}
+              initialTo={searchParams.to ?? ''}
+              initialStatus={searchParams.status ?? ''}
+            />
             {isAdmin && (
               <EnquiryClearDataButton
                 key={`${searchParams.from ?? ''}-${searchParams.to ?? ''}`}

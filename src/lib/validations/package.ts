@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { imageUrlSchema } from './image-url';
+import { isNumbersOnlyText, lettersRequiredMessage } from './text';
 
 export const packageCategories = [
   'honeymoon', 'family', 'adventure', 'group', 'luxury', 'budget', 'pilgrimage', 'other',
@@ -51,6 +52,10 @@ export function availabilityLeadErrors(
  */
 const PHONE_NUMBER_PATTERN = /\+?(?:\d[\s\-().]*){10,}/;
 
+/** A package title needs words, not just numbers/symbols (e.g. "12345" or "5/4"). */
+export const TITLE_ONLY_NUMBERS_MESSAGE = lettersRequiredMessage('Package title');
+export const isNumbersOnlyTitle = isNumbersOnlyText;
+
 const requiredText =(message: string) => z.string().trim().min(1, message);
 
 /** Optional numeric amount: blank -> null, otherwise a non-negative number. */
@@ -69,6 +74,7 @@ export const packageSchema = z
       .trim()
       .min(3, 'Title is too short')
       .max(200)
+      .refine((v) => !isNumbersOnlyTitle(v), TITLE_ONLY_NUMBERS_MESSAGE)
       .refine((v) => !PHONE_NUMBER_PATTERN.test(v), 'Phone numbers are not allowed in the package title'),
     slug: z
       .string()

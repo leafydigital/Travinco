@@ -1,9 +1,15 @@
 import { z } from 'zod';
 import { imageUrlSchema } from './image-url';
 import { isValidLink } from './links';
+import { isNumbersOnlyText, lettersRequiredMessage } from './text';
 
 export const eventSchema = z.object({
-  title: z.string().trim().min(3, 'Title is required (at least 3 characters)').max(200),
+  title: z
+    .string()
+    .trim()
+    .min(3, 'Title is required (at least 3 characters)')
+    .max(200)
+    .refine((v) => !isNumbersOnlyText(v), lettersRequiredMessage('Title')),
   slug: z
     .string()
     .min(3)
@@ -28,7 +34,12 @@ export const eventSchema = z.object({
 export type EventFormValues = z.infer<typeof eventSchema>;
 
 export const blogPostSchema = z.object({
-  title: z.string().trim().min(3, 'Title is required (at least 3 characters)').max(200),
+  title: z
+    .string()
+    .trim()
+    .min(3, 'Title is required (at least 3 characters)')
+    .max(200)
+    .refine((v) => !isNumbersOnlyText(v), lettersRequiredMessage('Title')),
   slug: z
     .string()
     .min(3)
@@ -43,7 +54,12 @@ export type BlogPostFormValues = z.infer<typeof blogPostSchema>;
 
 export const offerSchema = z
   .object({
-    title: z.string().trim().min(3, 'Title is required (at least 3 characters)').max(200),
+    title: z
+    .string()
+    .trim()
+    .min(3, 'Title is required (at least 3 characters)')
+    .max(200)
+    .refine((v) => !isNumbersOnlyText(v), lettersRequiredMessage('Title')),
     slug: z
       .string()
       .min(3)
@@ -52,8 +68,18 @@ export const offerSchema = z
     description: z.string().optional().nullable(),
     package_id: z.string().uuid().optional().nullable().or(z.literal('')),
     event_id: z.string().uuid().optional().nullable().or(z.literal('')),
-    discount_percent: z.coerce.number().min(0).max(100).optional().nullable(),
-    discount_flat: z.coerce.number().min(0).optional().nullable(),
+    discount_percent: z.coerce
+      .number({ invalid_type_error: 'Enter a valid percentage' })
+      .min(0, 'Discount cannot be negative')
+      .max(100, 'Discount cannot be more than 100%')
+      .optional()
+      .nullable(),
+    discount_flat: z.coerce
+      .number({ invalid_type_error: 'Enter a valid amount' })
+      .min(0, 'Discount cannot be negative')
+      .max(10_000_000, 'Discount looks too high')
+      .optional()
+      .nullable(),
     valid_from: z.string().min(1, 'Start date is required'),
     valid_to: z.string().min(1, 'End date is required'),
     // Convenience-only field, never stored: when set, the create form

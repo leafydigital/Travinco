@@ -1081,7 +1081,7 @@ function StartDateField({ value, onChange }: { value: string; onChange: (v: stri
         value={value}
         min={initialValue && initialValue < min ? initialValue : min}
         max={max}
-        className="h-8 py-1 px-2 text-xs"
+        size="sm"
         invalid={Boolean(error)}
         onChange={(v) => {
           setTouched(true);
@@ -3022,27 +3022,16 @@ function ValidUntilField({ value, onChange }: { value: string; onChange: (v: str
   const outOfRange = value && value !== initialValue && (value < today || value > max);
   return (
     <Field label="Valid until" hint="Up to 1 year from today">
-      <div className="relative">
-        <DatePickerDMY
-          value={value}
-          min={initialValue && initialValue < today ? initialValue : today}
-          max={initialValue && initialValue > max ? initialValue : max}
-          className="h-8 py-1 px-2 pr-12 text-xs"
-          invalid={Boolean(outOfRange)}
-          onChange={onChange}
-        />
-        {value && (
-          <button
-            type="button"
-            data-no-confirm-save="true"
-            onClick={() => onChange('')}
-            className="absolute right-7 top-1/2 -translate-y-1/2 rounded p-0.5 text-ink-400 hover:bg-ink-100 hover:text-ink-700"
-            aria-label="Clear valid until date"
-          >
-            <X className="h-3 w-3" />
-          </button>
-        )}
-      </div>
+      <DatePickerDMY
+        value={value}
+        min={initialValue && initialValue < today ? initialValue : today}
+        max={initialValue && initialValue > max ? initialValue : max}
+        size="sm"
+        clearable
+        label="Valid until"
+        invalid={Boolean(outOfRange)}
+        onChange={onChange}
+      />
       {outOfRange && <p className="mt-0.5 text-[10px] text-red-600">Must be within 1 year from today</p>}
     </Field>
   );

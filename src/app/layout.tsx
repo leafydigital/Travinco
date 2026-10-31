@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import { Toaster } from 'sonner';
+import { FormGuards } from '@/components/ui/form-guards';
 import './globals.css';
 
 const inter = Inter({
@@ -40,6 +41,7 @@ export default function RootLayout({
       <body>
         {children}
         <Toaster richColors position="top-right" />
+        <FormGuards />
       </body>
     </html>
   );

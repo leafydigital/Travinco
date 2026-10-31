@@ -23,6 +23,7 @@ import {
   resendCustomerPasswordUpdateOtp,
   confirmCustomerPasswordUpdate,
 } from '../actions';
+import { useStepHistory } from '@/lib/hooks/use-step-history';
 
 type Step = 'passwords' | 'otp' | 'done';
 type Field = 'currentPassword' | 'newPassword' | 'confirmPassword';
@@ -87,6 +88,8 @@ function PasswordInput({
 export default function UpdatePasswordPage() {
   const router = useRouter();
   const [step, setStep] = useState<Step>('passwords');
+  // Browser Back on the OTP screen returns to the password form
+  useStepHistory('change-password', step, setStep, 'passwords');
 
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');

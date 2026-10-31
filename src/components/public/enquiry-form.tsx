@@ -611,6 +611,85 @@ export function EnquiryForm({
     return () => window.removeEventListener('travinco:reset-booking-form', onResetBooking);
   }, [handleResetToFreshForm]);
 
+  // ── Keep the visitor's details when they leave and come back ─────────────
+  // e.g. "Browse Packages →" then the browser Back button: the page reloads
+  // the form, so the typed details are restored from this browser tab's session.
+  const draftKey = `travinco:enquiry-draft:${packageId || 'general'}`;
+  const [draftReady, setDraftReady] = useState(false);
+
+  useEffect(() => {
+    try {
+      const raw = window.sessionStorage.getItem(draftKey);
+      if (raw) {
+        const draft = JSON.parse(raw);
+        if (draft?.formValues) {
+          setFormValues((v) => ({
+            ...v,
+            ...draft.formValues,
+            // A package chosen for this page wins over an older draft's choice
+            package_id: packageId || draft.formValues.package_id || '',
+            // Logged-in customers keep their account details
+            customer_name: defaultName || draft.formValues.customer_name || '',
+            email: defaultEmail || draft.formValues.email || '',
+          }));
+        }
+        if (draft?.phoneValue?.number) setPhoneValue(draft.phoneValue);
+        if (typeof draft?.whatsappSameAsPhone === 'boolean') setWhatsappSameAsPhone(draft.whatsappSameAsPhone);
+        if (draft?.whatsappValue?.number) setWhatsappValue(draft.whatsappValue);
+      }
+    } catch {
+      // Storage blocked or bad JSON: start with an empty form
+    }
+    setDraftReady(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftKey]);
+
+  useEffect(() => {
+    if (!draftReady || step === 'success') return;
+    try {
+      window.sessionStorage.setItem(
+        draftKey,
+        JSON.stringify({ formValues, phoneValue, whatsappSameAsPhone, whatsappValue })
+      );
+    } catch {
+      // Storage full or blocked: nothing to keep
+    }
+  }, [draftReady, draftKey, step, formValues, phoneValue, whatsappSameAsPhone, whatsappValue]);
+
+  // ── Browser Back button on the OTP screen returns to the form ────────────
+  // Showing the OTP step adds a history entry for the same page, so the
+  // browser's Back arrow lands on the form (with the details kept) instead
+  // of leaving the page.
+  const stepRef = useRef(step);
+  stepRef.current = step;
+
+  useEffect(() => {
+    function onPopState(e: PopStateEvent) {
+      if ((e.state as { travincoEnquiryOtp?: boolean } | null)?.travincoEnquiryOtp) return;
+      if (stepRef.current === 'otp') {
+        setStep('form');
+        setOtpError(null);
+        setFormError(null);
+      } else if (stepRef.current === 'success') {
+        // Skip the form entry the OTP step left behind; go where the visitor came from
+        window.history.back();
+      }
+    }
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
+  function goBackToForm() {
+    if ((window.history.state as { travincoEnquiryOtp?: boolean } | null)?.travincoEnquiryOtp) {
+      // Pops the OTP history entry; the popstate listener shows the form
+      window.history.back();
+    } else {
+      setStep('form');
+    }
+    setOtpError(null);
+    setFormError(null);
+  }
+
   // Cooldown countdown timer
   useEffect(() => {
     if (cooldown <= 0) return;
@@ -719,6 +798,9 @@ export function EnquiryForm({
       setOtpError(null);
       setCooldown(60);
       setStep('otp');
+      if (!(window.history.state as { travincoEnquiryOtp?: boolean } | null)?.travincoEnquiryOtp) {
+        window.history.pushState({ ...window.history.state, travincoEnquiryOtp: true }, '', window.location.href);
+      }
     } catch (err: any) {
       setFormError(err?.message || 'Failed to send verification code. Please try again.');
     } finally {
@@ -768,6 +850,11 @@ export function EnquiryForm({
 
       setEnquiryNumber(result.enquiryNumber || 'ENQ-CONFIRMED');
       setStep('success');
+      try {
+        window.sessionStorage.removeItem(draftKey);
+      } catch {
+        // ignore
+      }
     } catch (err: any) {
       setOtpError(err?.message || 'Verification failed. Please try again.');
     } finally {
@@ -846,30 +933,27 @@ export function EnquiryForm({
               )}
             </button>
 
-            <div className="flex flex-wrap items-center justify-between gap-3 pt-2 text-xs text-ink-500">
-              <button
-                type="button"
-                onClick={() => {
-                  setStep('form');
-                  setOtpError(null);
-                  setFormError(null);
-                }}
-                className="inline-flex items-center gap-1.5 font-medium text-ink-600 hover:text-ink-900 transition-colors"
-              >
-                <ArrowLeft className="h-3.5 w-3.5" />
-                <span>Change details / Back</span>
-              </button>
+            <button
+              type="button"
+              onClick={goBackToForm}
+              disabled={isVerifyingOtp}
+              className="flex w-full items-center justify-center gap-2 rounded-full border-2 border-ink-200 bg-white px-5 py-3.5 text-sm font-semibold text-ink-700 transition-colors hover:border-ink-300 hover:bg-ink-50 hover:text-ink-900 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              <span>Back — change my details</span>
+            </button>
 
+            <div className="flex justify-center pt-1 text-sm">
               <button
                 type="button"
                 onClick={handleResendOtp}
                 disabled={cooldown > 0 || isSendingOtp}
-                className={`inline-flex items-center gap-1 font-medium transition-colors ${cooldown > 0
+                className={`inline-flex items-center gap-1.5 font-medium transition-colors ${cooldown > 0
                   ? 'text-ink-400 cursor-not-allowed'
                   : 'text-brand-600 hover:text-brand-700 hover:underline'
                   }`}
               >
-                <RefreshCw className={`h-3 w-3 ${isSendingOtp ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`h-3.5 w-3.5 ${isSendingOtp ? 'animate-spin' : ''}`} />
                 <span>
                   {cooldown > 0 ? `Resend code in ${cooldown}s` : 'Resend code'}
                 </span>

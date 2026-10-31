@@ -161,3 +161,35 @@
 .tv-swal .swal2-html-container {
   font-size: 0.9rem;
 }
+
+/* Lets FormGuards notice browser autofill and hand the value to React */
+@keyframes tv-autofill-start {
+  from { opacity: 1; }
+  to { opacity: 1; }
+}
+input:-webkit-autofill,
+textarea:-webkit-autofill,
+select:-webkit-autofill {
+  animation-name: tv-autofill-start;
+  animation-duration: 1ms;
+}
+
+/* Date picker popover / bottom sheet */
+@keyframes tv-pop-in {
+  from { opacity: 0; scale: 0.97; }
+  to { opacity: 1; scale: 1; }
+}
+@keyframes tv-sheet-in {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+@keyframes tv-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.tv-pop-in { animation: tv-pop-in 120ms ease-out; }
+.tv-sheet-in { animation: tv-sheet-in 200ms ease-out; }
+.tv-fade-in { animation: tv-fade-in 150ms ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .tv-pop-in, .tv-sheet-in, .tv-fade-in { animation: none; }
+}

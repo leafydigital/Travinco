@@ -317,34 +317,28 @@ export function AdminDateField({
   min,
   max,
   invalid,
-  className = 'border',
+  className,
 }: {
   value: string;
   onChange: (iso: string) => void;
   min: string;
   max: string;
   invalid?: boolean;
-  /** Classes for the trigger button; the default adds the border a bare button lacks. */
+  /** Extra classes for the trigger button. */
   className?: string;
 }) {
   // Keep an existing (older) saved date visible/selectable when editing.
   const effectiveMin = value && value < min ? value : min;
   return (
-    <div className="relative">
-      <DatePickerDMY value={value} onChange={onChange} min={effectiveMin} max={max} invalid={invalid} className={className} />
-      {value && (
-        <button
-          type="button"
-          data-no-confirm-save="true"
-          onClick={() => onChange('')}
-          className="absolute right-8 top-1/2 -translate-y-1/2 rounded p-1 text-ink-400 hover:bg-ink-100 hover:text-ink-700"
-          aria-label="Clear date"
-          title="Clear date"
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
-      )}
-    </div>
+    <DatePickerDMY
+      value={value}
+      onChange={onChange}
+      min={effectiveMin}
+      max={max}
+      invalid={invalid}
+      clearable
+      className={className}
+    />
   );
 }
 

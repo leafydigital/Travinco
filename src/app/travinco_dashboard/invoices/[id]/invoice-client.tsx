@@ -3,6 +3,7 @@
 import { useEffect, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from '@/lib/admin-alert';
+import { DatePickerDMY } from '@/components/public/date-picker-dmy';
 import { Ban, FileDown, Pencil, Printer, Trash2 } from 'lucide-react';
 import { addInvoicePayment, cancelInvoice, deleteInvoice, deleteInvoicePayment, updateInvoice } from '../actions';
 import { downloadPdf, downloadWord, printAsPdf } from '@/components/tour/doc-tools';
@@ -288,7 +289,7 @@ export function PaymentsPanel({
           <div className="grid grid-cols-2 gap-2">
             <div>
               <label className="text-[11px] font-medium text-ink-600 block mb-1">Date</label>
-              <input className="input text-xs py-1.5" type="date" value={f.paid_on} onChange={(e) => setF({ ...f, paid_on: e.target.value })} aria-label="Date" />
+              <DatePickerDMY size="sm" value={f.paid_on} onChange={(iso) => setF({ ...f, paid_on: iso })} label="Payment date" />
             </div>
             <div>
               <label className="text-[11px] font-medium text-ink-600 block mb-1">Payment Method</label>

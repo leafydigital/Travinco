@@ -26,15 +26,25 @@ export const enquiryFormSchema = z.object({
         message: 'Enter a valid mobile number',
       }
     ),
-  whatsapp_number: z.string().max(30).optional().or(z.literal('')),
+  whatsapp_number: z
+    .string()
+    .trim()
+    .max(30)
+    .refine((val) => {
+      if (!val) return true;
+      const digits = val.replace(/\D/g, '');
+      return digits.length >= 7 && !/^0+$/.test(digits);
+    }, 'Enter a valid WhatsApp number')
+    .optional()
+    .or(z.literal('')),
   email: z
     .string({ required_error: 'Email address is required' })
     .trim()
     .min(1, 'Email address is required')
     .email('Please enter a valid email address (e.g. name@example.com)'),
   package_id: z.string().optional().or(z.literal('')),
-  custom_package_name: z.string().max(200).optional().or(z.literal('')),
-  destination: z.string().max(120).optional().or(z.literal('')),
+  custom_package_name: z.string().trim().max(200).optional().or(z.literal('')),
+  destination: z.string().trim().max(120).optional().or(z.literal('')),
   travel_date: z
     .string({ required_error: 'Travel date is required' })
     .min(1, 'Travel date is required')
@@ -68,15 +78,30 @@ export const enquiryFormSchema = z.object({
         message: 'Please choose a date within 1 year from today',
       }
     ),
-  number_of_adults: z.coerce.number().int().min(1).default(1),
-  number_of_children: z.coerce.number().int().min(0).default(0),
-  number_of_infants: z.coerce.number().int().min(0).default(0),
+  number_of_adults: z.coerce
+    .number({ invalid_type_error: 'Enter the number of adults' })
+    .int('Number of adults must be a whole number')
+    .min(1, 'At least 1 adult is required')
+    .max(99, 'Number of adults looks too high (max 99)')
+    .default(1),
+  number_of_children: z.coerce
+    .number({ invalid_type_error: 'Enter the number of children' })
+    .int('Number of children must be a whole number')
+    .min(0, 'Number of children cannot be negative')
+    .max(99, 'Number of children looks too high (max 99)')
+    .default(0),
+  number_of_infants: z.coerce
+    .number({ invalid_type_error: 'Enter the number of infants' })
+    .int('Number of infants must be a whole number')
+    .min(0, 'Number of infants cannot be negative')
+    .max(99, 'Number of infants looks too high (max 99)')
+    .default(0),
   budget: z
     .string()
     .optional()
     .or(z.literal(''))
-    .transform((val) => (val && String(val).trim() ? parseFloat(String(val).trim()) : undefined))
-    .refine((val) => val === undefined || (!Number.isNaN(val) && val >= 0), {
+    .transform((val) => (val && String(val).trim() ? Number(String(val).replace(/,/g, '').trim()) : undefined))
+    .refine((val) => val === undefined || (!Number.isNaN(val) && val >= 0 && val <= 100_000_000), {
       message: 'Enter a valid budget amount',
     }),
   message: z

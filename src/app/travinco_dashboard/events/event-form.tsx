@@ -3,7 +3,8 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from '@/lib/admin-alert';
-import { TextField, TextAreaField } from '@/components/ui/form-fields';
+import { FieldWrapper, TextField, TextAreaField } from '@/components/ui/form-fields';
+import { DatePickerDMY } from '@/components/public/date-picker-dmy';
 import { slugify, fieldErrorsFromZod } from '@/lib/validations/package';
 import { eventSchema, type EventFormValues } from '@/lib/validations/content';
 import { createEvent, updateEvent } from '../content-actions';
@@ -84,12 +85,14 @@ export function EventForm({
         onChange={(e) => set('description', e.target.value)}
       />
       <div className="grid gap-4 sm:grid-cols-2">
-        <TextField
-          label="Event date"
-          type="date"
-          value={values.event_date ?? ''}
-          onChange={(e) => set('event_date', e.target.value)}
-        />
+        <FieldWrapper label="Event date">
+          <DatePickerDMY
+            value={values.event_date ?? ''}
+            onChange={(iso) => set('event_date', iso)}
+            clearable
+            label="Event date"
+          />
+        </FieldWrapper>
         <TextField
           label="Location"
           value={values.location ?? ''}

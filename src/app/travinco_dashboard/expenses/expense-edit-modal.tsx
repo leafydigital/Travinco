@@ -4,6 +4,7 @@ import { useState, useTransition, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { toast } from '@/lib/admin-alert';
+import { DatePickerDMY } from '@/components/public/date-picker-dmy';
 import { X, Loader2, Receipt } from 'lucide-react';
 import { updateExpense } from '../finance-actions';
 import { blockNonNumericKeys, parseNonNegative } from '@/components/admin/package-fields';
@@ -173,12 +174,10 @@ export function ExpenseEditModal({
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label className="label">Date *</label>
-              <input
-                type="date"
-                required
+              <DatePickerDMY
                 value={form.expense_date}
-                onChange={(e) => setForm((f) => ({ ...f, expense_date: e.target.value }))}
-                className="input"
+                onChange={(iso) => setForm((f) => ({ ...f, expense_date: iso }))}
+                label="Expense date"
               />
             </div>
             <div>

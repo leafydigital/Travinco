@@ -1,8 +1,14 @@
 import { z } from 'zod';
 import { imageUrlSchema } from './image-url';
+import { isNumbersOnlyText, lettersRequiredMessage } from './text';
 
 export const destinationSchema = z.object({
-  name: z.string().trim().min(2, 'Name is required (at least 2 characters)').max(120),
+  name: z
+    .string()
+    .trim()
+    .min(2, 'Name is required (at least 2 characters)')
+    .max(120)
+    .refine((v) => !isNumbersOnlyText(v), lettersRequiredMessage('Destination name')),
   slug: z
     .string()
     .min(2)

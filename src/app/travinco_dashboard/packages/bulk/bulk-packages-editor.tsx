@@ -31,6 +31,8 @@ import { uploadPackageImage } from '../upload-actions';
 import {
   packageCategories,
   packageSchema,
+  isNumbersOnlyTitle,
+  TITLE_ONLY_NUMBERS_MESSAGE,
   slugify,
   validatePackageExtras,
   fieldErrorsFromZod,
@@ -841,9 +843,15 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
                     value={currentPkg?.title}
                     onChange={(e) => updateCurrent('title', e.target.value)}
                     placeholder="e.g. 5D/4N Munnar & Alleppey Special Honeymoon"
-                    className={`input font-medium ${fieldClass('title')}`}
+                    className={`input font-medium ${
+                      isNumbersOnlyTitle(currentPkg?.title ?? '') ? 'border-red-400 focus:border-red-500 focus:ring-red-500' : fieldClass('title')
+                    }`}
                   />
-                  {fieldError('title')}
+                  {isNumbersOnlyTitle(currentPkg?.title ?? '') ? (
+                    <p className="field-error">{TITLE_ONLY_NUMBERS_MESSAGE}</p>
+                  ) : (
+                    fieldError('title')
+                  )}
                 </div>
 
                 <div className="sm:col-span-2 lg:col-span-3">

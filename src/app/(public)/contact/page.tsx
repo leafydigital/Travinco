@@ -2,6 +2,8 @@ import type { Metadata } from 'next';
 import { getPageTitlesContent } from '@/lib/page-titles-content';
 import { getContactPageContent } from '@/lib/contact-page-content';
 import { ContactForm } from './contact-form';
+import { mapsHref, telHref, whatsappHref } from '@/lib/contact-links';
+import { EmailLink } from '@/components/public/email-link';
 import {
   Phone,
   Mail,
@@ -135,16 +137,22 @@ export default async function ContactPage() {
 
             {/* Contact Action Cards */}
             <div className="space-y-3.5">
-              {/* Phone Card — static, no link */}
+              {/* Phone Card — tap to call */}
               {displayPhone && (
-                <div className="flex items-start gap-4 p-4 sm:p-5 rounded-2xl bg-white border border-ink-150/80 shadow-sm">
-                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600 border border-brand-100">
+                <a
+                  href={telHref(displayPhone)}
+                  className="group flex items-start gap-4 p-4 sm:p-5 rounded-2xl bg-white border border-ink-150/80 shadow-sm hover:border-brand-500 hover:shadow-md transition-all"
+                >
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600 border border-brand-100 group-hover:bg-brand-600 group-hover:text-white transition-colors">
                     <Phone className="h-5 w-5" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <span className="text-xs font-bold uppercase tracking-wider text-ink-400">
-                      Phone Support
-                    </span>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-bold uppercase tracking-wider text-ink-400">
+                        Phone Support
+                      </span>
+                      <span className="text-xs font-semibold text-brand-600">Call now</span>
+                    </div>
                     <p className="mt-1 text-base sm:text-lg font-bold text-ink-950 truncate">
                       {displayPhone}
                     </p>
@@ -152,13 +160,13 @@ export default async function ContactPage() {
                       Direct line to our destination concierge
                     </p>
                   </div>
-                </div>
+                </a>
               )}
 
               {/* WhatsApp Card */}
               {contactContent.whatsapp && (
                 <a
-                  href={`https://wa.me/${contactContent.whatsapp.replace(/\D/g, '')}`}
+                  href={whatsappHref(contactContent.whatsapp)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="group flex items-start gap-4 p-4 sm:p-5 rounded-2xl bg-white border border-ink-150/80 shadow-sm hover:border-emerald-500 hover:shadow-md transition-all"
@@ -185,16 +193,22 @@ export default async function ContactPage() {
                 </a>
               )}
 
-              {/* Email Card — static, no link */}
+              {/* Email Card — opens the mail app */}
               {displayEmail && (
-                <div className="flex items-start gap-4 p-4 sm:p-5 rounded-2xl bg-white border border-ink-150/80 shadow-sm">
-                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 border border-blue-100">
+                <EmailLink
+                  email={displayEmail}
+                  className="group flex items-start gap-4 p-4 sm:p-5 rounded-2xl bg-white border border-ink-150/80 shadow-sm hover:border-blue-500 hover:shadow-md transition-all"
+                >
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 border border-blue-100 group-hover:bg-blue-600 group-hover:text-white transition-colors">
                     <Mail className="h-5 w-5" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <span className="text-xs font-bold uppercase tracking-wider text-ink-400">
-                      Email Inquiries
-                    </span>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-bold uppercase tracking-wider text-ink-400">
+                        Email Inquiries
+                      </span>
+                      <span className="text-xs font-semibold text-blue-600">Send email</span>
+                    </div>
                     <p className="mt-1 text-sm sm:text-base font-bold text-ink-950 break-all">
                       {displayEmail}
                     </p>
@@ -202,24 +216,32 @@ export default async function ContactPage() {
                       Detailed travel plans, corporate RFPs &amp; custom retreats
                     </p>
                   </div>
-                </div>
+                </EmailLink>
               )}
 
               {/* Office Address Card */}
               {contactContent.address && (
-                <div className="flex items-start gap-4 p-4 sm:p-5 rounded-2xl bg-white border border-ink-150/80 shadow-sm">
-                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-700 border border-amber-100">
+                <a
+                  href={mapsHref(contactContent.address)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="group flex items-start gap-4 p-4 sm:p-5 rounded-2xl bg-white border border-ink-150/80 shadow-sm hover:border-amber-500 hover:shadow-md transition-all"
+                >
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-700 border border-amber-100 group-hover:bg-amber-600 group-hover:text-white transition-colors">
                     <MapPin className="h-5 w-5" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <span className="text-xs font-bold uppercase tracking-wider text-ink-400">
-                      Concierge Office
-                    </span>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-bold uppercase tracking-wider text-ink-400">
+                        Concierge Office
+                      </span>
+                      <span className="text-xs font-semibold text-amber-700">View map</span>
+                    </div>
                     <p className="mt-1 text-sm font-semibold text-ink-900 leading-relaxed">
                       {contactContent.address}
                     </p>
                   </div>
-                </div>
+                </a>
               )}
 
               {/* Working Hours Card */}
