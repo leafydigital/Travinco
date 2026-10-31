@@ -599,10 +599,9 @@ export default async function HomePage() {
 
       {/* ── 7. REJUVENATING KERALA AYURVEDA & WELLNESS PACKAGES (PARALLAX FIXED SECTION) ── */}
       <section
-        className="relative w-full min-h-[580px] lg:min-h-[660px] bg-fixed bg-cover bg-center flex items-center py-20 sm:py-28 overflow-hidden"
+        className="parallax-bg relative w-full min-h-[580px] lg:min-h-[660px] bg-cover bg-center flex items-center py-20 sm:py-28 overflow-hidden"
         style={{
           backgroundImage: `url('${ayurvedaBgUrl}')`,
-          backgroundAttachment: 'fixed',
           backgroundPosition: 'center',
           backgroundSize: 'cover',
           backgroundRepeat: 'no-repeat',

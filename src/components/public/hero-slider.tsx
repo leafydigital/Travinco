@@ -60,7 +60,7 @@ export function HeroSlider({ slides, heroContent }: HeroSliderProps) {
 
   if (totalSlides === 0) {
     return (
-      <div className="relative flex h-screen min-h-screen items-center justify-center bg-brand-900 text-white text-center px-4">
+      <div className="relative flex h-screen min-h-screen supports-[height:100svh]:h-[100svh] supports-[height:100svh]:min-h-[100svh] items-center justify-center bg-brand-900 text-white text-center px-4">
         <div className="space-y-4 max-w-4xl">
           <p className="text-sm sm:text-base font-semibold tracking-widest uppercase text-white">
             {eyebrow}
@@ -83,7 +83,7 @@ export function HeroSlider({ slides, heroContent }: HeroSliderProps) {
   }
 
   return (
-    <div className="relative h-screen min-h-screen w-full flex flex-col justify-center items-center overflow-hidden bg-navy-950 text-white select-none">
+    <div className="relative h-screen min-h-screen supports-[height:100svh]:h-[100svh] supports-[height:100svh]:min-h-[100svh] w-full flex flex-col justify-center items-center overflow-hidden bg-navy-950 text-white select-none">
       {/* ── Background Slides with Smooth Crossfade & Ken Burns Zoom ── */}
       <div className="absolute inset-0 z-0">
         {slides.map((slide, idx) => {
