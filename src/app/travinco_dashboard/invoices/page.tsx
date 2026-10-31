@@ -137,7 +137,7 @@ async function InvoicesTableContent({
                   <td className="px-5 py-3">
                     <InvoiceStatusBadge status={r.status} />
                   </td>
-                  <td className="px-5 py-3 text-right">
+                  <td className="whitespace-nowrap px-5 py-3 text-right">
                     <InvoiceRowActions
                       id={r.id}
                       invoiceNumber={r.invoice_number}

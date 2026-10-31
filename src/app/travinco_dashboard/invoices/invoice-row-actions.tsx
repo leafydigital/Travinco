@@ -4,7 +4,7 @@ import { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { toast } from '@/lib/admin-alert';
-import { Trash2 } from 'lucide-react';
+import { Printer, Trash2 } from 'lucide-react';
 import { deleteInvoice } from './actions';
 import { ConfirmDeleteDialog } from '@/components/admin/confirm-delete-dialog';
 
@@ -38,24 +38,26 @@ export function InvoiceRowActions({
 
   return (
     <>
-      <div className="flex items-center justify-end gap-1.5">
+      <div className="flex flex-nowrap items-center justify-end gap-1.5 whitespace-nowrap">
         <Link
           href={`/travinco_dashboard/invoices/${id}`}
           prefetch={true}
-          className="btn-outline h-8 px-3 text-xs text-brand-700 hover:bg-brand-50"
+          className="btn-outline h-8 shrink-0 gap-1 whitespace-nowrap px-2.5 text-xs text-brand-700 hover:bg-brand-50"
+          title="View & Print invoice"
         >
-          View &amp; Print
+          <Printer className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">View &amp; Print</span>
         </Link>
         {isAdmin && (
           <button
             type="button"
             onClick={() => setConfirmOpen(true)}
             disabled={isPending}
-            className="btn-ghost h-8 px-2 text-xs text-coral-600 hover:bg-coral-50 hover:text-coral-700 disabled:opacity-50"
+            className="btn-ghost h-8 shrink-0 whitespace-nowrap px-2 text-xs text-coral-600 hover:bg-coral-50 hover:text-coral-700 disabled:opacity-50"
             title="Delete invoice"
           >
             <Trash2 className="h-3.5 w-3.5 sm:mr-1 inline" />
-            <span>Delete</span>
+            <span className="hidden sm:inline">Delete</span>
           </button>
         )}
       </div>

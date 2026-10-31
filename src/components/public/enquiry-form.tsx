@@ -421,7 +421,7 @@ function OtpInputBoxes({
 export function EnquiryForm({
   packageId,
   destinationName,
-  buttonLabel = 'Send Quote',
+  buttonLabel = 'Send Enquiry',
   isLoggedIn = false,
   defaultName = '',
   defaultEmail = '',

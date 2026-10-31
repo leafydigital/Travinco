@@ -71,7 +71,7 @@ export default async function BookingPage({
         <div className="mx-auto max-w-4xl">
           <div className="card border-t-4 border-t-emerald-500 p-6 sm:p-10 bg-white shadow-xl shadow-ink-900/5">
             <EnquiryForm
-              buttonLabel="Send Quote"
+              buttonLabel="Send Enquiry"
               isLoggedIn={Boolean(customer)}
               defaultName={customer?.full_name || ''}
               defaultEmail={customer?.email || ''}

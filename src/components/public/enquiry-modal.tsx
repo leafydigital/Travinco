@@ -98,7 +98,7 @@ export function EnquiryModal({
         {/* Compact form fits the modal; on very short screens it can still scroll (scrollbar hidden) */}
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden sm:px-6">
           <EnquiryForm
-            buttonLabel="Send Quote"
+            buttonLabel="Send Enquiry"
             isLoggedIn={Boolean(customer)}
             defaultName={customer?.name || ''}
             defaultEmail={customer?.email || ''}
