@@ -212,29 +212,29 @@ export function BulkCreateBlogsModal({
 
   return (
     <ModalPortal>
-      <div className="fixed inset-0 bg-ink-950/50 z-50 flex items-center justify-center p-3 sm:p-5 animate-in fade-in duration-150">
-        <div className="flex flex-col w-full max-w-5xl max-h-[92vh] bg-white rounded-2xl shadow-lg shadow-ink-900/5 border border-ink-100 overflow-hidden">
+      <div className="fixed inset-0 bg-ink-950/50 z-50 flex items-center justify-center p-2 sm:p-5 animate-in fade-in duration-150">
+        <div className="flex flex-col w-full max-w-5xl max-h-[95vh] sm:max-h-[92vh] bg-white rounded-2xl shadow-lg shadow-ink-900/5 border border-ink-100 overflow-hidden">
           {/* Modal Header */}
-          <div className="flex items-center justify-between border-b border-ink-100 px-5 sm:px-6 py-4 bg-ink-50/70">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-50 text-brand-700 shadow-2xs">
+          <div className="flex items-start sm:items-center justify-between gap-2 border-b border-ink-100 px-4 sm:px-6 py-3 sm:py-4 bg-ink-50/70">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="hidden sm:flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-700 shadow-2xs">
                 <BookOpen className="h-5 w-5" />
               </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h2 className="text-lg font-bold text-ink-900">Bulk Create Blog Posts</h2>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <h2 className="text-base sm:text-lg font-bold text-ink-900">Bulk Create Blog Posts</h2>
                   <span className="rounded-md bg-brand-100 px-2 py-0.5 text-xs font-semibold text-brand-800">
                     Batch Mode
                   </span>
                 </div>
-                <p className="text-xs text-ink-500">
+                <p className="hidden sm:block text-xs text-ink-500">
                   Quickly add multiple blog articles with excerpts, cover images, and content at once.
                 </p>
               </div>
             </div>
   
-            <div className="flex items-center gap-3">
-              <span className="rounded-md bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700 border border-brand-200">
+            <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+              <span className="hidden sm:inline rounded-md bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700 border border-brand-200">
                 {cards.length} post{cards.length !== 1 ? 's' : ''} in queue
               </span>
   
@@ -250,7 +250,7 @@ export function BulkCreateBlogsModal({
           </div>
   
           {/* Modal Body */}
-          <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-4">
+          <div className="flex-1 overflow-y-auto p-3 sm:p-6 space-y-4">
             {formError && (
               <div className="flex items-center gap-2.5 rounded-xl border border-coral-200 bg-coral-50 p-3 text-xs text-coral-800">
                 <AlertCircle className="h-4 w-4 shrink-0 text-coral-600" />
@@ -264,20 +264,20 @@ export function BulkCreateBlogsModal({
                 {cards.map((card, index) => (
                   <div
                     key={card.id}
-                    className="card space-y-4 p-5 bg-white border border-ink-150 rounded-xl shadow-2xs relative transition-all"
+                    className="card space-y-4 p-3 sm:p-5 bg-white border border-ink-150 rounded-xl shadow-2xs relative transition-all"
                   >
                     {/* Card Top Bar with Title, Status & Actions */}
                     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-ink-100 pb-3">
-                      <div className="flex items-center gap-2.5">
-                        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-brand-50 text-xs font-bold text-brand-700 border border-brand-200">
+                      <div className="flex min-w-0 items-center gap-2.5">
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-50 text-xs font-bold text-brand-700 border border-brand-200">
                           {index + 1}
                         </span>
-                        <div>
-                          <h3 className="text-sm font-bold text-ink-900">
+                        <div className="min-w-0">
+                          <h3 className="text-sm font-bold text-ink-900 break-words">
                             {card.title.trim() ? card.title : `Blog Post #${index + 1}`}
                           </h3>
                           {card.slug && (
-                            <span className="text-[11px] text-ink-400 font-mono">
+                            <span className="block text-[11px] text-ink-400 font-mono break-all sm:inline sm:break-normal">
                               /{card.slug}
                             </span>
                           )}
@@ -443,7 +443,7 @@ export function BulkCreateBlogsModal({
   
               {/* Bottom Add Buttons */}
               <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
                     onClick={addCard}
@@ -481,7 +481,7 @@ export function BulkCreateBlogsModal({
           </div>
   
           {/* Modal Footer */}
-          <div className="flex items-center justify-between border-t border-ink-100 px-5 sm:px-6 py-3.5 bg-ink-50/70">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 sm:gap-0 border-t border-ink-100 px-4 sm:px-6 py-3 sm:py-3.5 bg-ink-50/70">
             <div className="flex items-center gap-2">
               <span className="text-xs font-medium text-ink-500">
                 Ready to save:
@@ -491,7 +491,7 @@ export function BulkCreateBlogsModal({
               </span>
             </div>
   
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center justify-end gap-2.5">
               <button
                 type="button"
                 onClick={onClose}

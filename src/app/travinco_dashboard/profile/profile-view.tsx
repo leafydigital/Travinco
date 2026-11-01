@@ -81,17 +81,17 @@ export function ProfileView({ profile, canEdit }: { profile: ProfileData; canEdi
 
   return (
     <div className="space-y-4">
-      <div className="card flex flex-wrap items-center gap-4 p-5">
-        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-brand-100 text-lg font-bold text-brand-700">
+      <div className="card flex flex-wrap items-center gap-3 p-4 sm:gap-4 sm:p-5">
+        <div className="flex h-12 w-12 sm:h-14 sm:w-14 shrink-0 items-center justify-center rounded-full bg-brand-100 text-base sm:text-lg font-bold text-brand-700">
           {initials}
         </div>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-lg font-semibold text-ink-900">{profile.full_name}</p>
+          <p className="truncate text-base sm:text-lg font-semibold text-ink-900">{profile.full_name}</p>
           <span className="mt-0.5 inline-flex items-center gap-1 rounded-md border border-brand-200 bg-brand-50 px-2 py-0.5 text-xs font-semibold text-brand-700">
             <ShieldCheck className="h-3 w-3" /> {profile.roleName}
           </span>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex w-full flex-wrap gap-2 border-t border-ink-100 pt-3 sm:w-auto sm:border-0 sm:pt-0 max-sm:[&>*]:flex-1 max-sm:[&>*]:justify-center">
           {canEdit && !editing && (
             <button type="button" onClick={startEdit} className="btn-outline px-3 py-1.5 text-xs">
               <Pencil className="h-3.5 w-3.5" /> Edit profile
@@ -102,14 +102,14 @@ export function ProfileView({ profile, canEdit }: { profile: ProfileData; canEdi
       </div>
 
       {!editing ? (
-        <div className="card divide-y divide-ink-50 px-5">
+        <div className="card divide-y divide-ink-50 px-4 sm:px-5">
           <DetailRow icon={AtSign} label="Username" value={profile.username} />
           <DetailRow icon={Mail} label="Email" value={profile.email} />
           <DetailRow icon={Phone} label="Phone number" value={profile.phone} />
           <DetailRow icon={MapPin} label="Address" value={profile.address} />
         </div>
       ) : (
-        <form onSubmit={handleSubmit} noValidate className="card space-y-4 p-5">
+        <form onSubmit={handleSubmit} noValidate className="card space-y-4 p-4 sm:p-5">
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <label className="mb-1 block text-sm font-medium text-ink-700">Username</label>
@@ -172,7 +172,7 @@ export function ProfileView({ profile, canEdit }: { profile: ProfileData; canEdi
             </div>
           </div>
 
-          <div className="flex justify-end gap-2 border-t border-ink-100 pt-4">
+          <div className="flex justify-end gap-2 border-t border-ink-100 pt-4 max-sm:[&>*]:flex-1 max-sm:[&>*]:justify-center">
             <button
               type="button"
               onClick={() => setEditing(false)}

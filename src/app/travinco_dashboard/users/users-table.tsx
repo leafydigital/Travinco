@@ -197,16 +197,16 @@ export function UsersTable({ initialUsers, currentUserId, currentUserRole, roles
 
       {/* Table */}
       <div className="card overflow-hidden">
-        <div>
-          <table className="w-full table-fixed text-left text-sm">
+        <div className="max-sm:overflow-x-auto">
+          <table className="w-full table-fixed text-left text-sm max-sm:min-w-[860px]">
             <thead>
               <tr className="border-b border-ink-100 bg-ink-50/60 text-xs font-semibold uppercase tracking-wider text-ink-500">
                 <th className="w-[30%] px-3 py-3.5 lg:px-4">User</th>
-                <th className="hidden px-3 py-3.5 md:table-cell lg:px-4">Role</th>
-                <th className="hidden px-3 py-3.5 lg:table-cell lg:px-4">Password</th>
+                <th className="hidden px-3 py-3.5 max-sm:table-cell md:table-cell lg:px-4">Role</th>
+                <th className="hidden px-3 py-3.5 max-sm:table-cell lg:table-cell lg:px-4">Password</th>
                 <th className="px-3 py-3.5 lg:px-4">Status</th>
-                <th className="hidden px-3 py-3.5 xl:table-cell xl:px-4">Joined</th>
-                <th className="w-[7.5rem] px-3 py-3.5 text-right sm:w-[10rem] xl:w-[18rem] lg:px-4">Actions</th>
+                <th className="hidden px-3 py-3.5 max-sm:table-cell xl:table-cell xl:px-4">Joined</th>
+                <th className="w-[7.5rem] max-sm:w-[9rem] px-3 py-3.5 text-right sm:w-[10rem] xl:w-[18rem] lg:px-4">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-ink-50">
@@ -261,7 +261,7 @@ export function UsersTable({ initialUsers, currentUserId, currentUserRole, roles
                         </div>
                       </td>
 
-                      <td className="hidden px-3 py-3.5 md:table-cell lg:px-4">
+                      <td className="hidden px-3 py-3.5 max-sm:table-cell md:table-cell lg:px-4">
                         <span
                           className={cn(
                             'inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-semibold',
@@ -276,7 +276,7 @@ export function UsersTable({ initialUsers, currentUserId, currentUserRole, roles
                         </span>
                       </td>
 
-                      <td className="hidden px-3 py-3.5 lg:table-cell lg:px-4">
+                      <td className="hidden px-3 py-3.5 max-sm:table-cell lg:table-cell lg:px-4">
                         {temp ? (
                           <div className="flex items-center gap-1">
                             <code className="rounded bg-ink-100 px-2 py-0.5 font-mono text-xs text-ink-800">
@@ -337,7 +337,7 @@ export function UsersTable({ initialUsers, currentUserId, currentUserRole, roles
                           </span>
                       </td>
 
-                      <td className="hidden px-3 py-3.5 text-xs text-ink-400 xl:table-cell xl:px-4">{formatDate(u.created_at)}</td>
+                      <td className="hidden px-3 py-3.5 text-xs text-ink-400 max-sm:table-cell xl:table-cell xl:px-4">{formatDate(u.created_at)}</td>
 
                       <td className="px-3 py-3.5 text-right lg:px-4">
                           <div className="flex flex-wrap items-center justify-end gap-1.5">

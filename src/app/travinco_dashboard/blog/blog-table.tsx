@@ -158,8 +158,8 @@ export function BlogTable({
 
       {/* 2. Blog Table */}
       <div className="card overflow-hidden">
-        <div className="w-full">
-          <table className="w-full text-sm table-auto">
+        <div className="w-full max-sm:overflow-x-auto">
+          <table className="w-full text-sm table-auto max-sm:min-w-[600px]">
             <thead>
               <tr className="border-b border-ink-100 text-left text-xs uppercase tracking-wide text-ink-400 bg-sand-50/40">
                 <th className="w-16 px-3 sm:px-4 py-3 font-semibold">Image</th>

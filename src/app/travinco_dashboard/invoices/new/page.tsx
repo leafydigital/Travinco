@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server';
 import { requireProfile, assertPageAccess } from '@/lib/supabase/auth-helpers';
 import { assertTourAccess, isAdminRole } from '@/lib/tour/access';
 import { getTourSettings } from '@/lib/tour/data';
+import { getCustomerSavedAddress } from '@/lib/customer-saved-address';
 import type { InvoiceFormFields, InvoiceFormItem } from '@/components/tour/invoice-form';
 import { NewInvoiceClient } from './new-invoice-client';
 
@@ -64,6 +65,7 @@ export default async function NewInvoicePage({
       fields.bill_to_name = e.customer_name ?? '';
       fields.bill_to_phone = e.phone ?? '';
       fields.bill_to_email = e.email ?? '';
+      fields.bill_to_address = await getCustomerSavedAddress({ customerId: e.customer_id, email: e.email });
       fields.travel_start = e.travel_date ?? '';
       fields.travel_end = e.return_date ?? '';
 
@@ -88,6 +90,7 @@ export default async function NewInvoicePage({
       fields.bill_to_name = c.full_name;
       fields.bill_to_phone = c.phone ?? '';
       fields.bill_to_email = c.email ?? '';
+      fields.bill_to_address = await getCustomerSavedAddress({ customerId: c.id, email: c.email });
     }
   }
 

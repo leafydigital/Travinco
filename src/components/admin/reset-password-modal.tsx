@@ -146,7 +146,7 @@ export function ResetPasswordModal({
     >
       {/* Card Container */}
       <div
-        className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-lg shadow-ink-900/5 border border-ink-100 animate-in zoom-in-95 duration-150"
+        className="relative w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-2xl bg-white p-5 sm:p-6 sm:max-h-none sm:overflow-visible shadow-lg shadow-ink-900/5 border border-ink-100 animate-in zoom-in-95 duration-150"
         onClick={(e) => e.stopPropagation()}
       >
             {/* Close Button */}
@@ -165,7 +165,7 @@ export function ResetPasswordModal({
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-700 ring-4 ring-brand-50/50">
                 <ShieldCheck className="h-5 w-5" />
               </div>
-              <div>
+              <div className="min-w-0 pr-6 sm:pr-0">
                 <h3 className="text-base font-bold text-ink-900">
                   Reset Account Password
                 </h3>

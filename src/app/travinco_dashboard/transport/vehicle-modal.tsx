@@ -146,14 +146,14 @@ export function VehicleModal({
 
   return (
     <ModalPortal>
-      <div className="fixed inset-0 bg-ink-950/50 z-50 flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150">
+      <div className="fixed inset-0 bg-ink-950/50 z-50 flex items-center justify-center p-2 sm:p-4 animate-in fade-in duration-150">
         <div 
-          className="w-full max-w-4xl max-h-[calc(100vh-2rem)] flex flex-col rounded-xl bg-white shadow-lg shadow-ink-900/5 ring-1 ring-ink-900/10 overflow-hidden"
+          className="w-full max-w-4xl max-h-[calc(100dvh-1rem)] sm:max-h-[calc(100vh-2rem)] flex flex-col rounded-xl bg-white shadow-lg shadow-ink-900/5 ring-1 ring-ink-900/10 overflow-hidden"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
-          <div className="flex items-center justify-between border-b border-ink-100 px-6 py-3 shrink-0">
-            <div>
+          <div className="flex items-start sm:items-center justify-between gap-2 border-b border-ink-100 px-4 sm:px-6 py-3 shrink-0">
+            <div className="min-w-0">
               <h2 className="text-base font-semibold text-ink-900">
                 {vehicleId ? 'Edit Vehicle' : 'Add Vehicle'}
               </h2>
@@ -164,7 +164,7 @@ export function VehicleModal({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg p-1 text-ink-400 hover:bg-ink-100 hover:text-ink-700 transition-colors"
+              className="shrink-0 rounded-lg p-1 text-ink-400 hover:bg-ink-100 hover:text-ink-700 transition-colors"
             >
               <X className="h-5 w-5" />
             </button>
@@ -177,7 +177,7 @@ export function VehicleModal({
               <p className="text-sm text-ink-500 font-medium">Fetching vehicle details…</p>
             </div>
           ) : (
-            <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
+            <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 space-y-3">
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-4 gap-y-2.5">
                 {/* Row 1: Vehicle & Vendor Core */}
                 <div>
@@ -349,7 +349,7 @@ export function VehicleModal({
                   />
                 </div>
   
-                <div className="flex items-center gap-5 sm:justify-start pt-2 sm:pt-4">
+                <div className="flex flex-wrap items-center gap-x-5 gap-y-2 sm:justify-start pt-2 sm:pt-4">
                   <label className="flex items-center gap-2 cursor-pointer text-xs font-medium text-ink-800 select-none">
                     <input
                       type="checkbox"

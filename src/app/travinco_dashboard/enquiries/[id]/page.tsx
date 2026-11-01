@@ -6,6 +6,7 @@ import { NotesPanel } from './notes-followups';
 import { EnquiryDetailCard } from './enquiry-detail-card';
 import { canAccess } from '@/lib/tour/access';
 import { maskBadWords } from '@/lib/validations/contact-rules';
+import { getCustomerSavedAddress } from '@/lib/customer-saved-address';
 
 export default async function EnquiryDetailPage({
   params,
@@ -39,6 +40,9 @@ export default async function EnquiryDetailPage({
   if (!enquiry || enquiry.is_deleted) notFound();
   // Employees only work on the enquiries assigned to them
   if (!isAdmin && enquiry.assigned_staff !== profile.id) notFound();
+
+  // Shown only when the customer saved an address on their website profile
+  const customerAddress = await getCustomerSavedAddress({ customerId: enquiry.customer_id, email: enquiry.email });
 
   // Quotation/invoice already raised for this enquiry, so the invoice button can point at it
   let invoiceAccess: {
@@ -81,6 +85,7 @@ export default async function EnquiryDetailPage({
       // Customer text is stored as typed; staff only ever receive the masked version
       enquiry={{ ...enquiry, message: maskBadWords(enquiry.message) }}
       packageTitle={pkg?.title ?? null}
+      customerAddress={customerAddress || null}
       staff={staff ?? []}
       canEdit={canEdit}
       canAssign={isAdmin}

@@ -12,6 +12,7 @@ import { isValidPhoneNumber } from 'libphonenumber-js';
 import { isFakePhone } from '@/lib/validations/phone';
 import { validateEmailAddress } from '@/lib/validations/contact-rules';
 import { GSTIN_RE } from '@/lib/validations/finance';
+import { getCustomerSavedAddress } from '@/lib/customer-saved-address';
 
 export type InvoiceItem = { description: string; sac: string; qty: number; rate: number; amount: number };
 
@@ -80,6 +81,9 @@ export async function convertQuotationToInvoice(quotationId: string, option: 1 |
     email: q.guest_email,
   });
 
+  // Address the customer saved on their website profile, if any
+  const billToAddress = await getCustomerSavedAddress({ customerId, email: q.guest_email });
+
   const mode: 'cgst_sgst' | 'igst' = 'cgst_sgst';
   const taxable = r2(total / (1 + gstPct / 100));
   const t = taxes(taxable, gstPct, mode);
@@ -114,6 +118,7 @@ export async function convertQuotationToInvoice(quotationId: string, option: 1 |
     bill_to_name: q.guest_name,
     bill_to_phone: q.guest_phone,
     bill_to_email: q.guest_email,
+    bill_to_address: billToAddress || null,
     place_of_supply: settings.company_state || 'Kerala',
     invoice_date: today,
     due_date: settings.invoice_due_days ? addDays(today, settings.invoice_due_days) : q.start_date,

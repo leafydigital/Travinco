@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, FileText, Loader2, ReceiptText, Mail, MessageCircle, Pencil, Phone, Save, X } from 'lucide-react';
+import { ArrowLeft, FileText, Loader2, ReceiptText, Mail, MapPin, MessageCircle, Pencil, Phone, Save, X } from 'lucide-react';
 import { toast } from '@/lib/admin-alert';
 import { cn } from '@/lib/utils/cn';
 import { formatCurrency, formatDate } from '@/lib/utils/format';
@@ -84,6 +84,7 @@ function Field({
 export function EnquiryDetailCard({
   enquiry,
   packageTitle,
+  customerAddress,
   staff,
   canEdit,
   canAssign,
@@ -93,6 +94,8 @@ export function EnquiryDetailCard({
 }: {
   enquiry: Tables<'enquiries'>;
   packageTitle: string | null;
+  /** Address the customer saved on their website profile; null hides the field. */
+  customerAddress?: string | null;
   staff: { id: string; full_name: string }[];
   canEdit: boolean;
   canAssign: boolean;
@@ -429,6 +432,15 @@ export function EnquiryDetailCard({
               <span className="text-ink-400">Same as phone</span>
             )}
           </Field>
+
+          {customerAddress && (
+            <Field label="Address" span="col-span-2 sm:col-span-4 lg:col-span-6">
+              <p className="inline-flex items-start gap-1.5 whitespace-pre-wrap break-words">
+                <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-ink-400" />
+                <span>{customerAddress}</span>
+              </p>
+            </Field>
+          )}
 
           {/* Trip */}
           <Field label="Package" span="col-span-2">

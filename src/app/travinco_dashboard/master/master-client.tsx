@@ -935,8 +935,8 @@ export function MasterClient({ initialData, filterOptions, isAdmin = false }: Ma
             )}
           </div>
         ) : (
-          <div className="w-full overflow-hidden">
-            <table className="w-full border-collapse text-left text-xs">
+          <div className="w-full overflow-hidden max-sm:overflow-x-auto">
+            <table className="w-full border-collapse text-left text-xs max-sm:min-w-[900px]">
               <thead className="sticky top-0 z-10 border-b border-ink-200 bg-sand-50/90 font-semibold text-ink-700 backdrop-blur-xs">
                 <tr>
                   <th className="py-3 px-3.5">
@@ -951,10 +951,10 @@ export function MasterClient({ initialData, filterOptions, isAdmin = false }: Ma
                   <th className="py-3 px-3.5 text-right">
                     Tariff (CP / MAP)
                   </th>
-                  <th className="hidden sm:table-cell py-3 px-3.5 text-right">
+                  <th className="py-3 px-3.5 text-right">
                     Extra Guests
                   </th>
-                  <th className="hidden md:table-cell py-3 px-3.5">
+                  <th className="hidden max-sm:table-cell md:table-cell py-3 px-3.5">
                     Notes & Policies
                   </th>
                   {isAdmin && <th className="py-3 px-3.5 text-center whitespace-nowrap">Actions</th>}
@@ -1030,7 +1030,7 @@ export function MasterClient({ initialData, filterOptions, isAdmin = false }: Ma
                       </td>
 
                       {/* Extra Rates */}
-                      <td className="hidden sm:table-cell py-2.5 px-3.5 text-right text-[11px] text-ink-600 whitespace-nowrap">
+                      <td className="py-2.5 px-3.5 text-right text-[11px] text-ink-600 whitespace-nowrap">
                         <div>
                           <span className="text-ink-400">Adult: </span>
                           <span>{formatCost(item.extraAdultCP ?? null)}</span>
@@ -1046,7 +1046,7 @@ export function MasterClient({ initialData, filterOptions, isAdmin = false }: Ma
                       </td>
 
                       {/* Notes & Policies */}
-                      <td className="hidden md:table-cell py-2.5 px-3.5 text-[11px] text-ink-600 max-w-[180px]">
+                      <td className="hidden max-sm:table-cell md:table-cell py-2.5 px-3.5 text-[11px] text-ink-600 max-w-[180px]">
                         {item.notes ? (
                           <p className="truncate" title={item.notes}>
                             {item.notes}
