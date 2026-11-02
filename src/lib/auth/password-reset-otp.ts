@@ -33,6 +33,17 @@ const OTP_TTL_MINUTES = 10;
 const VERIFIED_TTL_MINUTES = 10;
 const MAX_OTP_ATTEMPTS = 5;
 const RESEND_COOLDOWN_MS = 45 * 1000;
+/** Codes one account can be sent per hour (each code allows MAX_OTP_ATTEMPTS guesses). */
+const MAX_CODES_PER_HOUR = 5;
+
+/**
+ * Codes and their attempt counters are stored in enquiry_email_otps (shared by every
+ * server instance), so the 5-attempt limit can't be dodged by landing on another instance.
+ * The key holds a hash of the email: it never contains "@", so the public enquiry form,
+ * which writes plain email keys to the same table, can never create or touch these rows.
+ */
+const OTP_TABLE = 'enquiry_email_otps';
+const dbKey = (scope: ResetScope, email: string) => `pwreset:${scope}:${hashToken(email)}`;
 
 export type ResetScope = 'customer' | 'staff' | 'change';
 
@@ -287,6 +298,8 @@ type OtpTicket = {
   exp: number;
   /** Extra data carried to the verify step (e.g. the pending password for "change"). */
   data?: Record<string, string>;
+  /** enquiry_email_otps row holding this code's attempt counter (absent if the DB was unavailable). */
+  rowId?: string;
 };
 
 type VerifiedTicket = {
@@ -381,13 +394,51 @@ export async function sendPasswordOtp(params: {
     return { success: false, error: 'Please wait a moment before requesting another code.' };
   }
 
+  const db = otpDb();
+  const rowKey = dbKey(params.scope, email);
+
+  // Hourly cap per account, counted across all server instances. A failed lookup never blocks a reset.
+  if (db) {
+    try {
+      const { count, error } = await db
+        .from(OTP_TABLE)
+        .select('id', { count: 'exact', head: true })
+        .eq('email', rowKey)
+        .gte('created_at', new Date(Date.now() - 60 * 60 * 1000).toISOString());
+      if (!error && (count ?? 0) >= MAX_CODES_PER_HOUR) {
+        return {
+          success: false,
+          error: 'Too many verification codes were requested for this account. Please try again in an hour.',
+        };
+      }
+    } catch (err) {
+      console.warn('Password OTP hourly limit check skipped:', err);
+    }
+  }
+
   const otpCode = generateOtpCode();
   const codeHash = hashToken(otpCode);
   const exp = Date.now() + OTP_TTL_MINUTES * 60 * 1000;
 
   memoryMap.set(key, { codeHash, expiresAt: exp, attempts: 0, createdAt: Date.now() });
 
-  const ticket: OtpTicket = { purpose: 'otp', scope: params.scope, email, codeHash, exp, data: params.data };
+  // Store the code with its attempt counter; if the database is unavailable the memory record is used instead
+  let rowId: string | undefined;
+  if (db) {
+    try {
+      const { data, error } = await db
+        .from(OTP_TABLE)
+        .insert({ email: rowKey, code_hash: codeHash, expires_at: new Date(exp).toISOString(), attempts: 0 })
+        .select('id')
+        .single();
+      if (error) console.warn('Password OTP database insert warning (memory store active):', error.message);
+      else rowId = data?.id;
+    } catch (err) {
+      console.warn('Password OTP database insert warning (memory store active):', err);
+    }
+  }
+
+  const ticket: OtpTicket = { purpose: 'otp', scope: params.scope, email, codeHash, exp, data: params.data, rowId };
 
   const emailResult = await sendGmail({
     to: email,
@@ -397,6 +448,8 @@ export async function sendPasswordOtp(params: {
 
   if (emailResult.error) {
     memoryMap.delete(key);
+    // A code that was never delivered must not count towards the hourly limit
+    if (db && rowId) await db.from(OTP_TABLE).delete().eq('id', rowId);
     console.error('Failed to send password OTP email:', emailResult.error);
     return { success: false, error: 'Failed to send the verification code email. Please try again.' };
   }
@@ -426,9 +479,83 @@ export async function resendPasswordOtp(
   return sendPasswordOtp({ scope, email: payload.email, fullName, data: payload.data });
 }
 
+const OTP_MESSAGES = {
+  expired: 'Your verification code has expired. Please request a new code.',
+  newer: 'A newer code was sent. Please use the latest code from your email.',
+  tooMany: 'Too many incorrect attempts. Please request a new code.',
+  invalid: 'Invalid verification code. Please check your email and try again.',
+  used: 'This code has already been used. Please request a new code.',
+  retry: 'We could not check your code right now. Please try again.',
+};
+
+/** Service client for the OTP table, or null when it can't be created (memory fallback). */
+function otpDb() {
+  try {
+    return createServiceClient();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Checks a code stored in enquiry_email_otps. Each guess first claims one attempt with a
+ * conditional update (attempts = n -> n + 1), so even guesses sent in parallel can never
+ * exceed MAX_OTP_ATTEMPTS per code. A correct code is marked used and can't be reused.
+ */
+async function checkDbOtp(payload: OtpTicket, code: string): Promise<{ error?: string }> {
+  const db = otpDb();
+  if (!db) return { error: OTP_MESSAGES.retry };
+  const rowKey = dbKey(payload.scope, payload.email);
+
+  // Retried when a parallel guess claimed the same attempt slot first
+  for (let i = 0; i < 3; i++) {
+    const { data: row, error } = await db
+      .from(OTP_TABLE)
+      .select('id, code_hash, attempts, expires_at, verified_at')
+      .eq('email', rowKey)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) return { error: OTP_MESSAGES.retry };
+    if (!row) return { error: OTP_MESSAGES.expired };
+
+    // A newer code was issued: only the latest code is valid
+    if (row.id !== payload.rowId) return { error: OTP_MESSAGES.newer };
+    if (row.verified_at) return { error: OTP_MESSAGES.used };
+    if (row.code_hash !== payload.codeHash || new Date(row.expires_at).getTime() < Date.now()) {
+      return { error: OTP_MESSAGES.expired };
+    }
+    if (row.attempts >= MAX_OTP_ATTEMPTS) return { error: OTP_MESSAGES.tooMany };
+
+    const { data: claimed, error: claimError } = await db
+      .from(OTP_TABLE)
+      .update({ attempts: row.attempts + 1 })
+      .eq('id', row.id)
+      .eq('attempts', row.attempts)
+      .is('verified_at', null)
+      .select('id');
+    if (claimError) return { error: OTP_MESSAGES.retry };
+    if (!claimed?.length) continue;
+
+    if (hashToken(code) !== row.code_hash) return { error: OTP_MESSAGES.invalid };
+
+    const { data: used, error: useError } = await db
+      .from(OTP_TABLE)
+      .update({ verified_at: new Date().toISOString() })
+      .eq('id', row.id)
+      .is('verified_at', null)
+      .select('id');
+    if (useError) return { error: OTP_MESSAGES.retry };
+    if (!used?.length) return { error: OTP_MESSAGES.used };
+    return {};
+  }
+  return { error: OTP_MESSAGES.retry };
+}
+
 /**
  * Checks the entered code against the ticket. Returns the decoded ticket on success.
- * Wrong codes are counted (max 5 per code) when the memory record is available.
+ * Wrong codes are counted (max 5 per code) in the database; codes issued while the
+ * database was unavailable fall back to the in-memory counter.
  */
 export async function checkPasswordOtp(
   resetTicket: string,
@@ -442,20 +569,28 @@ export async function checkPasswordOtp(
 
   const payload = await readOtpTicket(resetTicket, scope);
   if (!payload) {
-    return { error: 'Your verification code has expired. Please request a new code.' };
+    return { error: OTP_MESSAGES.expired };
   }
 
   const memoryMap = getMemoryMap();
   const key = memKey(scope, payload.email);
+
+  if (payload.rowId) {
+    const checked = await checkDbOtp(payload, code);
+    if (checked.error) return { error: checked.error };
+    memoryMap.delete(key);
+    return { ticket: payload };
+  }
+
   const memRecord = memoryMap.get(key);
 
   // A newer code was issued: only the latest code is valid
   if (memRecord && memRecord.codeHash !== payload.codeHash) {
-    return { error: 'A newer code was sent. Please use the latest code from your email.' };
+    return { error: OTP_MESSAGES.newer };
   }
   if (memRecord && memRecord.attempts >= MAX_OTP_ATTEMPTS) {
-    memoryMap.delete(key);
-    return { error: 'Too many incorrect attempts. Please request a new code.' };
+    // Keep the record: deleting it would lift the limit for every later guess
+    return { error: OTP_MESSAGES.tooMany };
   }
 
   if (hashToken(code) !== payload.codeHash) {
