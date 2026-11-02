@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { AlertTriangle, ArrowLeft, Lock } from 'lucide-react';
 import { createClient } from '@/lib/supabase/server';
-import { requireProfile } from '@/lib/supabase/auth-helpers';
+import { requireProfile, assertPageAccess } from '@/lib/supabase/auth-helpers';
 import { assertTourAccess, isAdminRole } from '@/lib/tour/access';
 import { whatsappText, inr } from '@/lib/tour/engine';
 import { getTourSettings } from '@/lib/tour/data';
@@ -18,6 +18,7 @@ export const metadata: Metadata = { title: 'Quotation — Admin Portal' };
 export default async function QuotationPage({ params, searchParams }: { params: { id: string }; searchParams: { locked?: string } }) {
   const profile = await requireProfile();
   assertTourAccess(profile, 'quotations');
+  await assertPageAccess(profile, 'quotations');
   const supabase = await createClient();
   const [{ data: q }, { data: inv }, settings] = await Promise.all([
     supabase.from('quotations').select('*, profiles:created_by(full_name)').eq('id', params.id).maybeSingle(),

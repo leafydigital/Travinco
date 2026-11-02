@@ -330,7 +330,8 @@ export default function LoginPage() {
       }
       setIsLoading(false);
     } catch (err: any) {
-      const message = err?.message || 'Unable to sign in right now. Please try again.';
+      console.error(err); // technical detail for debugging only
+      const message = 'Unable to sign in right now. Please try again.';
       setLoginError({ message });
       toast.error(message);
       setIsLoading(false);
@@ -362,7 +363,8 @@ export default function LoginPage() {
       const separator = target.includes('?') ? '&' : '?';
       router.replace(`${target}${separator}login=success`);
     } catch (err: any) {
-      setOtpError(err?.message || 'Could not verify your code. Please try again.');
+      console.error(err); // technical detail for debugging only
+      setOtpError('Could not verify your code. Please try again.');
       setIsVerifyingOtp(false);
     }
   }
@@ -435,7 +437,8 @@ export default function LoginPage() {
       setStep('forgot_otp');
       toast.success(`Verification code sent to ${res.maskedEmail || target}`);
     } catch (err: any) {
-      setResetError(err?.message || 'Could not verify your account. Please try again.');
+      console.error(err); // technical detail for debugging only
+      setResetError('Could not verify your account. Please try again.');
     } finally {
       setIsResetChecking(false);
     }
@@ -489,7 +492,8 @@ export default function LoginPage() {
       setStep('forgot_password');
       toast.success('Email verified. Please choose your new password.');
     } catch (err: any) {
-      setResetError(err?.message || 'Could not verify your code. Please try again.');
+      console.error(err); // technical detail for debugging only
+      setResetError('Could not verify your code. Please try again.');
     } finally {
       setIsResetSubmitting(false);
     }
@@ -526,7 +530,8 @@ export default function LoginPage() {
       resetForgotState();
       setStep('credentials');
     } catch (err: any) {
-      setResetError(err?.message || 'Failed to update password. Please try again.');
+      console.error(err); // technical detail for debugging only
+      setResetError('Failed to update password. Please try again.');
     } finally {
       setIsSendingResetOtp(false);
     }

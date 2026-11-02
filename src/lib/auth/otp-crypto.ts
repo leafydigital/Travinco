@@ -10,10 +10,12 @@ export function generateOtpCode(): string {
 }
 
 function getEncryptionKey(): Buffer {
-  const secret =
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-    'travinco-auth-fallback-secret-key-32b';
+  // Server-only secret. Never fall back to a public value (the anon key ships to browsers),
+  // otherwise anyone could forge login / signup / reset tickets.
+  const secret = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!secret) {
+    throw new Error('SUPABASE_SERVICE_ROLE_KEY is not set. Refusing to encrypt auth tickets.');
+  }
   return crypto.createHash('sha256').update(secret).digest();
 }
 

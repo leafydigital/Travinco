@@ -57,7 +57,7 @@ export async function getCustomerDashboardData(accountEmail: string): Promise<Cu
   const { data: customerRow } = await supabase
     .from('customers')
     .select('id, full_name, phone, email')
-    .ilike('email', normalizedEmail)
+    .ilike('email', escapeLike(normalizedEmail))
     .maybeSingle();
 
   const customerId = customerRow?.id ?? null;
@@ -66,7 +66,7 @@ export async function getCustomerDashboardData(accountEmail: string): Promise<Cu
   let invoiceQuery = supabase
     .from('invoices')
     .select(
-      'id, invoice_number, quotation_id, bill_to_name, bill_to_email, invoice_date, due_date, travel_start, travel_end, items, total_amount, amount_paid, balance_amount, status, created_at, is_deleted, quotations(title, trip_type)'
+      'id, customer_id, invoice_number, quotation_id, bill_to_name, bill_to_email, invoice_date, due_date, travel_start, travel_end, items, total_amount, amount_paid, balance_amount, status, created_at, is_deleted, quotations(title, trip_type)'
     )
     .neq('status', 'cancelled')
     .neq('is_deleted', true)
@@ -77,7 +77,7 @@ export async function getCustomerDashboardData(accountEmail: string): Promise<Cu
       `customer_id.eq.${customerId},bill_to_email.ilike.${normalizedEmail}`
     );
   } else {
-    invoiceQuery = invoiceQuery.ilike('bill_to_email', normalizedEmail);
+    invoiceQuery = invoiceQuery.ilike('bill_to_email', escapeLike(normalizedEmail));
   }
 
   const { data: rawInvoices, error: invErr } = await invoiceQuery;
@@ -85,7 +85,14 @@ export async function getCustomerDashboardData(accountEmail: string): Promise<Cu
     console.error('Customer invoices query error:', invErr.message);
   }
 
-  const invoicesList: CustomerInvoice[] = (rawInvoices ?? []).map((inv: any) => {
+  // ilike treats "_" / "%" as wildcards, so re-check ownership exactly before showing anything
+  const ownedInvoices = (rawInvoices ?? []).filter(
+    (inv: any) =>
+      (customerId && inv.customer_id === customerId) ||
+      inv.bill_to_email?.trim().toLowerCase() === normalizedEmail
+  );
+
+  const invoicesList: CustomerInvoice[] = ownedInvoices.map((inv: any) => {
     const q = Array.isArray(inv.quotations) ? inv.quotations[0] : inv.quotations;
     return {
       id: inv.id,
@@ -161,7 +168,7 @@ export async function getCustomerInvoiceById(id: string, accountEmail: string) {
   const { data: customerRow } = await supabase
     .from('customers')
     .select('id')
-    .ilike('email', normalizedEmail)
+    .ilike('email', escapeLike(normalizedEmail))
     .maybeSingle();
 
   const { data: inv } = await supabase
@@ -215,7 +222,7 @@ export async function getCustomerQuotationById(id: string, accountEmail: string)
   const { data: customerRow } = await supabase
     .from('customers')
     .select('id')
-    .ilike('email', normalizedEmail)
+    .ilike('email', escapeLike(normalizedEmail))
     .maybeSingle();
 
   const { data: q } = await supabase

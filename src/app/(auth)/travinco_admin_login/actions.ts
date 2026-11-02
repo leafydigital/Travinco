@@ -1,6 +1,7 @@
 'use server';
 
 import { createAdminClient, createClient } from '@/lib/supabase/server';
+import { escapeLike } from '@/lib/auth/signup-rules';
 import {
   checkLoginLockout,
   recordFailedLoginAttempt,
@@ -231,7 +232,7 @@ export async function checkStaffEmailAction(
     const { data: profile } = await supabase
       .from('profiles')
       .select('id, full_name, email, role, is_active, is_deleted')
-      .ilike('email', normalizedEmail)
+      .ilike('email', escapeLike(normalizedEmail))
       .maybeSingle();
 
     if (profile) {

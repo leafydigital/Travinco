@@ -281,8 +281,9 @@ export async function getBlogTableList({
     query = query.neq('status', 'archived');
   }
 
-  if (q && q.trim()) {
-    const term = q.trim();
+  // Strip characters that would change the .or() filter itself (same as invoices/hotels search)
+  const term = (q ?? '').replace(/[,()%*\\]/g, ' ').trim();
+  if (term) {
     query = query.or(`title.ilike.%${term}%,slug.ilike.%${term}%`);
   }
 

@@ -34,17 +34,20 @@ export type PermissionAction = 'view' | 'edit';
  * Verified staff context forwarded by the middleware for /travinco_dashboard requests
  * (null outside that scope, e.g. API routes -> callers fall back to DB queries).
  */
-const getForwardedStaffContext = cache((): StaffContext | null => {
+const getForwardedStaffContext = cache(async (): Promise<StaffContext | null> => {
+  let raw: string | null;
   try {
-    return decodeStaffContext(headers().get(STAFF_CONTEXT_HEADER));
+    raw = headers().get(STAFF_CONTEXT_HEADER);
   } catch {
     return null; // headers() unavailable outside a request scope
   }
+  // Signature + expiry are checked here; anything forged or stale is ignored
+  return decodeStaffContext(raw);
 });
 
 export const getProfile = cache(async (): Promise<CurrentProfile | null> => {
   // Fast path: middleware already verified JWT + active staff role + not a customer account
-  const forwarded = getForwardedStaffContext();
+  const forwarded = await getForwardedStaffContext();
   if (forwarded) {
     const profile = forwarded.profile as CurrentProfile;
     return profile.is_active ? profile : null;
@@ -107,7 +110,7 @@ export const requireProfile = cache(async (): Promise<CurrentProfile> => {
  */
 export const getStaffPermissions = cache(async (profileId: string) => {
   // Fast path: middleware loaded the current staff member's permission rows already
-  const forwarded = getForwardedStaffContext();
+  const forwarded = await getForwardedStaffContext();
   if (forwarded && forwarded.profile.id === profileId) {
     return buildStaffPermissions(
       profileId,

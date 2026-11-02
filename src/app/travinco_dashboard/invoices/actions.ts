@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
-import { requireProfile } from '@/lib/supabase/auth-helpers';
+import { requireProfile, hasPageAccess } from '@/lib/supabase/auth-helpers';
 import { canAccess, isAdminRole, isFinanceRole } from '@/lib/tour/access';
 import { getTourSettings } from '@/lib/tour/data';
 import { addDays } from '@/lib/tour/engine';
@@ -18,9 +18,15 @@ export type InvoiceItem = { description: string; sac: string; qty: number; rate:
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
-async function staff() {
+/**
+ * Role tier AND the page grants from Role Management (same rules as the page guards).
+ * `pages` lists the pages any one of which allows the action (default: Invoices).
+ */
+async function staff(pages: string[] = ['invoices']) {
   const profile = await requireProfile();
   if (!canAccess(profile, 'invoices')) return null;
+  const grants = await Promise.all(pages.map((page) => hasPageAccess(profile, page, 'edit')));
+  if (!grants.some(Boolean)) return null;
   return { profile, supabase: await createClient() };
 }
 
@@ -56,7 +62,8 @@ async function resolveCustomerId(
  * so the guest pays exactly what was quoted, with a paise-level round-off.
  */
 export async function convertQuotationToInvoice(quotationId: string, option: 1 | 2 = 1): Promise<{ error?: string; id?: string }> {
-  const s = await staff();
+  // Started from the Quotations page, so either page grant is enough
+  const s = await staff(['invoices', 'quotations']);
   if (!s) return { error: 'You do not have access to invoices.' };
   const { supabase, profile } = s;
 
@@ -490,8 +497,17 @@ export async function addInvoicePayment(
     return { error: 'Could not record the payment.' };
   }
 
-  // 4. Update invoice amount_paid and status directly (reusing known totals, avoiding redundant SELECTs)
-  const newTotalPaid = Math.round(((Number(inv.amount_paid) || 0) + p.data.amount) * 100) / 100;
+  // 4. Update invoice amount_paid and status from the recorded payments (same as deleteInvoicePayment).
+  //    Summing the rows instead of "old amount_paid + this payment" keeps the total right when two
+  //    payments are recorded at the same time.
+  const { data: allPayments, error: sumError } = await s.supabase
+    .from('invoice_payments')
+    .select('amount')
+    .eq('invoice_id', invoiceId);
+  const summed = (allPayments ?? []).reduce((sum: number, row: any) => sum + Number(row.amount || 0), 0);
+  const newTotalPaid = sumError
+    ? Math.round(((Number(inv.amount_paid) || 0) + p.data.amount) * 100) / 100
+    : Math.round(summed * 100) / 100;
   const totalAmount = Number(inv.total_amount || 0);
   const newStatus =
     inv.status === 'cancelled' || inv.status === 'draft'
@@ -697,7 +713,7 @@ export async function getInvoicesTableList({
   status?: string;
 } = {}): Promise<InvoicesTableQueryResult> {
   const profile = await requireProfile();
-  if (!canAccess(profile, 'invoices')) {
+  if (!canAccess(profile, 'invoices') || !(await hasPageAccess(profile, 'invoices'))) {
     return { invoices: [], totalCount: 0, totalPages: 1, page: 1, pageSize };
   }
 

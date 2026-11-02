@@ -205,7 +205,7 @@ export async function middleware(request: NextRequest) {
             meta.role === 'customer';
 
           if (isAdminRoute && !isCustomerMeta && permsRes && !permsRes.error && !settingRes?.error) {
-            const encoded = encodeStaffContext({
+            const encoded = await encodeStaffContext({
               profile,
               perms: { rows: permsRes.data ?? [], settingValue: settingRes?.data?.value ?? null, role },
             });

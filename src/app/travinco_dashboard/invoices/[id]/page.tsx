@@ -1,9 +1,9 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { ArrowLeft, MessageCircle } from 'lucide-react';
 import { createClient } from '@/lib/supabase/server';
-import { requireProfile } from '@/lib/supabase/auth-helpers';
+import { requireProfile, hasPageAccess } from '@/lib/supabase/auth-helpers';
 import { assertTourAccess, isAdminRole, isFinanceRole } from '@/lib/tour/access';
 import { getTourSettings } from '@/lib/tour/data';
 import { InvoiceDocument, type InvoiceDoc } from '@/components/tour/invoice-document';
@@ -16,6 +16,10 @@ export const metadata: Metadata = { title: 'Invoice — Admin Portal' };
 export default async function InvoicePage({ params }: { params: { id: string } }) {
   const profile = await requireProfile();
   assertTourAccess(profile, 'invoices');
+  // Quotations users land here after converting a quote, so either page grant is enough
+  if (!(await hasPageAccess(profile, 'invoices')) && !(await hasPageAccess(profile, 'quotations'))) {
+    redirect('/travinco_dashboard?error=unauthorized');
+  }
   const supabase = await createClient();
   const [{ data: inv }, { data: payments }, settings, { data: delSetting }, { data: markupSetting }] = await Promise.all([
     supabase.from('invoices').select('*, quotations(id, quote_number, markup_pct, markup_amount, total_amount)').eq('id', params.id).maybeSingle(),

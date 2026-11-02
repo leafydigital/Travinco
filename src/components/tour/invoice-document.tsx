@@ -113,13 +113,15 @@ const LIGHT_BLUE = '#f0f9ff';
 export function InvoiceDocument({
   inv,
   s,
-  logoUrl = '/brand/travinco-logo.png',
+  logoUrl,
 }: {
   inv: InvoiceDoc;
   s: TourSettings;
   logoUrl?: string;
 }) {
   const cfg: InvoiceSettings = s.invoice_settings || DEFAULT_INVOICE_SETTINGS;
+  // Same "Company header logo" as quotations (Settings), falling back to the bundled Travinco logo
+  const headerLogo = logoUrl || s.logos_config?.header_logo_url || '/brand/travinco-logo.png';
   const signatureUrl = cfg.signature_url || '/brand/signature.png';
 
   // Build UPI URI encoding invoice total balance amount
@@ -232,7 +234,7 @@ export function InvoiceDocument({
       <header style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 12 }}>
         <div style={{ flex: '0 0 auto', width: 200 }}>
           <img
-            src={logoUrl}
+            src={headerLogo}
             alt={s.company_name || 'Travinco'}
             crossOrigin="anonymous"
             style={{ height: 46, maxWidth: 190, objectFit: 'contain' }}

@@ -1,7 +1,7 @@
 'use server';
 
 import { createServiceClient } from '@/lib/supabase/service';
-import { sendGmail, isGmailConfigured } from '@/lib/email/gmail';
+import { sendGmail, isGmailConfigured, escapeHtml } from '@/lib/email/gmail';
 import { hashToken, generateOtpCode } from '@/lib/auth/otp-crypto';
 
 const OTP_TTL_MINUTES = 10;
@@ -73,7 +73,7 @@ export async function sendEnquiryEmailOtp(
     console.warn('Enquiry OTP database insert warning (memory store active):', dbErr?.message);
   }
 
-  const nameGreeting = customerName?.trim() ? `Hi ${customerName.trim()},` : 'Hello,';
+  const nameGreeting = customerName?.trim() ? `Hi ${escapeHtml(customerName.trim())},` : 'Hello,';
 
   const html = `
     <!DOCTYPE html>

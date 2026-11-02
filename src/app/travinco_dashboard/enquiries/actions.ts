@@ -669,13 +669,13 @@ export async function convertEnquiryToBooking(
   // swallowed rather than surfaced as an error on the conversion itself.
   if (enquiry.email) {
     try {
-      const { sendGmail, isGmailConfigured } = await import('@/lib/email/gmail');
+      const { sendGmail, isGmailConfigured, escapeHtml } = await import('@/lib/email/gmail');
       if (isGmailConfigured()) {
         const trackUrl = `${process.env.NEXT_PUBLIC_SITE_URL ?? ''}/account/bookings`;
         await sendGmail({
           to: enquiry.email,
           subject: 'Your booking has been confirmed',
-          html: `<p>Hi ${enquiry.customer_name},</p><p>Your enquiry has been confirmed as a booking. You can track its status any time by logging in to <a href="${trackUrl}">your account</a>.</p><p>We'll be in touch with next steps shortly.</p>`,
+          html: `<p>Hi ${escapeHtml(String(enquiry.customer_name ?? ''))},</p><p>Your enquiry has been confirmed as a booking. You can track its status any time by logging in to <a href="${trackUrl}">your account</a>.</p><p>We'll be in touch with next steps shortly.</p>`,
         });
       }
     } catch {

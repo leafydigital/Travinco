@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { notFound, redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
-import { requireProfile } from '@/lib/supabase/auth-helpers';
+import { requireProfile, assertPageAccess } from '@/lib/supabase/auth-helpers';
 import { assertTourAccess, canOverrideMarkup } from '@/lib/tour/access';
 import { loadRatesForStays, loadTourMasters } from '@/lib/tour/data';
 import { normalizeInputs } from '@/lib/tour/engine';
@@ -18,6 +18,7 @@ export default async function EditQuotationPage({ params }: { params: { id: stri
     loadTourMasters(),
   ]);
   assertTourAccess(profile, 'quotations');
+  await assertPageAccess(profile, 'quotations');
   if (!q || (q as any).is_deleted === true) notFound();
   if (q.status === 'invoiced') redirect(`/travinco_dashboard/quotations/${q.id}?locked=1`);
   const inputs = normalizeInputs(q.inputs as Partial<QuoteInputs>, m);

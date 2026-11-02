@@ -164,7 +164,8 @@ export default async function PackageDetailPage({ params }: { params: { slug: st
       {/* eslint-disable-next-line react/no-danger */}
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        // Escape "<" so staff-entered text (e.g. "</script>") can't break out of the tag
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, '\\u003c') }}
       />
 
       {/* Hero section placed cleanly under the navbar - Full Width */}

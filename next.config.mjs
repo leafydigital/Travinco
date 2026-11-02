@@ -32,6 +32,22 @@ const nextConfig = {
       bodySizeLimit: '10mb',
     },
   },
+  async headers() {
+    return [
+      {
+        source: '/:path*',
+        headers: [
+          // Stop other sites from framing the app (clickjacking); our own iframes are unaffected
+          { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          // Browsers ignore HSTS over plain http, so local development is unaffected
+          { key: 'Strict-Transport-Security', value: 'max-age=31536000' },
+          { key: 'Permissions-Policy', value: 'camera=(), microphone=()' },
+        ],
+      },
+    ];
+  },
   async redirects() {
     return [
       {

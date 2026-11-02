@@ -802,7 +802,8 @@ export function EnquiryForm({
         window.history.pushState({ ...window.history.state, travincoEnquiryOtp: true }, '', window.location.href);
       }
     } catch (err: any) {
-      setFormError(err?.message || 'Failed to send verification code. Please try again.');
+      console.error(err); // technical detail for debugging only
+      setFormError('Failed to send verification code. Please try again.');
     } finally {
       setIsSendingOtp(false);
     }
@@ -856,7 +857,8 @@ export function EnquiryForm({
         // ignore
       }
     } catch (err: any) {
-      setOtpError(err?.message || 'Verification failed. Please try again.');
+      console.error(err); // technical detail for debugging only
+      setOtpError('Verification failed. Please try again.');
     } finally {
       isVerifyingRef.current = false;
       setIsVerifyingOtp(false);

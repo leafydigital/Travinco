@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
-import { requireProfile } from '@/lib/supabase/auth-helpers';
+import { requireProfile, hasPageAccess } from '@/lib/supabase/auth-helpers';
 import { canAccess, canOverrideMarkup, isAdminRole } from '@/lib/tour/access';
 import { loadRatesForStays, loadTourMasters } from '@/lib/tour/data';
 import { addDays, buildCtx, buildSnapshot, normalizeInputs, quote, totalNights } from '@/lib/tour/engine';
@@ -44,9 +44,10 @@ function startDateError(date: string, previous: string | null): string | null {
 const STATUSES = ['draft', 'sent', 'accepted', 'rejected', 'expired'] as const;
 type Status = (typeof STATUSES)[number];
 
+/** Role tier AND the Quotations page grant from Role Management (same rules as the page guard). */
 async function staff() {
   const profile = await requireProfile();
-  if (!canAccess(profile, 'quotations')) return null;
+  if (!canAccess(profile, 'quotations') || !(await hasPageAccess(profile, 'quotations', 'edit'))) return null;
   return { profile, supabase: await createClient() };
 }
 
@@ -328,7 +329,7 @@ export async function getQuotationsTableList({
   status?: string;
 } = {}): Promise<QuotationsTableQueryResult> {
   const profile = await requireProfile();
-  if (!canAccess(profile, 'quotations')) {
+  if (!canAccess(profile, 'quotations') || !(await hasPageAccess(profile, 'quotations'))) {
     return { quotations: [], totalCount: 0, totalPages: 1, page: 1, pageSize };
   }
 

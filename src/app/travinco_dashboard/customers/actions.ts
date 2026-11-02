@@ -342,8 +342,9 @@ export async function getCustomersTableList({
     )
     .order('created_at', { ascending: false });
 
-  if (q && q.trim()) {
-    const term = q.trim();
+  // Strip characters that would change the .or() filter itself (same as invoices/hotels search)
+  const term = (q ?? '').replace(/[,()%*\\]/g, ' ').trim();
+  if (term) {
     query = query.or(
       `full_name.ilike.%${term}%,phone.ilike.%${term}%,email.ilike.%${term}%`
     );
@@ -370,8 +371,7 @@ export async function getCustomersTableList({
       .select('id, full_name, phone, email, city, source, created_at', { count: 'exact' })
       .order('created_at', { ascending: false });
 
-    if (q && q.trim()) {
-      const term = q.trim();
+    if (term) {
       fallbackQuery = fallbackQuery.or(
         `full_name.ilike.%${term}%,phone.ilike.%${term}%,email.ilike.%${term}%`
       );

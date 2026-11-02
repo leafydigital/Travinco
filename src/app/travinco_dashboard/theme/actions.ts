@@ -20,7 +20,8 @@ import {
  * Thoroughly revalidate customer layout and all customer-facing routes so
  * any theme updates immediately reflect on the customer side without caching delays.
  */
-export async function revalidatePublicAndTheme() {
+// Not exported: every export of a 'use server' file is a public endpoint, and this one has no auth check
+async function revalidatePublicAndTheme() {
   try {
     revalidatePath('/', 'layout');
     revalidatePath('/travinco_dashboard/theme');

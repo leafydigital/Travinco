@@ -16,6 +16,16 @@ import nodemailer from 'nodemailer';
  * with confirmed-correct credentials, that's the most likely cause —
  * see the error logged below for the actual underlying reason.
  */
+/** Escapes user-supplied text before it is placed inside an email's HTML. */
+export function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 /** Sender display name used for every email the application sends. */
 export const EMAIL_SENDER_NAME = 'Travinco - Notifications';
 

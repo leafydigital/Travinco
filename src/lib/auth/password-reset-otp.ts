@@ -187,7 +187,7 @@ export async function checkCustomerEmailExists(
       const { data: accountRow } = await serviceSupabase
         .from('customer_accounts')
         .select('id, full_name, email')
-        .ilike('email', targetEmail)
+        .ilike('email', escapeLike(targetEmail))
         .maybeSingle();
 
       if (accountRow) {
@@ -208,7 +208,7 @@ export async function checkCustomerEmailExists(
       const { data: customerRow } = await serviceSupabase
         .from('customers')
         .select('id, full_name, email, is_active, is_deleted')
-        .ilike('email', targetEmail)
+        .ilike('email', escapeLike(targetEmail))
         .maybeSingle();
 
       if (customerRow) {

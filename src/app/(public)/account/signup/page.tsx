@@ -359,7 +359,8 @@ export default function SignupPage() {
         toast.success(`Verification code sent to ${email.trim()}`);
       }
     } catch (err: any) {
-      const message = err?.message || 'Could not initiate registration. Please try again.';
+      console.error(err); // technical detail for debugging only
+      const message = 'Could not initiate registration. Please try again.';
       setSignupError(message);
       toast.error(message);
     } finally {
@@ -395,7 +396,8 @@ export default function SignupPage() {
         ? '/account/bookings?signup=success'
         : '/account/login?signup=success';
     } catch (err: any) {
-      setOtpError(err?.message || 'Could not verify code. Please try again.');
+      console.error(err); // technical detail for debugging only
+      setOtpError('Could not verify code. Please try again.');
       setIsVerifyingOtp(false);
     }
   }
