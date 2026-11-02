@@ -29,7 +29,7 @@ const nextConfig = {
       static: 180,
     },
     serverActions: {
-      bodySizeLimit: '5mb',
+      bodySizeLimit: '10mb',
     },
   },
   async redirects() {

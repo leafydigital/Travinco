@@ -855,7 +855,7 @@ export async function uploadQuotationLogo(formData: FormData): Promise<{ url?: s
   }
 
   const { uploadImageToBucket } = await import('@/lib/storage-upload');
-  return await uploadImageToBucket('brand', file);
+  return await uploadImageToBucket('site-images', file);
 }
 
 export async function saveInvoiceSettings(invoiceSettings: InvoiceSettings): Promise<{ error?: string }> {
@@ -897,7 +897,7 @@ export async function uploadInvoiceSignature(formData: FormData): Promise<{ url?
   }
 
   const { uploadImageToBucket } = await import('@/lib/storage-upload');
-  return await uploadImageToBucket('brand', file);
+  return await uploadImageToBucket('site-images', file);
 }
 
 export async function uploadInvoiceQrCode(formData: FormData): Promise<{ url?: string; error?: string }> {
@@ -910,6 +910,6 @@ export async function uploadInvoiceQrCode(formData: FormData): Promise<{ url?: s
   }
 
   const { uploadImageToBucket } = await import('@/lib/storage-upload');
-  return await uploadImageToBucket('brand', file);
+  return await uploadImageToBucket('site-images', file);
 }
 

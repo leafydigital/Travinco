@@ -301,7 +301,7 @@ export function QuotationLogosEditor({
                   <input
                     type="file"
                     ref={headerFileInputRef}
-                    accept="image/*"
+                    accept="image/jpeg,image/png,image/webp"
                     className="hidden"
                     onChange={(e) => {
                       const file = e.target.files?.[0];
@@ -358,7 +358,7 @@ export function QuotationLogosEditor({
                   <input
                     type="file"
                     ref={tourFileInputRef}
-                    accept="image/*"
+                    accept="image/jpeg,image/png,image/webp"
                     className="hidden"
                     onChange={(e) => {
                       const file = e.target.files?.[0];
@@ -702,7 +702,7 @@ export function QuotationLogosEditor({
                     <input
                       type="file"
                       ref={logoFileInputRef}
-                      accept="image/*"
+                      accept="image/jpeg,image/png,image/webp"
                       className="hidden"
                       onChange={(e) => {
                         const file = e.target.files?.[0];

@@ -372,7 +372,7 @@ function InvoiceSettingsEditorForm() {
               <input
                 ref={qrFileRef}
                 type="file"
-                accept="image/*"
+                accept="image/jpeg,image/png,image/webp"
                 className="hidden"
                 onChange={handleQrUpload}
               />
@@ -415,7 +415,7 @@ function InvoiceSettingsEditorForm() {
                 <input
                   ref={signFileRef}
                   type="file"
-                  accept="image/*"
+                  accept="image/jpeg,image/png,image/webp"
                   className="hidden"
                   onChange={handleSignUpload}
                 />

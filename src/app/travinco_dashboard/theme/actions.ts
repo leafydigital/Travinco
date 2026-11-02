@@ -97,7 +97,7 @@ async function insertThemeRecord(fields: {
 }
 
 // ─── Hero videos ─────────────────────────────────────────────────────────────
-// Videos are too large for Server Action bodies (5 MB limit), so the browser
+// Videos are too large for Server Action bodies (10 MB limit), so the browser
 // uploads them straight to Storage with a short-lived signed upload URL that is
 // only issued to staff with Theme edit access.
 
