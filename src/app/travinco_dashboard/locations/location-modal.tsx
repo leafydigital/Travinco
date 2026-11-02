@@ -89,7 +89,7 @@ export function LocationModal({
       setLocation({
         name: '',
         display_name: '',
-        state: states[0] || 'Kerala',
+        state: '',
         parent_id: null,
         description: '',
         sort_order: 100,
@@ -115,7 +115,7 @@ export function LocationModal({
     const data: Record<string, unknown> = {
       name: formData.get('name'),
       display_name: formData.get('display_name') || null,
-      state: formData.get('state') || 'Kerala',
+      state: String(formData.get('state') ?? '').trim(),
       parent_id: parent ? parent.id : null,
       description: formData.get('description') || null,
       sort_order: Number(formData.get('sort_order') || 100),
@@ -209,17 +209,13 @@ export function LocationModal({
                   <input
                     id="state"
                     name="state"
-                    list="location-states-list"
+                    type="text"
                     required
-                    defaultValue={location?.state ?? (states[0] || 'Kerala')}
+                    autoComplete="off"
+                    defaultValue={location?.state ?? ''}
                     placeholder="e.g. Kerala"
                     className="input h-9 py-1.5 text-sm w-full"
                   />
-                  <datalist id="location-states-list">
-                    {states.map((s) => (
-                      <option key={s} value={s} />
-                    ))}
-                  </datalist>
                 </div>
   
                 <div>

@@ -128,7 +128,7 @@ export default async function AdminPackagesPage({ searchParams }: PageProps) {
           </div>
 
           <p className="text-sm text-ink-500 max-w-2xl leading-relaxed">
-            Curate, publish, and manage tour package listings, pricing, duration, and detailed itineraries across all destinations.
+            Create, publish, and manage tour package listings, pricing, duration, and detailed itineraries across all destinations.
           </p>
         </div>
 

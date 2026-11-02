@@ -7,6 +7,7 @@ import { getNavbarFooterContent } from '@/lib/navbar-footer-content';
 import { getPageTitlesContent } from '@/lib/page-titles-content';
 import { createPublicClient } from '@/lib/supabase/public';
 import { AuthToastNotifier } from '@/components/public/auth-toast-notifier';
+import { WhatsAppFloat } from '@/components/public/whatsapp-float';
 
 // Shared by every public page: built from cached, cookie-free reads so content pages
 // can be served from the CDN. The signed-in customer's name is loaded client-side
@@ -89,6 +90,7 @@ export default async function PublicLayout({ children }: { children: React.React
       */}
       <main className="flex-1">{children}</main>
       <SiteFooter settings={settings} footerContent={navbarFooterContent.footer} />
+      <WhatsAppFloat />
     </div>
   );
 }

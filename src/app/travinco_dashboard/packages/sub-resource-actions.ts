@@ -278,6 +278,16 @@ export async function removePackageImage(packageId: string, id: string) {
   const permCheck = await checkEditPermission();
   if (permCheck.error) return { error: permCheck.error };
   const supabase = await createClient();
+
+  // A live package must keep at least one photo (same rule as publishing)
+  const [{ data: pkg }, { count }] = await Promise.all([
+    supabase.from('travel_packages').select('status').eq('id', packageId).maybeSingle(),
+    supabase.from('package_images').select('id', { count: 'exact', head: true }).eq('package_id', packageId),
+  ]);
+  if (pkg?.status === 'published' && (count ?? 0) <= 1) {
+    return { error: 'A published package needs at least one photo. Add another photo first, or unpublish the package.' };
+  }
+
   const { error } = await supabase.from('package_images').delete().eq('id', id);
   if (error) return { error: 'Could not remove image.' };
   revalidatePath(`/travinco_dashboard/packages/${packageId}`);

@@ -19,7 +19,7 @@ function getSafeRedirectPath(rawPath: string | null | undefined, fallback: strin
  * 2. Gate /travinco_dashboard/** — unauthenticated visitors redirected to /travinco_admin_login.
  * 3. Gate customer routes (/account/**, /booking) — unauthenticated visitors redirected to /account/login.
  * 4. Separate customer sessions from staff access:
- *    - Customers are strictly denied from /travinco_dashboard/** and redirected to /travinco_admin_login?reason=not_staff.
+ *    - A customer session never grants /travinco_dashboard/** access; such visitors get the plain staff sign-in.
  *    - Authenticated staff visiting /travinco_admin_login redirected to dashboard.
  *    - Authenticated customers visiting /account/login redirected to /account/bookings.
  *    - Admin session alone NEVER counts as customer authentication; customer login page remains accessible.
@@ -227,10 +227,8 @@ export async function middleware(request: NextRequest) {
   let customerUser = null;
   let isCustomer = false;
 
-  // On admin routes the customer session only matters when the visitor is NOT confirmed staff
   const needsCustomerCheck =
-    hasCustomerCookie &&
-    ((isAdminRoute && !isStaff) || isCustomerAuthRoute || isProtectedCustomerRoute || isBookingRoute);
+    hasCustomerCookie && (isCustomerAuthRoute || isProtectedCustomerRoute || isBookingRoute);
 
   if (needsCustomerCheck) {
     try {
@@ -283,11 +281,7 @@ export async function middleware(request: NextRequest) {
         });
         return blockedRes;
       }
-      // If customer attempts to access admin dashboard, strictly deny access
-      if (isCustomer) {
-        return createRedirect(new URL('/app?reason=not_staff', request.url));
-      }
-      // Unauthenticated visitor -> staff sign-in
+      // Unauthenticated visitor (or a customer session only) -> staff sign-in
       const redirectUrl = new URL('/app', request.url);
       if (pathname !== '/travinco_dashboard') {
         redirectUrl.searchParams.set('redirectTo', pathname);

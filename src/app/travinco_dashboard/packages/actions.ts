@@ -27,11 +27,26 @@ export type ActionState = { error?: string; fieldErrors?: Record<string, string>
  * typed — this only fills genuinely empty fields.
  */
 function withAutoSeo(data: PackageFormValues): PackageFormValues {
-  const meta_title = data.meta_title?.trim() ? data.meta_title : data.title;
+  const meta_title = data.meta_title?.trim() ? data.meta_title : fitText(data.title, META_TITLE_MAX);
   const meta_description = data.meta_description?.trim()
     ? data.meta_description
-    : (data.short_description?.trim() ?? null);
+    : data.short_description?.trim()
+      ? fitText(data.short_description, META_DESCRIPTION_MAX)
+      : null;
   return { ...data, meta_title, meta_description };
+}
+
+// Column limits of travel_packages.meta_title / meta_description
+const META_TITLE_MAX = 160;
+const META_DESCRIPTION_MAX = 320;
+
+/** Shortens auto-filled SEO text to fit its column, cutting at a word boundary. */
+function fitText(text: string, max: number) {
+  const t = text.trim();
+  if (t.length <= max) return t;
+  const cut = t.slice(0, max - 1);
+  const lastSpace = cut.lastIndexOf(' ');
+  return `${(lastSpace > max / 2 ? cut.slice(0, lastSpace) : cut).trimEnd()}…`;
 }
 
 async function logActivity(params: {
@@ -368,6 +383,14 @@ export async function updatePackage(
     .eq('id', id)
     .single();
 
+  // A live package must keep a price (same rule as publishing)
+  if (before?.status === 'published' && (!preParsed.data.base_price || preParsed.data.base_price <= 0)) {
+    return {
+      error: 'A published package needs a starting price. Unpublish it first to save without one.',
+      fieldErrors: { base_price: 'Starting price required' },
+    };
+  }
+
   const releaseIds =
     options.replaceFeaturedId && options.replaceFeaturedId !== id ? [options.replaceFeaturedId] : [];
   const becomingFeatured = preParsed.data.is_featured && !before?.is_featured;
@@ -613,6 +636,35 @@ export async function duplicatePackage(id: string): Promise<ActionState & { id?:
   return { id: created.id };
 }
 
+const PACKAGE_IMAGE_BUCKET = 'package-images';
+
+/**
+ * Removes uploaded package photos from storage, skipping any that another
+ * package still uses (duplicated packages share the same image URLs).
+ */
+async function removeUnusedPackageImages(supabase: Awaited<ReturnType<typeof createClient>>, urls: string[]) {
+  const marker = `/storage/v1/object/public/${PACKAGE_IMAGE_BUCKET}/`;
+  const ours = urls.filter((u) => u.includes(marker));
+  if (ours.length === 0) return;
+  try {
+    const [{ data: galleryUses }, { data: coverUses }] = await Promise.all([
+      supabase.from('package_images').select('image_url').in('image_url', ours),
+      supabase.from('travel_packages').select('cover_image_url').in('cover_image_url', ours),
+    ]);
+    const stillUsed = new Set([
+      ...(galleryUses ?? []).map((r: { image_url: string }) => r.image_url),
+      ...(coverUses ?? []).map((r: { cover_image_url: string }) => r.cover_image_url),
+    ]);
+    const paths = ours
+      .filter((u) => !stillUsed.has(u))
+      .map((u) => decodeURIComponent(u.split(marker)[1]!.split('?')[0]!));
+    if (paths.length > 0) await supabase.storage.from(PACKAGE_IMAGE_BUCKET).remove(paths);
+  } catch (err) {
+    // The package itself is already deleted; a leftover file is harmless
+    console.error('Could not remove package images from storage:', err);
+  }
+}
+
 export async function deletePackage(id: string): Promise<ActionState> {
   const profile = await requireProfile();
   if (!['admin', 'super_admin'].includes(profile.role)) {
@@ -627,49 +679,25 @@ export async function deletePackage(id: string): Promise<ActionState> {
     .eq('id', id)
     .single();
 
-  // 1. Try secure RPC function first (bypasses RLS recursion)
-  let updateSuccess = false;
-  try {
-    const { error: rpcError } = await supabase.rpc('soft_delete_package', {
-      package_id: id,
-    });
-    if (!rpcError) {
-      updateSuccess = true;
+  // Photos to clean up from storage once the package rows are gone
+  const { data: imageRows } = await supabase.from('package_images').select('image_url').eq('package_id', id);
+  const imageUrls = Array.from(
+    new Set([before?.cover_image_url, ...(imageRows ?? []).map((r: { image_url: string }) => r.image_url)].filter(Boolean))
+  ) as string[];
+
+  // Permanent delete: the package and all its content in one transaction
+  // (supabase/package_hard_delete_migration.sql)
+  const { error: deleteError } = await supabase.rpc('hard_delete_package', { p_id: id });
+  if (deleteError) {
+    console.error('hard_delete_package failed:', deleteError);
+    if (deleteError.code === 'P0002') return { error: 'This package no longer exists.' };
+    if (deleteError.code === '23503') {
+      return { error: 'This package is still linked to other records, so it cannot be deleted.' };
     }
-  } catch {}
-
-  // 2. Direct update fallback on travel_packages table
-  if (!updateSuccess) {
-    try {
-      const { error: updateError } = await supabase
-        .from('travel_packages')
-        .update({ is_deleted: true })
-        .eq('id', id);
-
-      if (!updateError) {
-        updateSuccess = true;
-      }
-    } catch {}
+    return { error: 'Unable to delete the package. Please try again.' };
   }
 
-  // 3. Fallback tracking in website_settings so package is guaranteed soft-deleted
-  // even if database RLS migration hasn't been executed yet in Supabase
-  try {
-    const { error: wsError } = await supabase.from('website_settings').upsert(
-      {
-        key: `deleted_package_${id}`,
-        value: { is_deleted: true, deleted_at: new Date().toISOString() },
-      },
-      { onConflict: 'key' }
-    );
-    if (!wsError) {
-      updateSuccess = true;
-    }
-  } catch {}
-
-  if (!updateSuccess) {
-    return { error: 'Unable to delete package. Please try again.' };
-  }
+  await removeUnusedPackageImages(supabase, imageUrls);
 
   try {
     await logActivity({
@@ -794,13 +822,12 @@ export async function bulkCreatePackages(
     if (leadError) return { error: `${label}: ${leadError}` };
 
     const images = Array.isArray(item.imageUrls) ? item.imageUrls.map((u) => u.trim()).filter(Boolean) : [];
-    if (item.status === 'published') {
-      const missing: string[] = [];
-      if (!parsed.data.base_price || parsed.data.base_price <= 0) missing.push('a starting price');
-      if (images.length === 0 && !item.cover_image_url) missing.push('at least one photo');
-      if (missing.length > 0) {
-        return { error: `${label}: can't publish without ${missing.join(' and ')}. Save it as a draft instead.` };
-      }
+    // Bulk-created packages need a price and a photo, whether saved as draft or published
+    const missing: string[] = [];
+    if (!parsed.data.base_price || parsed.data.base_price <= 0) missing.push('Starting price');
+    if (images.length === 0 && !item.cover_image_url) missing.push('Package image');
+    if (missing.length > 0) {
+      return { error: `${label}: ${missing.join(' and ')} required.` };
     }
 
     validated.push({ item, data: parsed.data, images });
@@ -875,7 +902,10 @@ export async function bulkCreatePackages(
 
   if (insertError) {
     console.error('Error during bulk create packages:', insertError);
-    return { error: 'Failed to bulk create packages: ' + insertError.message };
+    if (insertError.code === '23505') {
+      return { error: 'A package with one of these titles already exists. Change the title or slug and try again.' };
+    }
+    return { error: 'Could not create the packages. Please check the details and try again.' };
   }
 
   if (featuredCount > 0) {

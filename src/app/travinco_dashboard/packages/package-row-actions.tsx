@@ -111,7 +111,7 @@ export function PackageRowActions({
       if (result?.error) {
         toast.error(result.error);
       } else {
-        toast.success('Package moved to trash');
+        toast.success('Package deleted permanently');
         setIsDeleteOpen(false);
         router.refresh();
       }
@@ -181,7 +181,7 @@ export function PackageRowActions({
         description={
           <div className="space-y-3 text-left">
             <p className="text-sm text-ink-700 leading-normal">
-              Are you sure you want to delete this travel package from active listings?
+              Are you sure you want to permanently delete this travel package?
             </p>
 
             {/* Target Package Highlight Box */}
@@ -198,7 +198,7 @@ export function PackageRowActions({
             </div>
 
             <p className="text-xs text-ink-500 leading-relaxed">
-              This package will be soft-deleted and removed from public listings and customer views.
+              This removes the package with its photos, itinerary, inclusions and FAQs for good. It cannot be undone. Enquiries and bookings for it are kept.
             </p>
           </div>
         }

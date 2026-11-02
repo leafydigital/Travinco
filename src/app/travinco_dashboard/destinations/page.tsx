@@ -122,7 +122,7 @@ export default async function AdminDestinationsPage({ searchParams }: PageProps)
           </div>
 
           <p className="text-sm text-ink-500 max-w-2xl leading-relaxed">
-            Curate popular travel destinations, regional descriptions, cover visuals, and publishing status.
+            Create and manage popular travel destinations, regional descriptions, cover visuals, and publishing status.
           </p>
         </div>
 

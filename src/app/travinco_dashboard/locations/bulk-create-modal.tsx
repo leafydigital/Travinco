@@ -36,12 +36,12 @@ export type BulkLocationCard = {
   isCollapsed: boolean;
 };
 
-function createEmptyLocationCard(defaultState = 'Kerala', sortOrder = 100): BulkLocationCard {
+function createEmptyLocationCard(sortOrder = 100): BulkLocationCard {
   return {
     id: Math.random().toString(36).substring(2, 9),
     name: '',
     display_name: '',
-    state: defaultState,
+    state: '',
     parent_id: '',
     description: '',
     sort_order: sortOrder,
@@ -62,18 +62,14 @@ export function BulkCreateLocationsModal({
   isOpen,
   onClose,
   parentLocations,
-  states = [],
   onSuccess,
 }: BulkCreateLocationsModalProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
-  const defaultState = states.length > 0 ? states[0]! : 'Kerala';
-  const stateOptions = states.length > 0 ? states : [defaultState];
-
   const [cards, setCards] = useState<BulkLocationCard[]>([
-    createEmptyLocationCard(defaultState, 100),
-    createEmptyLocationCard(defaultState, 110),
+    createEmptyLocationCard(100),
+    createEmptyLocationCard(110),
   ]);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -92,18 +88,16 @@ export function BulkCreateLocationsModal({
   function addCard() {
     const lastCard = cards[cards.length - 1];
     const lastSort = lastCard?.sort_order ?? 100;
-    const cardState = lastCard?.state || defaultState;
-    setCards((prev) => [...prev, createEmptyLocationCard(cardState, lastSort + 10)]);
+    setCards((prev) => [...prev, createEmptyLocationCard(lastSort + 10)]);
   }
 
   function addMultipleCards(count: number) {
     const lastCard = cards[cards.length - 1];
     const lastSort = lastCard?.sort_order ?? 100;
-    const cardState = lastCard?.state || defaultState;
     setCards((prev) => [
       ...prev,
       ...Array.from({ length: count }, (_, idx) =>
-        createEmptyLocationCard(cardState, lastSort + (idx + 1) * 10)
+        createEmptyLocationCard(lastSort + (idx + 1) * 10)
       ),
     ]);
   }
@@ -129,7 +123,7 @@ export function BulkCreateLocationsModal({
 
   function removeCard(index: number) {
     if (cards.length <= 1) {
-      setCards([createEmptyLocationCard(defaultState, 100)]);
+      setCards([createEmptyLocationCard(100)]);
       return;
     }
     setCards((prev) => prev.filter((_, i) => i !== index));
@@ -137,7 +131,7 @@ export function BulkCreateLocationsModal({
 
   function clearEmptyCards() {
     const valid = cards.filter((c) => c.name.trim().length > 0);
-    setCards(valid.length > 0 ? valid : [createEmptyLocationCard(defaultState, 100)]);
+    setCards(valid.length > 0 ? valid : [createEmptyLocationCard(100)]);
   }
 
   function handleBulkSave() {
@@ -158,12 +152,20 @@ export function BulkCreateLocationsModal({
       setCards((prev) => prev.map((card) => (card.id === unnamed.id ? { ...card, isCollapsed: false } : card)));
       return;
     }
+    const noState = activeCards.find((c) => !c.state.trim());
+    if (noState) {
+      const message = `Location card ${activeCards.indexOf(noState) + 1}: State required.`;
+      setFormError(message);
+      toast.error(message);
+      setCards((prev) => prev.map((card) => (card.id === noState.id ? { ...card, isCollapsed: false } : card)));
+      return;
+    }
 
     startTransition(async () => {
       const payload = activeCards.map((c) => ({
         name: c.name.trim(),
         display_name: c.display_name.trim() || null,
-        state: c.state.trim() || 'Kerala',
+        state: c.state.trim(),
         parent_id: c.parent_id ? Number(c.parent_id) : null,
         description: c.description.trim() || null,
         is_houseboat: c.is_houseboat,
@@ -361,21 +363,17 @@ export function BulkCreateLocationsModal({
                         {/* State & Part of (Main town) */}
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <div>
-                            <label className="label">State</label>
-                            <select
+                            <label className="label">
+                              State <span className="text-coral-600">*</span>
+                            </label>
+                            <input
+                              type="text"
+                              autoComplete="off"
                               className="input"
                               value={card.state}
                               onChange={(e) => updateCard(index, 'state', e.target.value)}
-                            >
-                              {(card.state && !stateOptions.includes(card.state)
-                                ? [card.state, ...stateOptions]
-                                : stateOptions
-                              ).map((s) => (
-                                <option key={s} value={s}>
-                                  {s}
-                                </option>
-                              ))}
-                            </select>
+                              placeholder="e.g. Kerala"
+                            />
                           </div>
   
                           <div>

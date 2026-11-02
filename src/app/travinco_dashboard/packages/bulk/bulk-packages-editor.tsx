@@ -86,6 +86,26 @@ const FIELD_TAB: Record<string, EditorTab> = {
   extras: 'inclusions',
 };
 
+/** Required fields (marked * in the editor) and the name used in "<name> required". */
+const REQUIRED_FIELDS: Record<string, string> = {
+  title: 'Package title',
+  destination_id: 'Destination',
+  duration_days: 'Days',
+  duration_nights: 'Nights',
+  short_description: 'Short description',
+  full_description: 'Overview',
+  currency: 'Currency',
+};
+
+/** Fields in the order they appear on screen, so the first error shown is the top-most one. */
+const FIELD_ORDER = Object.keys(FIELD_TAB);
+
+function isBlankField(draft: BulkPackageDraft, field: string) {
+  if (field === 'destination_id') return !draft.destination_id && !draft.destination_name.trim();
+  const value = draft[field as keyof BulkPackageDraft];
+  return value === '' || value == null || (typeof value === 'string' && !value.trim());
+}
+
 /** Tabs in the order the "Next step" button walks through them. */
 const TAB_ORDER: EditorTab[] = ['basic', 'pricing', 'itinerary', 'inclusions', 'media', 'seo'];
 
@@ -188,10 +208,7 @@ function photoCount(p: BulkPackageDraft) {
 export function BulkPackagesEditor({ destinations }: { destinations: DestinationOption[] }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [packages, setPackages] = useState<BulkPackageDraft[]>([
-    createEmptyPackageDraft(1),
-    createEmptyPackageDraft(2),
-  ]);
+  const [packages, setPackages] = useState<BulkPackageDraft[]>([createEmptyPackageDraft(1)]);
   const [activeIdx, setActiveIdx] = useState(0);
   const [activeTab, setActiveTab] = useState<EditorTab>('basic');
   const [formError, setFormError] = useState<string | null>(null);
@@ -487,11 +504,8 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
     setFormError(null);
     setShowRowErrors(true);
 
-    const validPackages = packages.filter((p) => p.title.trim().length > 0);
-    if (validPackages.length === 0) {
-      setFormError('Please enter at least one package with a title.');
-      return;
-    }
+    // Every package in the batch is saved, so every one is checked (a blank title is flagged, not skipped)
+    const validPackages = packages;
 
     const payload: BulkPackageInput[] = validPackages.map((p) => {
       const allImages = Array.from(
@@ -538,7 +552,7 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
 
     // Same rules as the single package form; jump to the first problem.
     const nextErrors: Record<string, Record<string, string>> = {};
-    let firstProblem: { draftId: string; tab: EditorTab; message: string } | null = null;
+    let firstProblem: { draftId: string; tab: EditorTab } | null = null;
     payload.forEach((item, i) => {
       const draft = validPackages[i]!;
       const check = packageSchema.safeParse({
@@ -549,29 +563,36 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
         ...availabilityLeadErrors(item),
         ...(check.success ? {} : fieldErrorsFromZod(check.error)),
       };
+      // A blank required field always reads "<Field> required"
+      for (const [field, label] of Object.entries(REQUIRED_FIELDS)) {
+        if (isBlankField(draft, field)) errs[field] = `${label} required`;
+      }
       const extrasError = validatePackageExtras(item);
       if (extrasError) errs[extrasError.startsWith('Itinerary') ? 'itinerary' : 'extras'] = extrasError;
-      if (item.status === 'published') {
-        if (!item.base_price) errs.base_price ??= 'A starting price is required to publish';
-        if (!item.imageUrls?.length) errs.images = 'At least one photo is required to publish';
-      }
+      // Price and a photo are required for drafts too, not only when publishing
+      if (!item.base_price || item.base_price <= 0) errs.base_price = 'Starting price required';
+      if (!item.imageUrls?.length) errs.images = 'Package image required';
       if (Object.keys(errs).length > 0) {
         nextErrors[draft.id] = errs;
         if (!firstProblem) {
-          const [field, message] = Object.entries(errs)[0]!;
-          const tab = FIELD_TAB[field] ?? 'basic';
-          firstProblem = { draftId: draft.id, tab, message: `Package ${i + 1} ("${item.title}"): ${message}` };
+          // Open the tab of the first field on screen that needs attention
+          const field = FIELD_ORDER.find((f) => errs[f]) ?? Object.keys(errs)[0]!;
+          firstProblem = { draftId: draft.id, tab: FIELD_TAB[field] ?? 'basic' };
         }
       }
     });
     setErrorsById(nextErrors);
 
     if (firstProblem) {
-      const { draftId, tab, message } = firstProblem as { draftId: string; tab: EditorTab; message: string };
+      const { draftId, tab } = firstProblem as { draftId: string; tab: EditorTab };
       setActiveIdx(packages.findIndex((p) => p.id === draftId));
       setActiveTab(tab);
-      setFormError(message);
-      toast.error(message);
+      const count = Object.keys(nextErrors).length;
+      setFormError(
+        count === 1
+          ? 'Please fill in the fields marked in red.'
+          : `${count} packages have fields to fix. They are marked in the list on the left.`
+      );
       return;
     }
 
@@ -581,7 +602,6 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
       const res = await bulkCreatePackages(payload, { unfeatureIds: featuredInBatch ? unfeatureIds : [] });
       if (res.error) {
         setFormError(res.error);
-        toast.error(res.error);
       } else {
         const count = res.count ?? validPackages.length;
         toast.success(
@@ -593,13 +613,13 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
     });
   }
 
-  const validCount = packages.filter((p) => p.title.trim().length > 0).length;
+  const validCount = packages.length;
 
   return (
     <div className="space-y-6">
       {/* Top Banner Toolbar */}
-      <div className="card p-4 flex flex-wrap items-center justify-between gap-3 bg-white shadow-xs border-ink-150">
-        <div className="flex items-center gap-3">
+      <div className="card p-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between bg-white shadow-xs border-ink-150">
+        <div className="flex min-w-0 items-center gap-3">
           <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-50 text-brand-700">
             <Layers className="h-4 w-4" />
           </div>
@@ -613,11 +633,12 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        {/* Phones: Add + mode share a row, Bulk Save takes the full width below */}
+        <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:items-center">
           <button
             type="button"
             onClick={addPackage}
-            className="btn-outline h-8 text-xs inline-flex items-center gap-1.5 cursor-pointer"
+            className="btn-outline h-9 sm:h-8 text-xs inline-flex items-center justify-center gap-1.5 cursor-pointer"
           >
             <Plus className="h-3.5 w-3.5" />
             <span>Add package</span>
@@ -627,7 +648,7 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
             value={saveMode}
             onChange={(e) => setSaveMode(e.target.value as 'draft' | 'published')}
             disabled={isPending}
-            className="input h-8 w-auto text-xs font-semibold cursor-pointer"
+            className="input h-9 sm:h-8 w-full sm:w-auto text-xs font-semibold cursor-pointer"
             title="What happens to all packages when you click Bulk Save"
           >
             <option value="draft">Save as Draft</option>
@@ -637,8 +658,8 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
           <button
             type="button"
             onClick={handleBulkSave}
-            disabled={validCount === 0 || isPending}
-            className="btn-primary h-8 text-xs inline-flex items-center gap-2 px-4 shadow-xs cursor-pointer disabled:opacity-50"
+            disabled={isPending}
+            className="btn-primary col-span-2 h-10 sm:h-8 text-xs inline-flex items-center justify-center gap-2 px-4 shadow-xs cursor-pointer disabled:opacity-50"
           >
             {isPending ? (
               <>
@@ -1333,7 +1354,7 @@ export function BulkPackagesEditor({ destinations }: { destinations: Destination
                 <div>
                   <h3 className="text-xs font-bold text-ink-900 flex items-center gap-1.5">
                     <Star className="h-4 w-4 text-amber-500" />
-                    <span>Cover Image</span>
+                    <span>Cover Image</span> <span className="text-coral-500">*</span>
                   </h3>
                   <p className="text-[11px] text-ink-400 mt-0.5">
                     Shown on package cards and at the top of the package page. Uploading a new one replaces the current cover.

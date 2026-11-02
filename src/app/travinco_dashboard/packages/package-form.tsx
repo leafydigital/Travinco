@@ -765,7 +765,9 @@ export function PackageForm({
       {!packageId && (
         <div className="grid gap-3 lg:grid-cols-2">
           <div id="package-cover" className="card space-y-2.5 p-4">
-            <h2 className="text-sm font-semibold text-ink-800">Cover image</h2>
+            <h2 className="text-sm font-semibold text-ink-800">
+              Cover image <span className="text-coral-500">*</span>
+            </h2>
             <p className="text-xs text-ink-400">
               JPG, PNG or WEBP — shown at the top of the package page and on package cards.{' '}
               <strong>An image is required to publish.</strong>

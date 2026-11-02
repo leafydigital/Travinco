@@ -51,14 +51,14 @@ function ChartTooltip({ active, payload }: { active?: boolean; payload?: { paylo
     <div className="rounded-lg border border-ink-200 bg-white px-3 py-2 text-xs shadow-lg">
       <p className="mb-1 max-w-[240px] font-semibold text-ink-900">{row.name}</p>
       <p className="text-ink-600">
-        Bookings: <span className="font-semibold text-ink-900">{row.bookings}</span>
+        Paid invoices: <span className="font-semibold text-ink-900">{row.bookings}</span>
       </p>
-      {row.revenue > 0 && <p className="text-ink-500">Booking value: {formatCurrency(row.revenue)}</p>}
+      {row.revenue > 0 && <p className="text-ink-500">Invoice value: {formatCurrency(row.revenue)}</p>}
     </div>
   );
 }
 
-/** Vertical column chart of the month's top 5 packages by bookings. */
+/** Vertical column chart of the month's top 5 packages by fully paid invoices. */
 export function TopPackagesChart({ data, monthName }: { data: PackageStat[]; monthName: string }) {
   return (
     <section className="card overflow-hidden" aria-labelledby="top-packages-heading">
@@ -66,13 +66,13 @@ export function TopPackagesChart({ data, monthName }: { data: PackageStat[]; mon
         <h2 id="top-packages-heading" className="text-sm font-semibold text-ink-900">
           Top selling packages
         </h2>
-        <p className="text-xs text-ink-500">Top 5 by bookings · {monthName}</p>
+        <p className="text-xs text-ink-500">Top 5 by fully paid invoices · {monthName}</p>
       </div>
 
       {data.length === 0 ? (
         <div className="flex flex-col items-center gap-2 px-5 py-14 text-center">
           <Package className="h-8 w-8 text-ink-300" />
-          <p className="text-sm text-ink-500">No package bookings in {monthName}.</p>
+          <p className="text-sm text-ink-500">No fully paid package invoices in {monthName}.</p>
         </div>
       ) : (
         // Scrolls sideways on narrow screens instead of squashing the columns
@@ -84,7 +84,7 @@ export function TopPackagesChart({ data, monthName }: { data: PackageStat[]; mon
                 <XAxis dataKey="name" interval={0} height={44} tickLine={false} axisLine={{ stroke: '#e2e8f0' }} tick={<PackageTick />} />
                 <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={36} tick={{ fontSize: 11, fill: '#64748b' }} />
                 <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(15, 23, 42, 0.04)' }} />
-                <Bar dataKey="bookings" name="Bookings" fill={BAR_COLOR} radius={[4, 4, 0, 0]} maxBarSize={48}>
+                <Bar dataKey="bookings" name="Paid invoices" fill={BAR_COLOR} radius={[4, 4, 0, 0]} maxBarSize={48}>
                   <LabelList dataKey="bookings" position="top" fontSize={12} fontWeight={600} fill="#334155" />
                 </Bar>
               </BarChart>

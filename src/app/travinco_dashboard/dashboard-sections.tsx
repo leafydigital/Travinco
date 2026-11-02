@@ -196,7 +196,7 @@ export async function FinancialOverviewSection({ month }: { month: MonthInfo }) 
     supabase.from('expenses').select('*').gte('expense_date', month.start).lte('expense_date', month.end),
     // Soft-deleted expense markers and invoice markup metadata (fallback store)
     supabase.from('website_settings').select('key, value').or('key.like.deleted_expense_%,key.like.invoice_markup_%'),
-    // Income = total markup price of the fully paid invoices dated in the month
+    // Income = total of the fully paid invoices dated in the month (plus their markup)
     supabase
       .from('invoices')
       .select('id, total_amount, quotations(markup_pct, markup_amount)')
@@ -216,9 +216,11 @@ export async function FinancialOverviewSection({ month }: { month: MonthInfo }) 
   const expenseRows = (expenseData ?? []).filter((r: any) => r.is_deleted !== true && !deletedExpenseKeys.has(r.id));
   const totalExpenses = expenseRows.reduce((sum, r: any) => sum + Number(r.amount || 0), 0);
 
+  let totalIncome = 0;
   let markupEarned = 0;
   for (const inv of (paidInvoices ?? []) as any[]) {
     const invTotal = Number(inv.total_amount || 0);
+    totalIncome += invTotal;
     const q = (Array.isArray(inv.quotations) ? inv.quotations[0] : inv.quotations) as any;
     const meta = invoiceMarkupMap.get(inv.id);
     const markupPct = Number(meta?.markup_pct ?? q?.markup_pct ?? 15);
@@ -241,10 +243,14 @@ export async function FinancialOverviewSection({ month }: { month: MonthInfo }) 
             </span>
             <ArrowUpRight className="h-4 w-4 text-ink-300 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-emerald-600" />
           </div>
-          <p className="mt-3 text-3xl font-bold tabular-nums tracking-tight text-ink-900">{formatCurrency(markupEarned)}</p>
+          <p className="mt-3 text-3xl font-bold tabular-nums tracking-tight text-ink-900">{formatCurrency(totalIncome)}</p>
           <p className="mt-1 text-xs text-ink-500">
-            Total markup from {paidCount} fully paid invoice{paidCount === 1 ? '' : 's'}
+            Total income from {paidCount} fully paid invoice{paidCount === 1 ? '' : 's'}
           </p>
+          <div className="mt-3 flex items-center justify-between rounded-lg bg-emerald-50/60 px-3 py-2">
+            <span className="text-xs font-medium text-emerald-800">Markup earned</span>
+            <span className="text-sm font-semibold tabular-nums text-emerald-700">{formatCurrency(markupEarned)}</span>
+          </div>
           <div className="absolute left-0 right-0 top-0 h-1 bg-emerald-500" />
         </Link>
 
@@ -277,21 +283,34 @@ const TOP_PACKAGES = 5;
 export async function TopSellingPackagesSection({ month }: { month: MonthInfo }) {
   const supabase = await createClient();
 
-  // Bookings made in the month (cancelled ones don't count)
-  const { data: bookings } = await supabase
-    .from('bookings')
-    .select('package_id, total_amount')
-    .neq('booking_status', 'cancelled')
-    .gte('created_at', month.startTs)
-    .lte('created_at', month.endTs);
+  // Fully paid invoices dated in the month (same set as the Income card)
+  const { data: invoices } = await supabase
+    .from('invoices')
+    .select('id, total_amount, enquiry_id, quotations(enquiry_id)')
+    .eq('status', 'paid')
+    .gte('invoice_date', month.start)
+    .lte('invoice_date', month.end)
+    .or(notDeleted);
+
+  // Invoice -> enquiry (directly, or through its quotation) -> package
+  const invoiceEnquiry = ((invoices ?? []) as any[]).map((inv) => {
+    const q = (Array.isArray(inv.quotations) ? inv.quotations[0] : inv.quotations) as { enquiry_id?: string | null } | null;
+    return { enquiryId: (inv.enquiry_id ?? q?.enquiry_id ?? null) as string | null, total: Number(inv.total_amount || 0) };
+  });
+  const enquiryIds = Array.from(new Set(invoiceEnquiry.map((r) => r.enquiryId).filter((id): id is string => !!id)));
+  const { data: enquiries } = enquiryIds.length
+    ? await supabase.from('enquiries').select('id, package_id').in('id', enquiryIds)
+    : { data: [] as { id: string; package_id: string | null }[] };
+  const enquiryPackage = new Map((enquiries ?? []).map((e: any) => [e.id as string, e.package_id as string | null]));
 
   const byPackage = new Map<string, { bookings: number; revenue: number }>();
-  for (const b of (bookings ?? []) as any[]) {
-    if (!b.package_id) continue;
-    const row = byPackage.get(b.package_id) ?? { bookings: 0, revenue: 0 };
+  for (const r of invoiceEnquiry) {
+    const packageId = r.enquiryId ? enquiryPackage.get(r.enquiryId) : null;
+    if (!packageId) continue;
+    const row = byPackage.get(packageId) ?? { bookings: 0, revenue: 0 };
     row.bookings += 1;
-    row.revenue += Number(b.total_amount || 0);
-    byPackage.set(b.package_id, row);
+    row.revenue += r.total;
+    byPackage.set(packageId, row);
   }
 
   const top = Array.from(byPackage.entries())
@@ -336,7 +355,7 @@ export function SectionSkeleton({ variant }: { variant: 'cards4' | 'cards2' | 'c
         {Array.from({ length: n }).map((_, i) => (
           <div
             key={i}
-            className={`card animate-pulse p-5 ${n === 4 ? 'h-[118px]' : 'h-[150px]'}`}
+            className={`card animate-pulse p-5 ${n === 4 ? 'h-[118px]' : 'h-[194px]'}`}
           >
             <div className="h-3 w-24 rounded bg-ink-100" />
             <div className="mt-4 h-7 w-20 rounded bg-ink-200/60" />

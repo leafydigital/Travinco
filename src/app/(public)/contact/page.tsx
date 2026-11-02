@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { getPageTitlesContent } from '@/lib/page-titles-content';
 import { getContactPageContent } from '@/lib/contact-page-content';
 import { ContactForm } from './contact-form';
-import { mapsHref, telHref, whatsappHref } from '@/lib/contact-links';
+import { mapsHref, telHref } from '@/lib/contact-links';
 import { EmailLink } from '@/components/public/email-link';
 import {
   Phone,
@@ -158,36 +158,6 @@ export default async function ContactPage() {
                     </p>
                     <p className="text-xs text-ink-500 mt-0.5">
                       Direct line to our destination concierge
-                    </p>
-                  </div>
-                </a>
-              )}
-
-              {/* WhatsApp Card */}
-              {contactContent.whatsapp && (
-                <a
-                  href={whatsappHref(contactContent.whatsapp)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="group flex items-start gap-4 p-4 sm:p-5 rounded-2xl bg-white border border-ink-150/80 shadow-sm hover:border-emerald-500 hover:shadow-md transition-all"
-                >
-                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 border border-emerald-100 group-hover:bg-emerald-600 group-hover:text-white transition-colors">
-                    <MessageCircle className="h-5 w-5" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs font-bold uppercase tracking-wider text-ink-400">
-                        WhatsApp Concierge
-                      </span>
-                      <span className="text-xs font-semibold text-emerald-600">
-                        Chat now
-                      </span>
-                    </div>
-                    <p className="mt-1 text-base sm:text-lg font-bold text-ink-950 truncate">
-                      {contactContent.whatsapp}
-                    </p>
-                    <p className="text-xs text-ink-500 mt-0.5">
-                      Instant messaging &amp; fast itinerary replies
                     </p>
                   </div>
                 </a>

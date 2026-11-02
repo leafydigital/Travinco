@@ -73,13 +73,13 @@ export const packageSchema = z
       .string()
       .trim()
       .min(3, 'Title is too short')
-      .max(200)
+      .max(200, 'Keep the title under 200 characters')
       .refine((v) => !isNumbersOnlyTitle(v), TITLE_ONLY_NUMBERS_MESSAGE)
       .refine((v) => !PHONE_NUMBER_PATTERN.test(v), 'Phone numbers are not allowed in the package title'),
     slug: z
       .string()
-      .min(3)
-      .max(220)
+      .min(3, 'Slug must be at least 3 characters')
+      .max(220, 'Keep the slug under 220 characters')
       .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Use lowercase letters, numbers and hyphens only'),
     category: z.enum(packageCategories),
     duration_days: z.coerce
@@ -122,10 +122,10 @@ export const packageSchema = z
     ).optional(),
     pickup_info: z.string().optional().nullable(),
     cover_image_url: imageUrlSchema.optional().nullable(),
-    video_url: z.string().url().optional().nullable().or(z.literal('')),
+    video_url: z.string().url('Enter a valid video link').optional().nullable().or(z.literal('')),
     is_featured: z.coerce.boolean().default(false),
-    meta_title: z.string().max(160).optional().nullable(),
-    meta_description: z.string().max(320).optional().nullable(),
+    meta_title: z.string().max(160, 'Keep the meta title under 160 characters').optional().nullable(),
+    meta_description: z.string().max(320, 'Keep the meta description under 320 characters').optional().nullable(),
   })
   .refine(
     (data) => !nightsRuleError(data.duration_days, data.duration_nights),
@@ -149,22 +149,22 @@ export const packageSchema = z
 export type PackageFormValues = z.infer<typeof packageSchema>;
 
 export const itineraryDaySchema = z.object({
-  day_number: z.coerce.number().int().min(1),
-  title: z.string().trim().min(1, 'Day title is required').max(200),
+  day_number: z.coerce.number().int().min(1, 'Day number must be 1 or more'),
+  title: z.string().trim().min(1, 'Day title is required').max(200, 'Keep the day title under 200 characters'),
   description: z.string().trim().optional().nullable(),
-  hotel: z.string().max(200).optional().nullable(),
-  meals: z.string().max(100).optional().nullable(),
-  transport: z.string().max(200).optional().nullable(),
+  hotel: z.string().max(200, 'Keep the hotel under 200 characters').optional().nullable(),
+  meals: z.string().max(100, 'Keep the meals under 100 characters').optional().nullable(),
+  transport: z.string().max(200, 'Keep the transport under 200 characters').optional().nullable(),
   activities: z.array(z.string()).default([]),
   image_url: imageUrlSchema.optional().nullable(),
 });
 
 export const inclusionExclusionSchema = z.object({
-  item: z.string().trim().min(1, 'Cannot be empty').max(255),
+  item: z.string().trim().min(1, 'Cannot be empty').max(255, 'Keep it under 255 characters'),
 });
 
 export const faqItemSchema = z.object({
-  question: z.string().trim().min(1, 'Question cannot be empty').max(300),
+  question: z.string().trim().min(1, 'Question cannot be empty').max(300, 'Keep the question under 300 characters'),
   answer: z.string().trim().min(1, 'Answer cannot be empty'),
 });
 

@@ -88,7 +88,7 @@ export function DestinationRowActions({
       if (result?.error) {
         toast.error(result.error);
       } else {
-        toast.success('Destination moved to trash');
+        toast.success('Destination deleted');
         setIsDeleteOpen(false);
         router.refresh();
       }
